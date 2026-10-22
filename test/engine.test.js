@@ -101,3 +101,26 @@ test('どの武器も勝てるし、負けることもある(極端に強い/弱
     assert.ok(rate > 0.1 && rate < 0.9, `${w.id} の勝率 ${(rate * 100).toFixed(0)}%`);
   }
 });
+
+test('重力でボールが落ち、床で跳ね返って天井近くまで戻る', () => {
+  const world = createBattle(W.unarmed, W.unarmed, 9);
+  const b = world.balls[0];
+  world.balls[1].x = 560; // 相手とぶつからない位置へ
+  b.x = 60;
+  b.y = 100;
+  b.vx = 0;
+  b.vy = 0;
+  let maxY = 0;
+  let bounced = false;
+  let minYAfter = Infinity;
+  for (let i = 0; i < 120 * 3; i++) {
+    step(world);
+    world.events.length = 0;
+    maxY = Math.max(maxY, b.y);
+    if (b.vy < 0 && b.y > 400) bounced = true;
+    if (bounced) minYAfter = Math.min(minYAfter, b.y);
+  }
+  assert.ok(maxY > 540, `床まで落ちていない: ${maxY}`);
+  assert.ok(bounced, '床で跳ね返っていない');
+  assert.ok(minYAfter < 200, `跳ね返った後に高く上がっていない: ${minYAfter}`);
+});

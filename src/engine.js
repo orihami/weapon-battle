@@ -2,9 +2,12 @@
 // 座標系: 1辺 ARENA の正方形フィールド。時間は秒。
 
 export const ARENA = 600;
-export const BALL_R = 36;
+export const BALL_R = 40;
 export const MAX_HP = 100;
-export const BASE_SPEED = 180;
+// 重力(下向き)。ボールは床と壁で跳ね返り、天井近くまで跳ね上がる
+export const GRAVITY = 1000;
+// 横方向の初速の目安(ステータス表示などでも使う「基準の速さ」)
+export const BASE_SPEED = 300;
 // 武器の回転速度にかける倍率(定義側の数値を読みやすく保つため)
 export const SPIN_SCALE = 1.8;
 export const DT = 1 / 120;
@@ -80,7 +83,7 @@ function makeBall(def, id, x, y, angle) {
     x,
     y,
     vx: Math.cos(angle) * BASE_SPEED,
-    vy: Math.sin(angle) * BASE_SPEED,
+    vy: Math.sin(angle) * BASE_SPEED * 0.6,
     r: BALL_R,
     hp: MAX_HP,
     maxHp: MAX_HP,
@@ -216,36 +219,38 @@ function stepStatus(world, b, dt) {
   b.dotTick += dt;
   if (b.dotTick >= 0.5) {
     b.dotTick -= 0.5;
-    if (b.poison > 0) dealDamage(world, world.balls[b.poisonSrc] || null, b, b.poison * 0.5 * 0.5, { kind: 'poison' });
+    if (b.poison > 0) dealDamage(world, world.balls[b.poisonSrc] || null, b, b.poison * 0.3 * 0.5, { kind: 'poison' });
     if (b.burnT > 0) dealDamage(world, world.balls[b.burnSrc] || null, b, b.burnDps * 0.5, { kind: 'burn' });
   }
   if (b.burnT > 0) b.burnT -= dt;
 }
 
-// 進む向きを相手の方へ少しずつ曲げる(遠くから撃つ武器は控えめ)
-function steer(b, foe, dt) {
-  const rate = (b.def.chase ?? (b.def.kind === 'ranged' ? 0.5 : 3)) * dt;
-  if (rate === 0) return;
-  const cur = Math.atan2(b.vy, b.vx);
-  const want = Math.atan2(foe.y - b.y, foe.x - b.x);
-  const diff = ((want - cur + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
-  const turn = Math.max(-Math.abs(rate), Math.min(Math.abs(rate), diff)) * Math.sign(rate);
-  const sp = Math.hypot(b.vx, b.vy);
-  b.vx = Math.cos(cur + turn) * sp;
-  b.vy = Math.sin(cur + turn) * sp;
+// ボールの「元気さ」= 運動エネルギー + 位置エネルギー。
+// ぶつかったりノックバックで増減しても、少しずつこの値へ戻す(ずっと跳ね続ける)
+function targetEnergy(b) {
+  const e0 = GRAVITY * (ARENA - 2 * b.r) * 0.92 + 0.5 * BASE_SPEED * BASE_SPEED * 0.5;
+  return e0 * b.speedMul * b.speedMul;
 }
 
 function moveBall(b, dt) {
-  const speed = Math.hypot(b.vx, b.vy) || 1;
-  const slowF = 1 - b.slow;
-  const target = BASE_SPEED * b.speedMul * slowF * (b.stun > 0 ? 0.6 : 1);
-  // ノックバックで速くなっても徐々に基本速度へ戻す(止まりもしない)
-  const k = Math.min(1, dt * 2.5);
-  const next = speed + (target - speed) * k;
-  b.vx *= next / speed;
-  b.vy *= next / speed;
-  b.x += b.vx * dt;
-  b.y += b.vy * dt;
+  // 氷で遅くなったボールは時間がゆっくり進む(軌道はそのまま)
+  const f = dt * (1 - b.slow);
+  const floorY = ARENA - b.r;
+  const pe = GRAVITY * (floorY - b.y);
+  const ke = 0.5 * (b.vx * b.vx + b.vy * b.vy);
+  const wantKe = targetEnergy(b) - pe;
+  if (wantKe > 1 && ke > 1) {
+    const k = Math.sqrt(wantKe / ke);
+    const blend = 1 + (k - 1) * Math.min(1, dt * 1.2);
+    b.vx *= blend;
+    b.vy *= blend;
+  }
+  // 横に全く動かなくなると単調になるので、最低限の横速度を保つ
+  const minVx = 90 * b.speedMul;
+  if (Math.abs(b.vx) < minVx) b.vx += Math.sign(b.vx || 1) * Math.min(minVx - Math.abs(b.vx), 200 * dt);
+  b.vy += GRAVITY * f;
+  b.x += b.vx * f;
+  b.y += b.vy * f;
   if (b.x < b.r) {
     b.x = b.r;
     b.vx = Math.abs(b.vx);
@@ -256,8 +261,8 @@ function moveBall(b, dt) {
   if (b.y < b.r) {
     b.y = b.r;
     b.vy = Math.abs(b.vy);
-  } else if (b.y > ARENA - b.r) {
-    b.y = ARENA - b.r;
+  } else if (b.y > floorY) {
+    b.y = floorY;
     b.vy = -Math.abs(b.vy);
   }
 }
@@ -401,7 +406,6 @@ export function step(world, dt = DT) {
       ball.angle += ball.spin * SPIN_SCALE * (1 - ball.slow) * dt;
       if (ball.def.update) ball.def.update(world, ball, foe, dt);
     }
-    steer(ball, foe, dt);
     moveBall(ball, dt);
   }
   collideBalls(world, a, b);

@@ -1,18 +1,23 @@
 # HANDOFF
 
-- 最終更新: 2026-10-22 16:40（日本時間） / 作業場所: GitHub（クラウドのClaude Code）
+- 最終更新: 2026-10-22 17:15（日本時間） / 作業場所: GitHub（クラウドのClaude Code）
 
 ## 現在の状態
 
 - 初版を作成。ウェブアプリ（HTML/CSS/JS、ビルドなし）。武器24種、攻撃が当たると能力値が成長。
 - ローカル（クラウド環境）で確認済み: ユニットテスト8件成功、Chromiumでのブラウザテスト成功（剣vs短剣が決着まで進む、武器選択、全武器の描画でエラーなし）。
-- 総当たりの勝率は全武器 29〜67%（`npm run balance 4`）。
+- 2026-10-22 ユーザーの動画（earclacks の Orb VS Scythe）をコマ解析し、動きを作り直した:
+  - 相手を追いかける動き → **重力で放物線を描いて跳ね回る**動き（床・壁で跳ね返り、天井近くまで戻る。運動＋位置エネルギーを一定に保つ）
+  - 武器をボールの直径くらいの長さに、ドットを粗く・太めに。オーブの光の輪は広がって消えるのをくり返す
+  - 総当たりの勝率は全武器 28〜71%（`npm run balance 4`）、試合は30〜75秒程度
 
 - GitHub Actions 初回実行（ユニットテスト・ブラウザテスト・gh-pages への公開）成功: https://github.com/orihami/weapon-battle/actions/runs/39739865049
 
+- GitHub Pages はユーザーが有効化済み（gh-pages ブランチから配信）。https://orihami.github.io/weapon-battle/
+
 ## 進行中のこと
 
-- GitHub Pages が自動では有効にならなかった（公開URLは404）。ユーザーの設定待ち。
+- 重力版の push 後の CI と公開の確認。
 
 ## 次にやること
 
@@ -27,4 +32,4 @@
 
 ## ユーザーに頼んでいること
 
-- リポジトリの Settings → Pages → Build and deployment の Source を「Deploy from a branch」、Branch を `gh-pages` / `/(root)` にして Save。設定後、https://orihami.github.io/weapon-battle/ が開けるか確認する。
+- 重力版を実際に触って、動画のイメージに近いかの感想。

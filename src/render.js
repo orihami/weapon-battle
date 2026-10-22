@@ -3,7 +3,7 @@
 
 import { ARENA, createBattle } from './engine.js';
 
-const LOW = 240; // 低解像度キャンバスの1辺(px)
+const LOW = 168; // 低解像度キャンバスの1辺(px)。小さいほどドットが粗くなる
 const OUT = '#1a1a1a';
 const STEEL = '#e9edf2';
 const STEEL_D = '#9aa3ad';
@@ -378,7 +378,7 @@ export class Renderer {
     ctx.setTransform(LOW / ARENA, 0, 0, LOW / ARENA, sx * (LOW / ARENA), sy * (LOW / ARENA));
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 3.5;
     ctx.strokeStyle = OUT;
 
     if (world) {
@@ -432,7 +432,7 @@ export class Renderer {
       for (const b of world.balls) {
         if (b.dead) continue;
         const hp = Math.ceil(b.hp);
-        main.font = `${hp >= 100 ? 26 : 30}px ${NUM_FONT}`;
+        main.font = `${hp >= 100 ? 34 : 40}px ${NUM_FONT}`;
         main.fillStyle = b.flash > 0 ? '#e8484d' : textColorFor(b.def.color);
         main.fillText(String(hp), b.x, b.y + 1);
       }
@@ -455,8 +455,10 @@ export class Renderer {
     if (b.dead) return;
     const id = b.def.id;
     if (id === 'orb') {
+      const fade = b.w.phase > 0.8 ? 1 - (b.w.phase - 0.8) / 0.2 : 1;
+      ctx.globalAlpha = fade;
       ctx.beginPath();
-      ctx.arc(b.x, b.y, b.w.range, 0, Math.PI * 2);
+      ctx.arc(b.x, b.y, b.w.cur, 0, Math.PI * 2);
       ctx.fillStyle = hexA('#5ad6c4', 0.13);
       ctx.fill();
       ctx.save();
@@ -464,6 +466,7 @@ export class Renderer {
       ctx.lineWidth = 4;
       ctx.stroke();
       ctx.restore();
+      ctx.globalAlpha = 1;
     } else if (id === 'trident') {
       ctx.save();
       ctx.strokeStyle = 'rgba(120,120,190,0.35)';
@@ -502,6 +505,8 @@ export class Renderer {
       ctx.save();
       ctx.translate(b.x, b.y);
       ctx.rotate(b.angle + bl.off);
+      // 動画のドット絵のように太めに見せる(当たり判定の太さは変えない)
+      ctx.scale(1, 1.5);
       fn(ctx, bl, t);
       ctx.restore();
     }
@@ -544,8 +549,9 @@ export class Renderer {
     const held = HELD[def.id];
     if (held) {
       ctx.save();
-      ctx.translate(b.x + Math.cos(b.angle) * (b.r + 12), b.y + Math.sin(b.angle) * (b.r + 12));
+      ctx.translate(b.x + Math.cos(b.angle) * (b.r + 16), b.y + Math.sin(b.angle) * (b.r + 16));
       ctx.rotate(b.angle);
+      ctx.scale(1.5, 1.5);
       held(ctx, b, t);
       ctx.restore();
     }

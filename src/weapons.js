@@ -4,6 +4,7 @@
 import {
   ARENA,
   BASE_SPEED,
+  GRAVITY,
   makeBlade,
   landHit,
   dealDamage,
@@ -63,7 +64,9 @@ function melee(id, o) {
     init(b) {
       b.w = { ...o.state };
       setSpin(b, o.spin);
-      b.blades = [makeBlade({ sprite: id, ...o.blade, damage: o.damage })];
+      // 動画に合わせて武器を長め(ボールの直径くらい外へ出る)にする。盾は体に沿わせるので除く
+      const reach = id === 'shield' ? 0 : 26;
+      b.blades = [makeBlade({ sprite: id, ...o.blade, rOut: o.blade.rOut + reach, damage: o.damage })];
       if (o.after) o.after(b);
     },
     ...o.extra,
@@ -89,7 +92,7 @@ export const WEAPONS = [
   },
   {
     ...melee('dagger', {
-      spin: 8,
+      spin: 10,
       state: { dmg: 2 },
       blade: { rIn: 20, rOut: 68, w: 8, cd: 0.1 },
       damage: (w, me) => me.w.dmg,
@@ -100,7 +103,7 @@ export const WEAPONS = [
     grow: '当たるたびに 回転速度 アップ',
     stats: (b) => [['回転速度', fmt(Math.round(Math.abs(b.spin) * 30))]],
     onHit(world, me) {
-      setSpin(me, Math.min(40, Math.abs(me.spin) + 1.2));
+      setSpin(me, Math.min(40, Math.abs(me.spin) + 1.5));
     },
   },
   {
@@ -116,7 +119,7 @@ export const WEAPONS = [
     grow: '当たるたびに 長さ +12',
     stats: (b) => [['長さ', fmt(b.blades[0].rOut)]],
     onHit(world, me) {
-      me.blades[0].rOut = Math.min(270, me.blades[0].rOut + 12);
+      me.blades[0].rOut = Math.min(300, me.blades[0].rOut + 12);
     },
   },
   {
@@ -129,22 +132,22 @@ export const WEAPONS = [
     name: '斧',
     en: 'Axe',
     color: '#a0662b',
-    grow: '当たるたびに ダメージ +2(ただし回転が少し遅くなる)',
+    grow: '当たるたびに ダメージ +1.5(ただし回転が少し遅くなる)',
     stats: (b) => [
       ['ダメージ', fmt(b.w.dmg)],
       ['回転速度', fmt(Math.round(Math.abs(b.spin) * 30))],
     ],
     onHit(world, me) {
-      me.w.dmg += 2;
-      setSpin(me, Math.max(1.2, Math.abs(me.spin) * 0.94));
+      me.w.dmg += 1.5;
+      setSpin(me, Math.max(1.2, Math.abs(me.spin) * 0.92));
     },
   },
   {
     ...melee('hammer', {
-      spin: 2.9,
+      spin: 3.4,
       state: { stun: 0.3 },
       blade: { rIn: 22, rOut: 90, w: 16, knock: 320 },
-      damage: 4,
+      damage: 5,
     }),
     name: 'ハンマー',
     en: 'Hammer',
@@ -198,7 +201,7 @@ export const WEAPONS = [
       spin: 4,
       state: {},
       blade: { rIn: 26, rOut: 120, w: 7, knock: 80, parry: false },
-      damage: 4,
+      damage: 3,
     }),
     name: 'ムチ',
     en: 'Whip',
@@ -206,7 +209,7 @@ export const WEAPONS = [
     grow: '当たるたびに 長さ +10(刃で防がれない)',
     stats: (b) => [['長さ', fmt(b.blades[0].rOut)]],
     onHit(world, me) {
-      me.blades[0].rOut = Math.min(290, me.blades[0].rOut + 10);
+      me.blades[0].rOut = Math.min(320, me.blades[0].rOut + 10);
     },
   },
   {
@@ -238,7 +241,7 @@ export const WEAPONS = [
   {
     ...melee('scepter', {
       spin: 4,
-      state: { heal: 1 },
+      state: { heal: 2 },
       blade: { rIn: 22, rOut: 88, w: 10 },
       damage: 3,
     }),
@@ -255,17 +258,17 @@ export const WEAPONS = [
   {
     ...melee('lance', {
       spin: 0,
-      state: { joust: 3 },
-      blade: { rIn: 20, rOut: 140, w: 8, cd: 0.5, knock: 220 },
+      state: { joust: 1 },
+      blade: { rIn: 20, rOut: 120, w: 8, cd: 0.7, knock: 220 },
       damage(world, me) {
         const sp = Math.hypot(me.vx, me.vy);
-        return Math.max(1, Math.round(me.w.joust * (sp / BASE_SPEED)));
+        return Math.max(1, Math.round(me.w.joust * (sp / (BASE_SPEED * 2))));
       },
     }),
     name: 'ランス',
     en: 'Lance',
     color: '#d9c25b',
-    grow: '当たるたびに 突撃ダメージ +1(進む向きに構える)',
+    grow: '当たるたびに 突撃ダメージ +0.5(速いほど痛い・進む向きに構える)',
     stats: (b) => [['突撃ダメージ', fmt(b.w.joust)]],
     update(world, me, foe, dt) {
       // 進行方向へ槍先を向ける
@@ -278,14 +281,14 @@ export const WEAPONS = [
       me.vy = -me.vy;
     },
     onHit(world, me) {
-      me.w.joust += 1;
+      me.w.joust += 0.5;
     },
   },
   {
     ...melee('shield', {
       spin: 2.4,
       state: { width: 2.5, reflect: 1 },
-      blade: { rIn: 34, rOut: 46, w: 35, knock: 260 },
+      blade: { rIn: 40, rOut: 54, w: 35, knock: 260 },
       damage: 1,
     }),
     name: '盾',
@@ -314,9 +317,10 @@ export const WEAPONS = [
     name: 'オーブ',
     en: 'Orb',
     color: '#5ad6c4',
-    grow: '範囲内の相手にダメージ。当たるたびに 範囲とDPSが成長',
+    grow: '広がる光の輪の中の相手にダメージ。当たるたびに 範囲とDPSが成長',
     init(b) {
-      b.w = { range: 70, dps: 2, tick: 0 };
+      // 光の輪は 0 → range まで広がって消える、をくり返す
+      b.w = { range: 140, dps: 5, tick: 0, phase: 0, cur: 0 };
       setSpin(b, 2);
     },
     stats: (b) => [
@@ -324,16 +328,18 @@ export const WEAPONS = [
       ['範囲', fmt(Math.round(b.w.range))],
     ],
     update(world, me, foe, dt) {
+      me.w.phase = (me.w.phase + dt / 1.4) % 1;
+      me.w.cur = me.w.range * Math.min(1, me.w.phase * 1.25);
       me.w.tick += dt;
-      if (me.w.tick >= 0.5) {
-        me.w.tick -= 0.5;
-        if (Math.hypot(foe.x - me.x, foe.y - me.y) < me.w.range + foe.r) {
-          landHit(world, me, foe, me.w.dps * 0.5, { kind: 'aura' });
+      if (me.w.tick >= 0.25) {
+        me.w.tick -= 0.25;
+        if (Math.hypot(foe.x - me.x, foe.y - me.y) < me.w.cur + foe.r) {
+          landHit(world, me, foe, me.w.dps * 0.25, { kind: 'aura' });
         }
       }
     },
     onHit(world, me) {
-      me.w.range = Math.min(280, me.w.range + 5);
+      me.w.range = Math.min(300, me.w.range + 3);
       me.w.dps += 0.25;
     },
   },
@@ -345,7 +351,7 @@ export const WEAPONS = [
     color: '#119c9c',
     grow: '当たるたびに 周回する玉 +1',
     init(b) {
-      b.w = { n: 2, cds: [0, 0], dist: 72 };
+      b.w = { n: 2, cds: [0, 0], dist: 95 };
       setSpin(b, 3);
     },
     stats: (b) => [['周回玉', fmt(b.w.n)]],
@@ -366,13 +372,13 @@ export const WEAPONS = [
         }
         const [x, y] = pts[i];
         if (Math.hypot(foe.x - x, foe.y - y) < foe.r + 9) {
-          me.w.cds[i] = 0.5;
+          me.w.cds[i] = 0.6;
           landHit(world, me, foe, 1, { kind: 'orbital', x, y });
         }
       }
     },
     onHit(world, me) {
-      if (me.w.n < 14) {
+      if (me.w.n < 10) {
         me.w.n += 1;
         me.w.cds.push(0.3);
       }
@@ -386,7 +392,7 @@ export const WEAPONS = [
     color: '#e0725a',
     grow: '当たるたびに ダメージとトゲ球の大きさ +1',
     init(b) {
-      b.w = { dmg: 2, size: 12, len: 95, hx: b.x + 95, hy: b.y, hvx: 0, hvy: 0, cd: 0 };
+      b.w = { dmg: 3, size: 14, len: 115, hx: b.x + 95, hy: b.y, hvx: 0, hvy: 0, cd: 0 };
       setSpin(b, 4);
     },
     stats: (b) => [['ダメージ/大きさ', fmt(b.w.dmg)]],
@@ -400,6 +406,7 @@ export const WEAPONS = [
       const ty = (dx / d) * Math.sign(me.spin);
       w.hvx += tx * 1400 * dt;
       w.hvy += ty * 1400 * dt;
+      w.hvy += GRAVITY * 0.5 * dt;
       w.hvx *= 1 - Math.min(1, dt * 1.5);
       w.hvy *= 1 - Math.min(1, dt * 1.5);
       w.hx += w.hvx * dt;
@@ -478,14 +485,14 @@ export const WEAPONS = [
     color: '#6fae2a',
     grow: '矢が当たるたびに ダメージ +1',
     init(b) {
-      b.w = { dmg: 1, timer: 0.6 };
+      b.w = { dmg: 2, timer: 0.6 };
     },
     stats: (b) => [['ダメージ', fmt(b.w.dmg)]],
     update(world, me, foe, dt) {
       me.angle = aimAt(me, foe);
       me.w.timer -= dt;
       if (me.w.timer > 0) return;
-      me.w.timer = 1.6;
+      me.w.timer = 1.2;
       shoot(world, me, me.angle, 650, { kind: 'bolt', r: 5, life: 2, damage: me.w.dmg, onTouch: hitOnce() });
     },
     onHit(world, me) {
@@ -538,13 +545,14 @@ export const WEAPONS = [
       shoot(world, me, me.angle + (world.rng() - 0.5) * 0.3, 380, {
         kind: 'potion',
         r: 8,
+        blockable: false,
         life: 0.9,
         spinRate: 10,
         update(world, p, owner, foe, dt) {
           p.angle += p.spinRate * dt;
         },
-        onTouch: (world, p, owner, foe) => explode(world, p, owner, foe, 55, dmg, 'potion'),
-        onExpire: (world, p, owner, foe) => explode(world, p, owner, foe, 55, dmg, 'potion'),
+        onTouch: (world, p, owner, foe) => explode(world, p, owner, foe, 70, dmg, 'potion'),
+        onExpire: (world, p, owner, foe) => explode(world, p, owner, foe, 70, dmg, 'potion'),
       });
     },
     onHit(world, me) {
@@ -566,7 +574,7 @@ export const WEAPONS = [
       me.angle = aimAt(me, foe);
       me.w.timer -= dt;
       if (me.w.timer > 0) return;
-      me.w.timer = 2.2;
+      me.w.timer = 2.6;
       shoot(world, me, me.angle + (world.rng() - 0.5) * 1.2, 300, {
         kind: 'fireball',
         r: 8,
@@ -606,19 +614,20 @@ export const WEAPONS = [
     color: '#58b7ff',
     grow: '当たるたびに 相手を遅くする量 +5%',
     init(b) {
-      b.w = { slow: 15, timer: 0.6 };
+      b.w = { slow: 20, timer: 0.6 };
     },
     stats: (b) => [['減速', fmt(b.w.slow) + '%']],
     update(world, me, foe, dt) {
       me.angle = aimAt(me, foe);
       me.w.timer -= dt;
       if (me.w.timer > 0) return;
-      me.w.timer = 1.2;
+      me.w.timer = 1.0;
       shoot(world, me, me.angle, 460, {
         kind: 'frost',
         r: 7,
+        blockable: false,
         life: 2,
-        damage: 3,
+        damage: 4,
         onTouch(world, p, owner, foe) {
           p.dead = true;
           const slow = owner.w.slow / 100;
@@ -641,7 +650,7 @@ export const WEAPONS = [
     color: '#d1a03f',
     grow: '当たるたびに ダメージ +1(戻ってくる)',
     init(b) {
-      b.w = { dmg: 2, out: false, timer: 0.5 };
+      b.w = { dmg: 3, out: false, timer: 0.5 };
     },
     stats: (b) => [['ダメージ', fmt(b.w.dmg)]],
     update(world, me, foe, dt) {
@@ -708,10 +717,10 @@ export const WEAPONS = [
     },
     stats: (b) => [
       ['最高速度', fmt(Math.round(b.speedMul * 10) / 10)],
-      ['ダメージ', fmt(Math.round(b.speedMul * 2.2))],
+      ['ダメージ', fmt(Math.round(b.speedMul * 1.8))],
     ],
     onContact(world, me, foe) {
-      landHit(world, me, foe, Math.round(me.speedMul * 2.2), { kind: 'punch' });
+      landHit(world, me, foe, Math.round(me.speedMul * 1.8), { kind: 'punch' });
       knockback(me, foe, 160);
     },
     update(world, me) {
@@ -727,9 +736,9 @@ export const WEAPONS = [
     name: 'トゲトゲ',
     en: 'Spikes',
     color: '#5c6b2e',
-    grow: 'ぶつかるたびに トゲダメージ +1(近接攻撃を受けると反撃)',
+    grow: 'ぶつかるたびに トゲダメージ +0.25(近接攻撃を受けると反撃)',
     init(b) {
-      b.w = { thorns: 2 };
+      b.w = { thorns: 1 };
       b.speedMul = 1.0;
       setSpin(b, 1.5);
     },
@@ -739,11 +748,11 @@ export const WEAPONS = [
       knockback(me, foe, 120);
     },
     onTakeDamage(world, me, src, amount, opts) {
-      if (src && opts.kind === 'melee') dealDamage(world, me, src, Math.ceil(me.w.thorns / 2), { kind: 'reflect' });
+      if (src && opts.kind === 'melee') dealDamage(world, me, src, Math.ceil(me.w.thorns / 3), { kind: 'reflect' });
       return amount;
     },
     onHit(world, me) {
-      me.w.thorns += 0.5;
+      me.w.thorns += 0.25;
     },
   },
 ];
