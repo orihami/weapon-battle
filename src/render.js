@@ -25,6 +25,17 @@ function hexA(hex, a) {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
+function hslHex(h) {
+  // hexA() で使うため HSL(彩度95%・明度60%)を #rrggbb にする
+  const f = (n) => {
+    const k = (n + h / 30) % 12;
+    const a = 0.95 * Math.min(0.6, 0.4);
+    const c = 0.6 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(c * 255).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
 function poly(ctx, pts, fill) {
   ctx.beginPath();
   ctx.moveTo(pts[0][0], pts[0][1]);
@@ -98,6 +109,9 @@ const BLADE_SPRITES = {
   },
   dagger(ctx, b) {
     swordShape(ctx, b.rIn, b.rOut, 5.5, { grip: 12 });
+  },
+  greatsword(ctx, b) {
+    swordShape(ctx, b.rIn, b.rOut, 11, { grip: 20, guard: '#6d7fa3' });
   },
   dual(ctx, b) {
     swordShape(ctx, b.rIn, b.rOut, 6, { guard: '#d94f8a' });
@@ -205,6 +219,51 @@ const BLADE_SPRITES = {
 
 // 遠距離武器などの「手に持っている物」
 const HELD = {
+  blackhole(ctx) {
+    circle(ctx, 0, 0, 10, '#0b0614');
+    ctx.strokeStyle = '#b48cff';
+    ctx.beginPath();
+    ctx.arc(0, 0, 13, 0, 4);
+    ctx.stroke();
+  },
+  fireworks(ctx) {
+    poly(ctx, [[-10, -5], [8, -5], [14, 0], [8, 5], [-10, 5]], '#ff3f8e');
+  },
+  laser(ctx) {
+    rect(ctx, -10, -7, 24, 14, '#5a1a24');
+    rect(ctx, 14, -3, 10, 6, '#e8233f');
+  },
+  slime(ctx) {
+    poly(ctx, [[-10, 6], [-8, -4], [0, -10], [8, -4], [10, 6]], '#4fd36b');
+  },
+  tornado(ctx) {
+    poly(ctx, [[-12, -10], [12, -10], [3, 12], [-3, 12]], '#9fb4c7');
+  },
+  yoyo(ctx, ball) {
+    if (ball.w.out) return;
+    circle(ctx, 0, 0, 10, '#e04848');
+  },
+  bats(ctx) {
+    poly(ctx, [[0, -3], [-14, -8], [-8, 4], [0, 2], [8, 4], [14, -8]], '#3a2448');
+  },
+  ricochet(ctx) {
+    rect(ctx, -10, -5, 22, 10, '#8a6d1a');
+    rect(ctx, 10, -3, 8, 6, '#c9a227');
+  },
+  rocket(ctx) {
+    rect(ctx, -14, -7, 30, 14, '#4f5b4a');
+    circle(ctx, 16, 0, 6, '#d1452f');
+  },
+  sonic(ctx, ball, t) {
+    circle(ctx, 0, 0, 8, '#2a8aa0');
+    ctx.strokeStyle = `rgba(74,198,224,${0.5 + 0.5 * Math.sin(t * 10)})`;
+    ctx.beginPath();
+    ctx.arc(0, 0, 14, -1, 1);
+    ctx.stroke();
+  },
+  snowball(ctx) {
+    circle(ctx, 0, 0, 9, '#f4fbff');
+  },
   cluster(ctx, ball, t) {
     circle(ctx, 0, 0, 11, '#3a2b2b');
     circle(ctx, -4, -3, 3, '#e0662a', false);
@@ -318,6 +377,127 @@ const HELD = {
 };
 
 const PROJ = {
+  hole(ctx, p) {
+    const k = Math.min(1, p.age / 0.3) * Math.min(1, (p.life - p.age) / 0.3);
+    ctx.save();
+    ctx.globalAlpha = 0.25 * k;
+    circle(ctx, 0, 0, p.r * 2.2, '#7b4fd6', false);
+    ctx.globalAlpha = k;
+    ctx.rotate(p.age * 6);
+    ctx.strokeStyle = '#b48cff';
+    ctx.lineWidth = 4;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.arc(0, 0, p.r * (0.6 + i * 0.25), i * 2, i * 2 + 2.2);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = OUT;
+    ctx.lineWidth = 2.5;
+    circle(ctx, 0, 0, p.r * 0.55, '#0b0614');
+    ctx.restore();
+  },
+  rocketup(ctx, p) {
+    ctx.rotate(Math.atan2(p.vy, p.vx));
+    poly(ctx, [[-8, -4], [6, -4], [11, 0], [6, 4], [-8, 4]], '#ff3f8e');
+    circle(ctx, -12, 0, 3 + Math.random() * 2, '#ffd23f', false);
+  },
+  spark(ctx, p) {
+    const k = p.age / p.life;
+    ctx.save();
+    ctx.globalAlpha = 1 - k * 0.5;
+    circle(ctx, 0, 0, p.r * (1.2 - k * 0.5), `hsl(${p.hue},95%,60%)`, false);
+    circle(ctx, 0, 0, p.r * 0.5, '#ffffff', false);
+    ctx.restore();
+  },
+  laser(ctx, p) {
+    if (p.age >= p.charge) return;
+    // 溜め: 細い照準線
+    const k = p.age / p.charge;
+    ctx.save();
+    ctx.rotate(p.angle);
+    ctx.strokeStyle = `rgba(232,35,63,${0.25 + 0.5 * k})`;
+    ctx.lineWidth = 1.5 + k * 3;
+    ctx.setLineDash([10, 8]);
+    ctx.beginPath();
+    ctx.moveTo(30, 0);
+    ctx.lineTo(1000, 0);
+    ctx.stroke();
+    ctx.restore();
+    circle(ctx, Math.cos(p.angle) * 46, Math.sin(p.angle) * 46, 4 + k * 8, '#ff6680', false);
+  },
+  slime(ctx, p) {
+    const sq = 1 + Math.sin(p.age * 14) * 0.12;
+    ctx.save();
+    ctx.scale(sq, 1 / sq);
+    poly(ctx, [[-p.r, p.r * 0.6], [-p.r * 0.8, -p.r * 0.4], [0, -p.r], [p.r * 0.8, -p.r * 0.4], [p.r, p.r * 0.6]], '#4fd36b');
+    ctx.fillStyle = OUT;
+    ctx.fillRect(-p.r * 0.4, -p.r * 0.2, 3, 3);
+    ctx.fillRect(p.r * 0.2, -p.r * 0.2, 3, 3);
+    ctx.restore();
+  },
+  tornado(ctx, p) {
+    ctx.save();
+    ctx.globalAlpha = 0.75;
+    ctx.strokeStyle = '#7f95a8';
+    ctx.lineWidth = 5;
+    for (let i = 0; i < 5; i++) {
+      const y = p.r - i * (p.r * 0.45);
+      const w = p.r * (0.35 + i * 0.18);
+      ctx.beginPath();
+      ctx.ellipse(Math.sin(p.angle + i) * 6, y, w, w * 0.3, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  },
+  yoyo(ctx, p, world) {
+    const owner = world.balls[p.owner];
+    ctx.save();
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(owner.x - p.x, owner.y - p.y);
+    ctx.stroke();
+    ctx.restore();
+    ctx.rotate(p.angle);
+    circle(ctx, 0, 0, p.r, '#e04848');
+    rect(ctx, -p.r, -2, p.r * 2, 4, '#ffffff');
+  },
+  bat(ctx, p) {
+    const f = Math.sin(p.flap) * 0.6;
+    ctx.rotate(Math.atan2(p.vy, p.vx) + Math.PI / 2);
+    poly(ctx, [[0, -3], [-14, -6 + f * 10], [-8, 4], [0, 2], [8, 4], [14, -6 + f * 10]], '#3a2448');
+    circle(ctx, 0, 0, 4, '#5b3a6e');
+  },
+  ricochet(ctx, p) {
+    ctx.save();
+    ctx.globalAlpha = 0.4;
+    circle(ctx, -p.vx * 0.02, -p.vy * 0.02, p.r * 0.8, '#ffd23f', false);
+    ctx.restore();
+    circle(ctx, 0, 0, p.r, '#ffcf33');
+  },
+  rocket(ctx, p) {
+    ctx.rotate(p.angle || Math.atan2(p.vy, p.vx));
+    poly(ctx, [[-12, -5], [6, -5], [14, 0], [6, 5], [-12, 5]], '#d1452f');
+    poly(ctx, [[-12, -5], [-16, -10], [-8, -5]], '#7a2c1a');
+    poly(ctx, [[-12, 5], [-16, 10], [-8, 5]], '#7a2c1a');
+    circle(ctx, -18, 0, 4 + Math.random() * 3, '#ffb03a', false);
+  },
+  wave(ctx, p) {
+    if (p.ring <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1 - p.ring / 170);
+    ctx.strokeStyle = '#4ac6e0';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(0, 0, p.ring, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  },
+  snow(ctx, p) {
+    circle(ctx, 0, 0, p.r, '#f4fbff');
+    circle(ctx, -p.r * 0.3, -p.r * 0.3, p.r * 0.3, '#d6ecff', false);
+  },
   minibomb(ctx, p) {
     circle(ctx, 0, 0, p.r, '#3a2b2b');
     circle(ctx, p.r * 0.5, -p.r * 0.7, 2, '#ffcc33', false);
@@ -437,6 +617,8 @@ export class Renderer {
     this.rings = [];
     this.bolts = [];
     this.lastSurge = {};
+    this.beams = [];
+    this.flashA = 0;
     this.shake = 0;
     this.time = 0;
   }
@@ -484,9 +666,20 @@ export class Renderer {
         this.burst(e.x, e.y, 8, '#ffd23f');
         this.rings.push({ x: e.x, y: e.y, r0: 6, r1: 30, life: 0.25, age: 0, color: '#ffd23f' });
       } else if (e.type === 'zap') {
-        this.bolts.push({ x: e.x, y: e.y, life: 0.22, age: 0, seed: Math.random() * 1000 });
-        this.burst(e.x, e.y, 10, '#f4d03f');
-        this.shake = Math.min(10, this.shake + 3);
+        this.bolts.push({ x: e.x, y: e.y, life: e.big ? 0.32 : 0.24, age: 0, seed: Math.random() * 1000, big: e.big !== false });
+        this.burst(e.x, e.y, e.big === false ? 10 : 18, '#bfe0ff', 1.4);
+        this.rings.push({ x: e.x, y: e.y, r0: 10, r1: e.big === false ? 50 : 70, life: 0.25, age: 0, color: '#9fd0ff', fill: true, strong: true });
+        this.shake = Math.min(14, this.shake + (e.big === false ? 4 : 7));
+        this.flashA = Math.max(this.flashA, e.big === false ? 0.25 : 0.4);
+      } else if (e.type === 'laser') {
+        this.beams.push({ x: e.x, y: e.y, angle: e.angle, width: e.width, life: 0.3, age: 0 });
+        this.shake = Math.min(14, this.shake + 8);
+        this.flashA = Math.max(this.flashA, 0.3);
+      } else if (e.type === 'burst') {
+        // 花火が弾けた
+        const c = `hsl(${e.hue},95%,60%)`;
+        this.rings.push({ x: e.x, y: e.y, r0: 6, r1: 60, life: 0.3, age: 0, color: hslHex(e.hue), fill: true });
+        this.burst(e.x, e.y, 10, c, 1.2);
       } else if (e.type === 'boom') {
         const potion = e.kind === 'potion';
         this.rings.push({ x: e.x, y: e.y, r0: e.radius * 0.3, r1: e.radius, life: 0.3, age: 0, color: potion ? '#d6335a' : '#ff7a1a', fill: true, strong: true });
@@ -523,6 +716,9 @@ export class Renderer {
     this.texts = this.texts.filter((t) => t.age < t.life);
     for (const r of this.rings) r.age += dt;
     for (const b of this.bolts) b.age += dt;
+    for (const b of this.beams) b.age += dt;
+    this.beams = this.beams.filter((b) => b.age < b.life);
+    this.flashA = Math.max(0, this.flashA - dt * 3);
     this.bolts = this.bolts.filter((b) => b.age < b.life);
     this.rings = this.rings.filter((r) => r.age < r.life);
   }
@@ -548,7 +744,7 @@ export class Renderer {
         if (!fn) continue;
         ctx.save();
         ctx.translate(p.x, p.y);
-        fn(ctx, p);
+        fn(ctx, p, world);
         ctx.restore();
       }
       for (const b of world.balls) {
@@ -572,24 +768,57 @@ export class Renderer {
       ctx.restore();
     }
     for (const bo of this.bolts) {
-      // 稲妻: 上からジグザグに落ちる線
+      // 稲妻: 上からジグザグに落ちる太い線 + 枝分かれ
+      const k = bo.age / bo.life;
+      const pts = [[bo.x + Math.sin(bo.seed) * 40, 0]];
+      const n = 9;
+      for (let i = 1; i <= n; i++) {
+        const y = (bo.y * i) / n;
+        pts.push([i === n ? bo.x : bo.x + Math.sin(bo.seed + i * 1.7) * (bo.big ? 34 : 22), y]);
+      }
+      const branches = [];
+      for (let i = 2; i < n - 1; i += 3) {
+        const [x, y] = pts[i];
+        const dir = Math.sin(bo.seed * 3 + i) > 0 ? 1 : -1;
+        branches.push([[x, y], [x + dir * 30, y + 26], [x + dir * 44, y + 60]]);
+      }
       ctx.save();
-      ctx.globalAlpha = 1 - bo.age / bo.life;
-      for (const [w, c] of [[10, '#ffffff'], [5, '#f4d03f']]) {
+      ctx.globalAlpha = 1 - k;
+      const width = bo.big ? 1 : 0.65;
+      for (const [w, c] of [[26 * width, 'rgba(120,170,255,0.35)'], [13 * width, '#ffffff'], [6 * width, '#9fd0ff']]) {
         ctx.lineWidth = w;
         ctx.strokeStyle = c;
-        ctx.beginPath();
-        ctx.moveTo(bo.x + Math.sin(bo.seed) * 30, 0);
-        const n = 7;
-        for (let i = 1; i <= n; i++) {
-          const y = (bo.y * i) / n;
-          const x = i === n ? bo.x : bo.x + Math.sin(bo.seed + i * 1.7) * 26;
-          ctx.lineTo(x, y);
+        for (const line of [pts, ...branches]) {
+          ctx.beginPath();
+          line.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+          ctx.stroke();
         }
+      }
+      // 落ちた場所の光
+      ctx.fillStyle = `rgba(255,255,255,${0.8 * (1 - k)})`;
+      ctx.beginPath();
+      ctx.arc(bo.x, bo.y, (bo.big ? 44 : 30) * (0.6 + k), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    for (const bm of this.beams) {
+      // レーザー: 太い光の帯
+      const k = bm.age / bm.life;
+      const ex = bm.x + Math.cos(bm.angle) * 1000;
+      const ey = bm.y + Math.sin(bm.angle) * 1000;
+      ctx.save();
+      for (const [w, c] of [[bm.width * 2.2, 'rgba(255,60,90,0.35)'], [bm.width, '#ff3355'], [bm.width * 0.4, '#ffffff']]) {
+        ctx.globalAlpha = 1 - k;
+        ctx.lineWidth = w * (1 - k * 0.5);
+        ctx.strokeStyle = c;
+        ctx.beginPath();
+        ctx.moveTo(bm.x, bm.y);
+        ctx.lineTo(ex, ey);
         ctx.stroke();
       }
       ctx.restore();
     }
+
     for (const p of this.particles) {
       const k = 1 - p.age / p.life;
       ctx.fillStyle = p.color;
@@ -603,6 +832,11 @@ export class Renderer {
     main.setTransform(1, 0, 0, 1, 0, 0);
     main.imageSmoothingEnabled = false;
     main.drawImage(this.low, 0, 0, W, W);
+    if (this.flashA > 0) {
+      // 雷やレーザーの瞬間に画面が白く光る
+      main.fillStyle = `rgba(235,245,255,${this.flashA})`;
+      main.fillRect(0, 0, W, W);
+    }
     const s = W / ARENA;
     main.setTransform(s, 0, 0, s, sx * s, sy * s);
     main.textAlign = 'center';

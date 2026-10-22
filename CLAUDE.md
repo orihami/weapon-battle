@@ -10,7 +10,7 @@
 ```
 index.html, style.css     画面
 src/engine.js             シミュレーション本体（DOM非依存。Nodeのテストからそのまま動く）
-src/weapons.js            武器の定義（36種）。onHit で「当たったら成長」を書く
+src/weapons.js            武器の定義（48種）。onHit で「当たったら成長」を書く
 src/render.js             描画（低解像度キャンバスを拡大してドット絵風に）
 src/sound.js              効果音（WebAudioで合成）
 src/main.js               画面の操作・ループ

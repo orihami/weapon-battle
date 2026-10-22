@@ -51,6 +51,7 @@ function newBattle() {
   renderer.texts = [];
   renderer.rings = [];
   renderer.bolts = [];
+  renderer.beams = [];
   $('overlay').hidden = true;
   $('startBtn').textContent = 'スタート';
   updateHeader();

@@ -60,8 +60,15 @@ export class Sound {
       } else if (e.type === 'parry' || e.type === 'block') {
         this.tone('parry', 1400, 0.09, 'triangle', 0.07, 0.7);
       } else if (e.type === 'zap') {
-        this.noise(0.15, 0.08);
-        this.tone('zap', 1800, 0.12, 'sawtooth', 0.04, 0.2);
+        // ゴロゴロ: 低いノイズ + 鋭い高音
+        this.noise(e.big === false ? 0.2 : 0.45, e.big === false ? 0.1 : 0.18);
+        this.tone('zap', 2200, 0.15, 'sawtooth', 0.05, 0.1);
+        this.tone('zapLow', 90, 0.35, 'square', 0.06, 0.5);
+      } else if (e.type === 'laser') {
+        this.tone('laser', 1400, 0.3, 'sawtooth', 0.06, 0.3);
+      } else if (e.type === 'burst') {
+        this.noise(0.2, 0.08);
+        this.tone('burst', 900 + Math.random() * 500, 0.15, 'triangle', 0.04, 1.6);
       } else if (e.type === 'boom') {
         this.noise(0.3);
       } else if (e.type === 'heal') {

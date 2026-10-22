@@ -406,6 +406,7 @@ function projectileStep(world, dt) {
       if (blocked) {
         p.dead = true;
         world.events.push({ type: 'block', x: p.x, y: p.y });
+        if (p.onBlocked) p.onBlocked(world, p, owner, foe);
         if (foe.def.onBlock) foe.def.onBlock(world, foe, owner);
         continue;
       }
