@@ -28,7 +28,7 @@ scripts/balance.mjs       総当たりの勝率表（バランス調整用）
    - `npm run e2e`（クラウド環境では `CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome npm run e2e`）
    - 武器を足したり数値を変えたら `npm run balance` で勝率を確認する。
 4. `main` に push すると GitHub Actions（`.github/workflows/ci.yml`）がテスト → `gh-pages` ブランチへ公開する。
-5. Actions の結果と、公開URLで実際に新しい版が出ていることを確かめてから報告する。**確かめていないことを「できた」と言わない。**
+5. Actions の結果と、公開URLで実際に新しい版が出ていることを確かめてから報告する（ページ最下部の「版:」がコミットの先頭7文字になっているか）。GitHub Pages は10分キャッシュされるので、ユーザーに古い版が見えたら再読み込みを案内する。**確かめていないことを「できた」と言わない。**
 
 ## バランスの方針
 

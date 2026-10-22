@@ -51,6 +51,13 @@ jobs:
           mkdir _site
           cp -r index.html style.css src _site/
           touch _site/.nojekyll
+      - name: 更新がすぐ反映されるよう、読み込むファイルに版番号を付ける
+        # GitHub Pages はファイルを10分キャッシュさせるので、URLに ?v=版 を付けて古いファイルが使われないようにする
+        run: |
+          V="${GITHUB_SHA::7}"
+          sed -i "s#from '\./\([a-z]*\)\.js'#from './\1.js?v=$V'#g" _site/src/*.js
+          sed -i "s#href=\"style.css\"#href=\"style.css?v=$V\"#; s#src=\"src/main.js\"#src=\"src/main.js?v=$V\"#; s#<span id=\"version\">dev</span>#<span id=\"version\">$V</span>#" _site/index.html
+          grep -n "?v=$V" _site/index.html _site/src/*.js
       - name: gh-pages へ push
         run: |
           cd _site

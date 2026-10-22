@@ -20,7 +20,8 @@ html, body {
 }
 
 .app {
-  max-width: 560px;
+  /* PCの大きい画面では、画面の高さに収まる範囲で戦場を大きくする */
+  max-width: clamp(560px, calc(100dvh - 240px), 820px);
   margin: 0 auto;
   padding: 12px 16px calc(32px + env(safe-area-inset-bottom));
 }
@@ -249,4 +250,11 @@ button.primary { background: var(--accent); color: #fff; -webkit-text-stroke: 0;
 @media (min-width: 520px) {
   .picker-grid { grid-template-columns: repeat(4, 1fr); }
   .book-grid { grid-template-columns: 1fr 1fr 1fr; }
+}
+
+.version {
+  margin: 24px 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
 }
