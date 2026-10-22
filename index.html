@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ウェポンバトル</title>
+  <meta name="description" content="武器を持ったボール同士が戦うシミュレーション。攻撃が当たるたびに武器が強くなる。">
+  <meta name="theme-color" content="#fbf2e4">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='55' r='40' fill='%23e8484d' stroke='%23111' stroke-width='6'/%3E%3Cpath d='M58 10 L90 6 L86 38 Z' fill='%23e9edf2' stroke='%23111' stroke-width='5'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=DotGothic16&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="head">
+      <h1 class="title" id="title">
+        <span class="name" id="nameA">剣</span>
+        <span class="vs">VS</span>
+        <span class="name" id="nameB">短剣</span>
+      </h1>
+      <p class="sub" id="subTitle"></p>
+    </header>
+
+    <div class="arena-wrap" id="arenaWrap">
+      <canvas id="arena" aria-label="対戦フィールド"></canvas>
+      <div class="timer" id="timer">0.0</div>
+      <div class="overlay" id="overlay" hidden>
+        <p class="result" id="resultText"></p>
+        <div class="overlay-buttons">
+          <button type="button" id="againBtn" class="primary">もう一度</button>
+          <button type="button" id="nextBtn">別の組み合わせ</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat-col" id="statsA"></div>
+      <div class="stat-col right" id="statsB"></div>
+    </div>
+
+    <div class="row pick-row">
+      <button type="button" class="pick" id="pickA"></button>
+      <button type="button" class="icon-btn" id="swapBtn" aria-label="左右を入れ替え">⇄</button>
+      <button type="button" class="pick" id="pickB"></button>
+    </div>
+
+    <div class="row">
+      <button type="button" class="primary wide" id="startBtn">スタート</button>
+      <button type="button" id="randomBtn">ランダム</button>
+      <button type="button" id="speedBtn" aria-label="再生速度">×1</button>
+      <button type="button" class="icon-btn" id="soundBtn" aria-label="効果音">🔊</button>
+    </div>
+
+    <section class="book">
+      <h2>武器ずかん <small id="bookCount"></small></h2>
+      <p class="hint">武器をタップすると、左（または右）の武器に選べます。数字は今までの勝敗です。</p>
+      <div class="book-grid" id="bookGrid"></div>
+    </section>
+  </main>
+
+  <dialog id="picker">
+    <form method="dialog" class="picker-head">
+      <h2 id="pickerTitle">武器をえらぶ</h2>
+      <button type="submit" class="icon-btn" aria-label="閉じる">✕</button>
+    </form>
+    <div class="picker-grid" id="pickerGrid"></div>
+  </dialog>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

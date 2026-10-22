@@ -1,0 +1,39 @@
+# CLAUDE.md — weapon-battle
+
+武器を持ったボール同士が戦うウェブアプリ（ブラウザで動く）。攻撃が当たるたびに武器の能力値が成長する。
+ビルド不要の素の HTML / CSS / JavaScript（ES Modules）で、GitHub Pages で公開する。
+
+**ユーザーへの返答・報告は日本語で。** 待ち時間や予定を書くときは日本時間を添える。公開URLなどはタップしてすぐ開ける形で書く。
+
+## 構成
+
+```
+index.html, style.css     画面
+src/engine.js             シミュレーション本体（DOM非依存。Nodeのテストからそのまま動く）
+src/weapons.js            武器の定義（24種）。onHit で「当たったら成長」を書く
+src/render.js             描画（低解像度キャンバスを拡大してドット絵風に）
+src/sound.js              効果音（WebAudioで合成）
+src/main.js               画面の操作・ループ
+test/engine.test.js       ユニットテスト（node --test）
+test/e2e.mjs              ブラウザテスト（Playwright。スクショを e2e-artifacts/ へ）
+scripts/balance.mjs       総当たりの勝率表（バランス調整用）
+```
+
+## 開発の手順
+
+1. 実装する。ロジックは `engine.js` / `weapons.js` に置き、DOMに依存させない。
+2. テストを追加・更新する。
+3. ローカルで確認する:
+   - `npm test`（ユニットテスト。全組み合わせの決着・勝率10〜90%も見る）
+   - `npm run e2e`（クラウド環境では `CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome npm run e2e`）
+   - 武器を足したり数値を変えたら `npm run balance` で勝率を確認する。
+4. `main` に push すると GitHub Actions（`.github/workflows/ci.yml`）がテスト → `gh-pages` ブランチへ公開する。
+5. Actions の結果と、公開URLで実際に新しい版が出ていることを確かめてから報告する。**確かめていないことを「できた」と言わない。**
+
+## URL パラメータ
+
+`?a=sword&b=dagger&speed=4&autostart=1` で武器・速度・自動スタートを指定できる（テストや共有用）。武器IDは `src/weapons.js` の `id`。
+
+## 引き継ぎ
+
+作業の区切りごとに `HANDOFF.md` を更新して commit・push する。秘密情報は書かない。
