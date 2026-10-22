@@ -1,6 +1,6 @@
 # HANDOFF
 
-- 最終更新: 2026-10-22 16:20（日本時間） / 作業場所: GitHub（クラウドのClaude Code）
+- 最終更新: 2026-10-22 16:40（日本時間） / 作業場所: GitHub（クラウドのClaude Code）
 
 ## 現在の状態
 
@@ -8,10 +8,11 @@
 - ローカル（クラウド環境）で確認済み: ユニットテスト8件成功、Chromiumでのブラウザテスト成功（剣vs短剣が決着まで進む、武器選択、全武器の描画でエラーなし）。
 - 総当たりの勝率は全武器 29〜67%（`npm run balance 4`）。
 
+- GitHub Actions 初回実行（ユニットテスト・ブラウザテスト・gh-pages への公開）成功: https://github.com/orihami/weapon-battle/actions/runs/39739865049
+
 ## 進行中のこと
 
-- 初回 push 後の GitHub Actions（テスト → gh-pages へ公開）の結果確認。
-- GitHub Pages が自動で有効にならない場合は、ユーザーに Settings → Pages → Source を「Deploy from a branch」/ `gh-pages` / `/(root)` にしてもらう。
+- GitHub Pages が自動では有効にならなかった（公開URLは404）。ユーザーの設定待ち。
 
 ## 次にやること
 
@@ -24,6 +25,6 @@
 - 実際のスマホ（実機ブラウザ）での表示・効果音・操作感。
 - Google Fonts（Anton / DotGothic16）を読み込んだ状態の見た目（テスト環境ではフォントを遮断して代わりの字体で確認）。
 
-## ユーザーの判断待ち
+## ユーザーに頼んでいること
 
-- なし
+- リポジトリの Settings → Pages → Build and deployment の Source を「Deploy from a branch」、Branch を `gh-pages` / `/(root)` にして Save。設定後、https://orihami.github.io/weapon-battle/ が開けるか確認する。
