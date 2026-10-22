@@ -1,6 +1,6 @@
 # HANDOFF
 
-- 最終更新: 2026-10-22 18:00（日本時間） / 作業場所: GitHub（クラウドのClaude Code）
+- 最終更新: 2026-10-22 17:20（日本時間） / 作業場所: GitHub（クラウドのClaude Code）
 
 ## 現在の状態
 
@@ -19,9 +19,11 @@
 
 - GitHub Pages はユーザーが有効化済み（gh-pages ブランチから配信）。https://orihami.github.io/weapon-battle/
 
+- 36種版の CI 成功・公開確認済み: https://github.com/orihami/weapon-battle/actions/runs/39745926535
+
 ## 進行中のこと
 
-- 36種版の push 後の CI と公開の確認。
+- なし
 
 ## 次にやること
 
