@@ -527,7 +527,7 @@ export const WEAPONS = [
     id: 'bomb',
     kind: 'ranged',
     name: '爆弾',
-    en: 'Splodey',
+    en: 'Bomb',
     color: '#f59a0c',
     grow: '爆発が2回当たるたびに 投げる数 +1(近くの爆弾に誘爆する)',
     init(b) {
