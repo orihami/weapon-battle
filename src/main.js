@@ -44,6 +44,14 @@ function randomPair() {
   return [WEAPONS[i], WEAPONS[j]];
 }
 
+// 片方だけランダムに変える(相手と同じ武器・今と同じ武器にはしない)
+function randomOne(side) {
+  const keep = side === 0 ? state.b : state.a;
+  const now = side === 0 ? state.a : state.b;
+  const pool = WEAPONS.filter((w) => w !== keep && w !== now);
+  choose(side, pool[Math.floor(Math.random() * pool.length)]);
+}
+
 function newBattle() {
   state.world = createBattle(state.a, state.b, (Math.random() * 2 ** 32) >>> 0);
   state.running = false;
@@ -253,6 +261,12 @@ function init() {
   $('randomBtn').addEventListener('click', () => {
     [state.a, state.b] = randomPair();
     newBattle();
+  });
+  $('randomABtn').addEventListener('click', () => randomOne(0));
+  $('randomBBtn').addEventListener('click', () => randomOne(1));
+  $('pickerRandom').addEventListener('click', () => {
+    randomOne(state.picking);
+    $('picker').close();
   });
   $('swapBtn').addEventListener('click', () => {
     [state.a, state.b] = [state.b, state.a];

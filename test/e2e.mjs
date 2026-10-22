@@ -82,6 +82,25 @@ try {
   const nameB = await page.textContent('#nameB');
   check(nameB === '盾', `右の武器が盾になった: ${nameB}`);
 
+  // 2.5) 片方だけランダム: 左だけ変わり、右(盾)はそのまま
+  for (let i = 0; i < 5; i++) {
+    const before = await page.evaluate(() => [window.__weaponBattle.state.a.id, window.__weaponBattle.state.b.id]);
+    await page.click('#randomABtn');
+    const after = await page.evaluate(() => [window.__weaponBattle.state.a.id, window.__weaponBattle.state.b.id]);
+    check(after[1] === before[1] && after[0] !== before[0] && after[0] !== after[1], `左だけランダム: ${before.join(' vs ')} → ${after.join(' vs ')}`);
+  }
+  {
+    const before = await page.evaluate(() => [window.__weaponBattle.state.a.id, window.__weaponBattle.state.b.id]);
+    await page.click('#randomBBtn');
+    const after = await page.evaluate(() => [window.__weaponBattle.state.a.id, window.__weaponBattle.state.b.id]);
+    check(after[0] === before[0] && after[1] !== before[1], `右だけランダム: ${before.join(' vs ')} → ${after.join(' vs ')}`);
+    await page.click('#pickA');
+    await page.click('#pickerRandom');
+    const viaPicker = await page.evaluate(() => [window.__weaponBattle.state.a.id, window.__weaponBattle.state.b.id]);
+    check(viaPicker[1] === after[1] && viaPicker[0] !== after[0], `選択画面のおまかせ: ${after.join(' vs ')} → ${viaPicker.join(' vs ')}`);
+    await page.screenshot({ path: join(outDir, '3b-random-buttons.png') });
+  }
+
   // 3) 全武器を少しずつ動かして、描画でエラーが出ないか
   const ids = await page.evaluate(() => [...document.querySelectorAll('#bookGrid .card')].map((c) => c.dataset.id));
   check(ids.length >= 20, `ずかんの武器数: ${ids.length}`);

@@ -48,9 +48,14 @@
 
     <div class="row">
       <button type="button" class="primary wide" id="startBtn">スタート</button>
-      <button type="button" id="randomBtn">ランダム</button>
       <button type="button" id="speedBtn" aria-label="再生速度">×1</button>
       <button type="button" class="icon-btn" id="soundBtn" aria-label="効果音">🔊</button>
+    </div>
+
+    <div class="row random-row">
+      <button type="button" id="randomABtn">🎲 左だけ</button>
+      <button type="button" id="randomBtn">🎲 両方</button>
+      <button type="button" id="randomBBtn">🎲 右だけ</button>
     </div>
 
     <section class="book">
@@ -66,6 +71,7 @@
       <h2 id="pickerTitle">武器をえらぶ</h2>
       <button type="submit" class="icon-btn" aria-label="閉じる">✕</button>
     </form>
+    <button type="button" class="picker-random" id="pickerRandom">🎲 ランダムにおまかせ</button>
     <div class="picker-grid" id="pickerGrid"></div>
   </dialog>
 
