@@ -10,7 +10,7 @@
 ```
 index.html, style.css     画面
 src/engine.js             シミュレーション本体（DOM非依存。Nodeのテストからそのまま動く）
-src/weapons.js            武器の定義（24種）。onHit で「当たったら成長」を書く
+src/weapons.js            武器の定義（36種）。onHit で「当たったら成長」を書く
 src/render.js             描画（低解像度キャンバスを拡大してドット絵風に）
 src/sound.js              効果音（WebAudioで合成）
 src/main.js               画面の操作・ループ
@@ -29,6 +29,11 @@ scripts/balance.mjs       総当たりの勝率表（バランス調整用）
    - 武器を足したり数値を変えたら `npm run balance` で勝率を確認する。
 4. `main` に push すると GitHub Actions（`.github/workflows/ci.yml`）がテスト → `gh-pages` ブランチへ公開する。
 5. Actions の結果と、公開URLで実際に新しい版が出ていることを確かめてから報告する。**確かめていないことを「できた」と言わない。**
+
+## バランスの方針
+
+- ユーザーの好み: 爆弾のように **当てるほど数が増えて、終盤にドパッと決まる（ローグライク風）** 成長が好き。強くなりすぎないよう、増え方（1回あたりの増加量・上限）と1発の威力で調整する。
+- 目安: `npm run balance 4` で全武器の勝率が おおむね 30〜70%、1試合 30〜60秒。
 
 ## URL パラメータ
 

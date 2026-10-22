@@ -124,3 +124,36 @@ test('重力でボールが落ち、床で跳ね返って天井近くまで戻�
   assert.ok(bounced, '床で跳ね返っていない');
   assert.ok(minYAfter < 200, `跳ね返った後に高く上がっていない: ${minYAfter}`);
 });
+
+test('爆弾は当てるほど投げる数が増え、近くの爆弾に誘爆する', () => {
+  // 増え方: 当たるたびに +0.5(2回で1個)、最大30個
+  const world = createBattle(W.bomb, W.unarmed, 11);
+  const bomb = world.balls[0];
+  const start = Math.floor(bomb.w.bombs);
+  runToEnd(world);
+  assert.ok(Math.floor(bomb.w.bombs) > start, '爆弾の数が増えていない');
+  assert.ok(bomb.w.bombs <= 30);
+
+  // 誘爆: 1つ爆発すると、すぐそばの自分の爆弾も爆発が早まる
+  const w2 = createBattle(W.bomb, W.unarmed, 12);
+  const me = w2.balls[0];
+  const foe = w2.balls[1];
+  foe.x = 560;
+  foe.y = 60;
+  me.w.timer = 0;
+  me.w.bombs = 6;
+  step(w2);
+  const bombs = w2.projectiles.filter((p) => p.kind === 'bomb');
+  assert.equal(bombs.length, 6);
+  bombs.forEach((p, i) => {
+    p.x = 300 + i * 10;
+    p.y = 300;
+    p.vx = p.vy = 0;
+    p.gravity = 0;
+    p.life = 5;
+  });
+  bombs[0].life = bombs[0].age + 0.01;
+  step(w2);
+  step(w2);
+  for (const p of bombs.slice(1)) assert.ok(p.life - p.age < 0.1, '誘爆していない');
+});

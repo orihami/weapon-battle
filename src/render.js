@@ -70,12 +70,37 @@ function shaft(ctx, rIn, rOut, color = WOOD, h = 6) {
   rect(ctx, rIn, -h / 2, rOut - rIn, h, color);
 }
 
+function shurikenShape(ctx, r) {
+  const pts = [];
+  for (let i = 0; i < 8; i++) {
+    const a = (i * Math.PI) / 4;
+    const rr = i % 2 ? r * 0.35 : r;
+    pts.push([Math.cos(a) * rr, Math.sin(a) * rr]);
+  }
+  poly(ctx, pts, '#b8c0cc');
+  circle(ctx, 0, 0, 2, '#333', false);
+}
+
+function sawShape(ctx, r) {
+  const pts = [];
+  for (let i = 0; i < 16; i++) {
+    const a = (i * Math.PI) / 8;
+    const rr = i % 2 ? r * 0.8 : r + 3;
+    pts.push([Math.cos(a) * rr, Math.sin(a) * rr]);
+  }
+  poly(ctx, pts, '#c9d1da');
+  circle(ctx, 0, 0, r * 0.35, '#6c727a');
+}
+
 const BLADE_SPRITES = {
   sword(ctx, b) {
     swordShape(ctx, b.rIn, b.rOut, 7);
   },
   dagger(ctx, b) {
     swordShape(ctx, b.rIn, b.rOut, 5.5, { grip: 12 });
+  },
+  dual(ctx, b) {
+    swordShape(ctx, b.rIn, b.rOut, 6, { guard: '#d94f8a' });
   },
   katana(ctx, b) {
     swordShape(ctx, b.rIn, b.rOut, 3.5, { grip: 20, gripColor: '#222', guard: '#c9a227', curve: -3 });
@@ -180,6 +205,52 @@ const BLADE_SPRITES = {
 
 // 遠距離武器などの「手に持っている物」
 const HELD = {
+  cluster(ctx, ball, t) {
+    circle(ctx, 0, 0, 11, '#3a2b2b');
+    circle(ctx, -4, -3, 3, '#e0662a', false);
+    circle(ctx, 4, 3, 3, '#e0662a', false);
+    circle(ctx, 13, -13, 3 + Math.sin(t * 30), '#ffcc33', false);
+  },
+  mine(ctx) {
+    rect(ctx, -11, -5, 22, 10, '#5b6630');
+    circle(ctx, 0, -6, 4, '#e8484d');
+  },
+  meteor(ctx, ball, t) {
+    circle(ctx, 0, 0, 9 + Math.sin(t * 8), '#b5482b');
+    circle(ctx, -3, -3, 3, '#ffb35c', false);
+  },
+  missile(ctx) {
+    rect(ctx, -12, -8, 20, 16, '#5f6f86');
+    rect(ctx, 8, -4, 8, 8, '#2f3a48');
+  },
+  shuriken(ctx, ball, t) {
+    ctx.rotate(t * 10);
+    shurikenShape(ctx, 10);
+  },
+  bees(ctx) {
+    poly(ctx, [[-10, 12], [-12, -6], [0, -14], [12, -6], [10, 12]], '#e8b321');
+    ctx.fillStyle = OUT;
+    ctx.fillRect(-4, 2, 8, 6);
+  },
+  gatling(ctx, ball, t) {
+    rect(ctx, -10, -9, 16, 18, '#4a564c');
+    for (const y of [-6, 0, 6]) rect(ctx, 6, y - 2 + Math.sin(t * 40 + y) * 0.8, 20, 4, '#9aa3ad');
+  },
+  lightning(ctx) {
+    poly(ctx, [[-4, -16], [8, -16], [2, -2], [10, -2], [-6, 18], [-1, 3], [-9, 3]], '#f4d03f');
+  },
+  saw(ctx, ball, t) {
+    ctx.rotate(t * 12);
+    sawShape(ctx, 11);
+  },
+  flame(ctx, ball, t) {
+    rect(ctx, -12, -6, 26, 12, '#7a2c1a');
+    circle(ctx, 18, 0, 5 + Math.sin(t * 40) * 2, '#ffb03a', false);
+  },
+  gas(ctx) {
+    rect(ctx, -9, -13, 18, 26, '#6fbf3f');
+    rect(ctx, -4, -18, 8, 6, '#3c3c3c');
+  },
   orb(ctx) {
     rect(ctx, -10, 8, 20, 6, '#6b3d1f');
     circle(ctx, 0, -2, 11, '#4aa8f0');
@@ -247,6 +318,76 @@ const HELD = {
 };
 
 const PROJ = {
+  minibomb(ctx, p) {
+    circle(ctx, 0, 0, p.r, '#3a2b2b');
+    circle(ctx, p.r * 0.5, -p.r * 0.7, 2, '#ffcc33', false);
+  },
+  mine(ctx, p) {
+    const armed = p.age >= 0.6;
+    rect(ctx, -p.r, -p.r * 0.45, p.r * 2, p.r * 0.9, '#5b6630');
+    circle(ctx, 0, -p.r * 0.5, 3.5, armed && Math.floor(p.age * 3) % 2 === 0 ? '#ff3030' : '#7a2020');
+  },
+  meteor(ctx, p) {
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    circle(ctx, -p.vx * 0.04, -p.vy * 0.04, p.r * 0.8, '#ffb35c', false);
+    ctx.restore();
+    circle(ctx, 0, 0, p.r, '#b5482b');
+    circle(ctx, -4, -4, 4, '#e07a4a', false);
+  },
+  missile(ctx, p) {
+    ctx.rotate(p.angle);
+    poly(ctx, [[-10, -4], [6, -4], [12, 0], [6, 4], [-10, 4]], '#cfd6de');
+    circle(ctx, -14, 0, 3 + Math.random() * 2, '#ff9a1a', false);
+  },
+  shuriken(ctx, p) {
+    ctx.rotate(p.angle);
+    shurikenShape(ctx, p.r + 3);
+  },
+  bee(ctx, p) {
+    ctx.rotate(p.angle);
+    ctx.save();
+    ctx.globalAlpha = 0.7;
+    circle(ctx, -1, -6, 4, '#ffffff', false);
+    circle(ctx, -1, 6, 4, '#ffffff', false);
+    ctx.restore();
+    circle(ctx, 0, 0, p.r + 1, '#e8b321');
+    ctx.fillStyle = OUT;
+    ctx.fillRect(-2, -p.r, 3, p.r * 2);
+  },
+  bullet(ctx, p) {
+    circle(ctx, 0, 0, p.r, '#ffd23f');
+  },
+  zap(ctx, p) {
+    const k = Math.min(1, p.age / p.life);
+    ctx.save();
+    ctx.strokeStyle = `rgba(244,208,63,${0.4 + 0.6 * k})`;
+    ctx.lineWidth = 4;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath();
+    ctx.arc(0, 0, p.r * (1.4 - 0.4 * k), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  },
+  saw(ctx, p) {
+    ctx.rotate(p.angle);
+    sawShape(ctx, p.r);
+  },
+  flame(ctx, p) {
+    const k = p.age / p.life;
+    ctx.save();
+    ctx.globalAlpha = 1 - k * 0.6;
+    circle(ctx, 0, 0, p.r * (0.8 + k * 1.4), k < 0.4 ? '#ffd23f' : '#ff6a1a', false);
+    ctx.restore();
+  },
+  gas(ctx, p) {
+    const k = p.age / p.life;
+    ctx.save();
+    ctx.globalAlpha = 0.35 * (k < 0.15 ? k / 0.15 : 1 - (k - 0.15) / 0.85);
+    circle(ctx, 0, 0, p.r, '#6fbf3f', false);
+    circle(ctx, p.r * 0.3, -p.r * 0.2, p.r * 0.6, '#9be06a', false);
+    ctx.restore();
+  },
   bolt(ctx, p) {
     ctx.rotate(Math.atan2(p.vy, p.vx));
     shaft(ctx, -16, 8, '#5b3418', 3);
@@ -294,6 +435,7 @@ export class Renderer {
     this.particles = [];
     this.texts = [];
     this.rings = [];
+    this.bolts = [];
     this.shake = 0;
     this.time = 0;
   }
@@ -331,9 +473,15 @@ export class Renderer {
       } else if (e.type === 'parry' || e.type === 'block') {
         this.burst(e.x, e.y, 8, '#ffd23f');
         this.rings.push({ x: e.x, y: e.y, r0: 6, r1: 30, life: 0.25, age: 0, color: '#ffd23f' });
+      } else if (e.type === 'zap') {
+        this.bolts.push({ x: e.x, y: e.y, life: 0.22, age: 0, seed: Math.random() * 1000 });
+        this.burst(e.x, e.y, 10, '#f4d03f');
+        this.shake = Math.min(10, this.shake + 3);
       } else if (e.type === 'boom') {
-        this.rings.push({ x: e.x, y: e.y, r0: 10, r1: e.radius, life: 0.35, age: 0, color: e.kind === 'potion' ? '#d6335a' : '#ff9a1a', fill: true });
-        this.burst(e.x, e.y, 14, e.kind === 'potion' ? '#ff8fb0' : '#ffb03a');
+        const potion = e.kind === 'potion';
+        this.rings.push({ x: e.x, y: e.y, r0: e.radius * 0.3, r1: e.radius, life: 0.3, age: 0, color: potion ? '#d6335a' : '#ff7a1a', fill: true, strong: true });
+        this.rings.push({ x: e.x, y: e.y, r0: 4, r1: e.radius * 0.6, life: 0.14, age: 0, color: '#fff3b0', fill: true, strong: true });
+        this.burst(e.x, e.y, 12, potion ? '#ff8fb0' : '#ffb03a', 1.3);
         this.shake = Math.min(12, this.shake + 4);
       } else if (e.type === 'end') {
         const loser = world.balls[1 - e.winner];
@@ -364,6 +512,8 @@ export class Renderer {
     for (const t of this.texts) t.age += dt;
     this.texts = this.texts.filter((t) => t.age < t.life);
     for (const r of this.rings) r.age += dt;
+    for (const b of this.bolts) b.age += dt;
+    this.bolts = this.bolts.filter((b) => b.age < b.life);
     this.rings = this.rings.filter((r) => r.age < r.life);
   }
 
@@ -402,13 +552,32 @@ export class Renderer {
       ctx.beginPath();
       ctx.arc(r.x, r.y, r.r0 + (r.r1 - r.r0) * k, 0, Math.PI * 2);
       if (r.fill) {
-        ctx.fillStyle = hexA(r.color, 0.35 * (1 - k));
+        ctx.fillStyle = hexA(r.color, (r.strong ? 0.75 : 0.35) * (1 - k));
         ctx.fill();
       }
       ctx.save();
       ctx.strokeStyle = hexA(r.color, 1 - k);
       ctx.lineWidth = 5;
       ctx.stroke();
+      ctx.restore();
+    }
+    for (const bo of this.bolts) {
+      // 稲妻: 上からジグザグに落ちる線
+      ctx.save();
+      ctx.globalAlpha = 1 - bo.age / bo.life;
+      for (const [w, c] of [[10, '#ffffff'], [5, '#f4d03f']]) {
+        ctx.lineWidth = w;
+        ctx.strokeStyle = c;
+        ctx.beginPath();
+        ctx.moveTo(bo.x + Math.sin(bo.seed) * 30, 0);
+        const n = 7;
+        for (let i = 1; i <= n; i++) {
+          const y = (bo.y * i) / n;
+          const x = i === n ? bo.x : bo.x + Math.sin(bo.seed + i * 1.7) * 26;
+          ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
       ctx.restore();
     }
     for (const p of this.particles) {

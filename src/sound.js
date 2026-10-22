@@ -59,6 +59,9 @@ export class Sound {
         else this.tone('hit', 300 + Math.min(600, e.amount * 40) + Math.random() * 80, 0.08, 'square', 0.05, 0.5);
       } else if (e.type === 'parry' || e.type === 'block') {
         this.tone('parry', 1400, 0.09, 'triangle', 0.07, 0.7);
+      } else if (e.type === 'zap') {
+        this.noise(0.15, 0.08);
+        this.tone('zap', 1800, 0.12, 'sawtooth', 0.04, 0.2);
       } else if (e.type === 'boom') {
         this.noise(0.3);
       } else if (e.type === 'heal') {

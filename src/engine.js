@@ -347,6 +347,7 @@ function projectileStep(world, dt) {
     p.age += dt;
     if (p.update) p.update(world, p, owner, foe, dt);
     if (p.dead) continue;
+    if (p.gravity) p.vy += GRAVITY * p.gravity * dt;
     p.x += p.vx * dt;
     p.y += p.vy * dt;
     if (p.age >= p.life) {
@@ -355,6 +356,12 @@ function projectileStep(world, dt) {
       continue;
     }
     if (p.x < p.r || p.x > ARENA - p.r || p.y < p.r || p.y > ARENA - p.r) {
+      if (p.wall === 'bounce' && p.bounces !== undefined && --p.bounces < 0) {
+        // 跳ね返れる回数を使い切った
+        if (p.onExpire) p.onExpire(world, p, owner, foe);
+        p.dead = true;
+        continue;
+      }
       if (p.wall === 'bounce') {
         if (p.x < p.r || p.x > ARENA - p.r) p.vx = -p.vx;
         if (p.y < p.r || p.y > ARENA - p.r) p.vy = -p.vy;
