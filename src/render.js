@@ -1,9 +1,7 @@
-// 描画。フィールドは低解像度のキャンバスに描いてから拡大し、ドット絵っぽく見せる。
-// HPの数字やダメージ表示は文字がつぶれないよう高解像度側に描く。
+// 描画。フィールドは画面の解像度(端末のピクセル密度まで)でそのまま描き、くっきり見せる。
 
 import { ARENA, createBattle } from './engine.js';
 
-const LOW = 168; // 低解像度キャンバスの1辺(px)。小さいほどドットが粗くなる
 const OUT = '#1a1a1a';
 const STEEL = '#e9edf2';
 const STEEL_D = '#9aa3ad';
@@ -608,10 +606,6 @@ export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
-    this.low = document.createElement('canvas');
-    this.low.width = LOW;
-    this.low.height = LOW;
-    this.lctx = this.low.getContext('2d');
     this.particles = [];
     this.texts = [];
     this.rings = [];
@@ -724,14 +718,16 @@ export class Renderer {
   }
 
   draw(world) {
-    const ctx = this.lctx;
+    const ctx = this.ctx;
     const t = this.time;
+    const W = this.canvas.width;
+    const s = W / ARENA;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, LOW, LOW);
+    ctx.fillRect(0, 0, W, W);
     const sx = (Math.random() - 0.5) * this.shake;
     const sy = (Math.random() - 0.5) * this.shake;
-    ctx.setTransform(LOW / ARENA, 0, 0, LOW / ARENA, sx * (LOW / ARENA), sy * (LOW / ARENA));
+    ctx.setTransform(s, 0, 0, s, sx * s, sy * s);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.lineWidth = 3.5;
@@ -826,18 +822,13 @@ export class Renderer {
       ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s);
     }
 
-    // 拡大して本番キャンバスへ
-    const main = this.ctx;
-    const W = this.canvas.width;
+    const main = ctx;
     main.setTransform(1, 0, 0, 1, 0, 0);
-    main.imageSmoothingEnabled = false;
-    main.drawImage(this.low, 0, 0, W, W);
     if (this.flashA > 0) {
       // 雷やレーザーの瞬間に画面が白く光る
       main.fillStyle = `rgba(235,245,255,${this.flashA})`;
       main.fillRect(0, 0, W, W);
     }
-    const s = W / ARENA;
     main.setTransform(s, 0, 0, s, sx * s, sy * s);
     main.textAlign = 'center';
     main.textBaseline = 'middle';

@@ -11,7 +11,7 @@
 index.html, style.css     画面
 src/engine.js             シミュレーション本体（DOM非依存。Nodeのテストからそのまま動く）
 src/weapons.js            武器の定義（48種）。onHit で「当たったら成長」を書く
-src/render.js             描画（低解像度キャンバスを拡大してドット絵風に）
+src/render.js             描画（端末の解像度でそのまま描く。低解像度で引き伸ばすと画質が悪いとユーザーに不評だった）
 src/sound.js              効果音（WebAudioで合成）
 src/main.js               画面の操作・ループ
 test/engine.test.js       ユニットテスト（node --test）
