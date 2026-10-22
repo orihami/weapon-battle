@@ -69,6 +69,11 @@ export class Sound {
       } else if (e.type === 'burst') {
         this.noise(0.2, 0.08);
         this.tone('burst', 900 + Math.random() * 500, 0.15, 'triangle', 0.04, 1.6);
+      } else if (e.type === 'slam') {
+        this.noise(0.25, 0.14);
+        this.tone('slam', 120, 0.2, 'square', 0.08, 0.5);
+      } else if (e.type === 'roll') {
+        this.tone('roll', 400 + e.value * 40, 0.1, 'triangle', 0.05, 1.3);
       } else if (e.type === 'boom') {
         this.noise(0.3);
       } else if (e.type === 'heal') {

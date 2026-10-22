@@ -17,6 +17,8 @@ export const SUDDEN_DEATH_AT = 60;
 export const HARD_LIMIT = 240;
 // 逆境ブーストの強さ。HP差が最大HPの 1/COMEBACK_BOOST あると、当てるたびに成長が2回分になる
 export const COMEBACK_BOOST = 4;
+// 呪い1つあたり、受けるダメージが何割増えるか
+export const CURSE_PER_STACK = 0.05;
 
 export function mulberry32(seed) {
   let a = seed >>> 0;
@@ -94,6 +96,9 @@ function makeBall(def, id, x, y, angle) {
     speedMul: 1,
     // 上限を超えて成長した分の与ダメージ倍率(weapons.js の growStat)
     power: 1,
+    curse: 0,
+    slamT: 0,
+    slamBy: -1,
     blades: [],
     w: {},
     hits: 0,
@@ -143,6 +148,8 @@ export function foeOf(world, ball) {
 export function dealDamage(world, src, target, amount, opts = {}) {
   if (target.dead || world.over || !(amount > 0)) return 0;
   amount *= world.dmgMul * (src && src !== target ? src.power : 1);
+  // 呪い: 重ねがけされた分だけ、どこから受けるダメージも増える
+  amount *= 1 + target.curse * CURSE_PER_STACK;
   if (target.def.onTakeDamage) {
     const changed = target.def.onTakeDamage(world, target, src, amount, opts);
     if (changed !== undefined) amount = changed;
@@ -268,20 +275,38 @@ function moveBall(b, dt) {
   b.vy += GRAVITY * f;
   b.x += b.vx * f;
   b.y += b.vy * f;
+  // 壁にぶつかった勢い(壁ドンの判定に使う)
+  let impact = 0;
   if (b.x < b.r) {
     b.x = b.r;
+    impact = Math.max(impact, -b.vx);
     b.vx = Math.abs(b.vx);
   } else if (b.x > ARENA - b.r) {
     b.x = ARENA - b.r;
+    impact = Math.max(impact, b.vx);
     b.vx = -Math.abs(b.vx);
   }
   if (b.y < b.r) {
     b.y = b.r;
+    impact = Math.max(impact, -b.vy);
     b.vy = Math.abs(b.vy);
   } else if (b.y > floorY) {
     b.y = floorY;
+    impact = Math.max(impact, b.vy);
     b.vy = -Math.abs(b.vy);
   }
+  return impact;
+}
+
+// 吹き飛ばされて(slamT の間に)勢いよく壁に当たると、吹き飛ばした側の攻撃としてダメージ
+function wallSlam(world, b, impact, dt) {
+  if (b.slamT <= 0) return;
+  b.slamT -= dt;
+  if (impact < 420) return;
+  b.slamT = 0;
+  const src = world.balls[b.slamBy];
+  world.events.push({ type: 'slam', x: b.x, y: b.y, target: b.id });
+  landHit(world, src, b, (impact - 300) / 60 * (src.w.slamMul ?? 1), { kind: 'slam' });
 }
 
 function collideBalls(world, a, b) {
@@ -407,7 +432,7 @@ function projectileStep(world, dt) {
         p.dead = true;
         world.events.push({ type: 'block', x: p.x, y: p.y });
         if (p.onBlocked) p.onBlocked(world, p, owner, foe);
-        if (foe.def.onBlock) foe.def.onBlock(world, foe, owner);
+        if (foe.def.onBlock) foe.def.onBlock(world, foe, owner, p);
         continue;
       }
     }
@@ -431,7 +456,7 @@ export function step(world, dt = DT) {
       ball.angle += ball.spin * SPIN_SCALE * (1 - ball.slow) * dt;
       if (ball.def.update) ball.def.update(world, ball, foe, dt);
     }
-    moveBall(ball, dt);
+    wallSlam(world, ball, moveBall(ball, dt), dt);
   }
   collideBalls(world, a, b);
   parryStep(world, a, b);

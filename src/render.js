@@ -111,6 +111,26 @@ const BLADE_SPRITES = {
   greatsword(ctx, b) {
     swordShape(ctx, b.rIn, b.rOut, 11, { grip: 20, guard: '#6d7fa3' });
   },
+  squeaky(ctx, b) {
+    shaft(ctx, b.rIn, b.rOut - 20, '#ffd23f', 7);
+    rect(ctx, b.rOut - 24, -b.w * 1.1, 24, b.w * 2.2, '#ff7eb6');
+    rect(ctx, b.rOut - 24, -b.w * 1.1, 6, b.w * 2.2, '#e0559a');
+  },
+  drill(ctx, b) {
+    shaft(ctx, b.rIn, b.rIn + 20, '#5b5b5b', 12);
+    poly(ctx, [[b.rIn + 18, -13], [b.rOut, 0], [b.rIn + 18, 13]], '#c9a227');
+    ctx.save();
+    ctx.strokeStyle = '#8a6d1a';
+    const t = performance.now() / 60;
+    for (let x = b.rIn + 26 + (t % 12); x < b.rOut - 6; x += 12) {
+      const h = 13 * (1 - (x - b.rIn - 18) / (b.rOut - b.rIn - 18));
+      ctx.beginPath();
+      ctx.moveTo(x, -h);
+      ctx.lineTo(x + 6, h);
+      ctx.stroke();
+    }
+    ctx.restore();
+  },
   dual(ctx, b) {
     swordShape(ctx, b.rIn, b.rOut, 6, { guard: '#d94f8a' });
   },
@@ -217,6 +237,68 @@ const BLADE_SPRITES = {
 
 // 遠距離武器などの「手に持っている物」
 const HELD = {
+  clone(ctx, ball) {
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    circle(ctx, 0, 0, 9, ball.def.color);
+    ctx.restore();
+  },
+  curse(ctx) {
+    circle(ctx, 0, -8, 7, '#d8b48a');
+    rect(ctx, -6, -2, 12, 14, '#7a2f5c');
+    ctx.beginPath();
+    ctx.moveTo(-4, -10);
+    ctx.lineTo(-1, -7);
+    ctx.moveTo(1, -10);
+    ctx.lineTo(4, -7);
+    ctx.stroke();
+  },
+  blizzard(ctx) {
+    for (let i = 0; i < 3; i++) {
+      ctx.save();
+      ctx.rotate((i * Math.PI) / 3);
+      ctx.beginPath();
+      ctx.moveTo(-11, 0);
+      ctx.lineTo(11, 0);
+      ctx.stroke();
+      ctx.restore();
+    }
+  },
+  hook(ctx, ball) {
+    if (ball.w.out) return;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(4, 0, 9, -1.8, 1.8);
+    ctx.stroke();
+    ctx.lineWidth = 2.5;
+  },
+  snake(ctx) {
+    circle(ctx, 0, 0, 8, '#3f8f3a');
+  },
+  knives(ctx) {
+    poly(ctx, [[-6, -3], [10, -1], [14, 0], [10, 1], [-6, 3]], STEEL);
+  },
+  dice(ctx) {
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.roundRect(-9, -9, 18, 18, 3);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = OUT;
+    ctx.fillRect(-2, -2, 4, 4);
+  },
+  javelin(ctx) {
+    shaft(ctx, -14, 16, '#b3863c', 4);
+    poly(ctx, [[14, -5], [26, 0], [14, 5]], STEEL);
+  },
+  spellbook(ctx) {
+    rect(ctx, -11, -9, 22, 18, '#6a4fc9');
+    rect(ctx, -1, -9, 2, 18, '#f2c230');
+  },
+  water(ctx) {
+    rect(ctx, -12, -6, 22, 12, '#3aa0ff');
+    rect(ctx, 10, -3, 8, 6, '#ffd23f');
+  },
   blackhole(ctx) {
     circle(ctx, 0, 0, 10, '#0b0614');
     ctx.strokeStyle = '#b48cff';
@@ -375,6 +457,88 @@ const HELD = {
 };
 
 const PROJ = {
+  clone(ctx, p) {
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    circle(ctx, 0, 0, p.r, p.color);
+    ctx.rotate(p.angle);
+    swordShape(ctx, p.r - 4, p.r + 26, 4);
+    ctx.restore();
+  },
+  needle(ctx, p) {
+    ctx.rotate(p.angle || Math.atan2(p.vy, p.vx));
+    rect(ctx, -10, -1.5, 18, 3, '#d9d9d9');
+    circle(ctx, -10, 0, 2.5, '#7a2f5c', false);
+  },
+  icicle(ctx, p) {
+    ctx.rotate(Math.atan2(p.vy, p.vx));
+    poly(ctx, [[-12, -5], [12, 0], [-12, 5]], '#d6f0ff');
+  },
+  hook(ctx, p, world) {
+    const owner = world.balls[p.owner];
+    ctx.save();
+    ctx.strokeStyle = '#6b4a2b';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(owner.x - p.x, owner.y - p.y);
+    ctx.stroke();
+    ctx.restore();
+    ctx.rotate(p.angle);
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(4, 0, 9, -1.8, 1.8);
+    ctx.stroke();
+    ctx.lineWidth = 2.5;
+    circle(ctx, -4, 0, 4, '#9aa3ad');
+  },
+  snake(ctx, p) {
+    const dir = Math.sign(p.vx) || 1;
+    for (let i = 4; i >= 0; i--) {
+      const x = -dir * i * 7;
+      const y = Math.sin(p.wig - i * 0.9) * 4;
+      circle(ctx, x, y, i === 0 ? p.r : p.r * (0.85 - i * 0.08), i % 2 ? '#2f6e2b' : '#3f8f3a');
+    }
+    ctx.fillStyle = '#ffd23f';
+    ctx.fillRect(dir * 3 - 1.5, -4, 3, 3);
+  },
+  knife(ctx, p) {
+    ctx.rotate(Math.atan2(p.vy, p.vx));
+    rect(ctx, -12, -2.5, 8, 5, '#5b3418');
+    poly(ctx, [[-4, -3.5], [10, -1], [14, 0], [10, 1], [-4, 3.5]], STEEL);
+  },
+  die(ctx, p) {
+    ctx.rotate(p.angle);
+    const r = p.r;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.roundRect(-r, -r, r * 2, r * 2, 4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = OUT;
+    const pips = { 1: [[0, 0]], 2: [[-1, -1], [1, 1]], 3: [[-1, -1], [0, 0], [1, 1]], 4: [[-1, -1], [1, -1], [-1, 1], [1, 1]], 5: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]], 6: [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]] }[p.face] || [];
+    for (const [x, y] of pips) {
+      ctx.beginPath();
+      ctx.arc(x * r * 0.5, y * r * 0.5, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  },
+  javelin(ctx, p) {
+    ctx.rotate(p.angle);
+    shaft(ctx, -30, 10, '#b3863c', 4);
+    poly(ctx, [[8, -5], [22, 0], [8, 5]], STEEL);
+  },
+  arcane(ctx, p) {
+    circle(ctx, 0, 0, p.r + 2, '#b9a6ff');
+    circle(ctx, 0, 0, p.r - 1, '#ffffff', false);
+  },
+  water(ctx, p) {
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    circle(ctx, 0, 0, p.r, '#7cc4ff', false);
+    circle(ctx, -1.5, -1.5, p.r * 0.4, '#e6f4ff', false);
+    ctx.restore();
+  },
   hole(ctx, p) {
     const k = Math.min(1, p.age / 0.3) * Math.min(1, (p.life - p.age) / 0.3);
     ctx.save();
@@ -665,6 +829,16 @@ export class Renderer {
         this.rings.push({ x: e.x, y: e.y, r0: 10, r1: e.big === false ? 50 : 70, life: 0.25, age: 0, color: '#9fd0ff', fill: true, strong: true });
         this.shake = Math.min(14, this.shake + (e.big === false ? 4 : 7));
         this.flashA = Math.max(this.flashA, e.big === false ? 0.25 : 0.4);
+      } else if (e.type === 'roll') {
+        // サイコロの出目。大きいほど派手に
+        const big = e.value >= e.max * 0.8;
+        this.texts.push({ x: e.x, y: e.y - 30, text: '🎲' + e.value, color: big ? '#e8484d' : '#333333', life: 0.9, age: 0, size: big ? 30 : 20 });
+        if (big) this.shake = Math.min(12, this.shake + 5);
+      } else if (e.type === 'slam') {
+        const ball = world.balls[e.target];
+        this.texts.push({ x: ball.x, y: ball.y - 50, text: '壁ドン！', color: '#ff4f9a', life: 0.9, age: 0, size: 26, jp: true });
+        this.burst(ball.x, ball.y, 20, '#ff7eb6', 1.5);
+        this.shake = Math.min(14, this.shake + 8);
       } else if (e.type === 'laser') {
         this.beams.push({ x: e.x, y: e.y, angle: e.angle, width: e.width, life: 0.3, age: 0 });
         this.shake = Math.min(14, this.shake + 8);
@@ -975,6 +1149,17 @@ export class Renderer {
     if (b.burnT > 0) {
       ctx.fillStyle = 'rgba(255,120,30,0.6)';
       ctx.fillRect(b.x - 4 + Math.sin(this.time * 30) * 10, b.y - b.r - 10, 8, 8);
+    }
+    if (b.curse > 0) {
+      // 呪い: 紫の点線の輪(呪いが多いほど太い)
+      ctx.save();
+      ctx.strokeStyle = '#7a2f5c';
+      ctx.lineWidth = Math.min(8, 2 + b.curse * 0.3);
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r + 7, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
     }
     if (b.slow > 0) {
       ctx.strokeStyle = '#9fdcff';
