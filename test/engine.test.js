@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createBattle, runToEnd, step, segSegDist, MAX_HP, HARD_LIMIT, bladeSegment } from '../src/engine.js';
+import { createBattle, runToEnd, step, segSegDist, landHit, MAX_HP, HARD_LIMIT, bladeSegment } from '../src/engine.js';
 import { WEAPONS, WEAPON_BY_ID, validateWeapon } from '../src/weapons.js';
 
 const W = WEAPON_BY_ID;
@@ -126,13 +126,12 @@ test('重力でボールが落ち、床で跳ね返って天井近くまで戻�
 });
 
 test('爆弾は当てるほど投げる数が増え、近くの爆弾に誘爆する', () => {
-  // 増え方: 当たるたびに +0.5(2回で1個)、最大30個
+  // 増え方: 当たるたびに +0.5(2回で1個)
   const world = createBattle(W.bomb, W.unarmed, 11);
   const bomb = world.balls[0];
   const start = Math.floor(bomb.w.bombs);
   runToEnd(world);
-  assert.ok(Math.floor(bomb.w.bombs) > start, '爆弾の数が増えていない');
-  assert.ok(bomb.w.bombs <= 30);
+  assert.ok(Math.floor(bomb.w.bombsT ?? bomb.w.bombs) > start, '爆弾の数が増えていない');
 
   // 誘爆: 1つ爆発すると、すぐそばの自分の爆弾も爆発が早まる
   const w2 = createBattle(W.bomb, W.unarmed, 12);
@@ -156,4 +155,37 @@ test('爆弾は当てるほど投げる数が増え、近くの爆弾に誘爆�
   step(w2);
   step(w2);
   for (const p of bombs.slice(1)) assert.ok(p.life - p.age < 0.1, '誘爆していない');
+});
+
+test('成長に上限がない: 限界を超えた分は威力(ダメージ倍率)として伸び続ける', () => {
+  const world = createBattle(W.orbital, W.unarmed, 13);
+  const [me, foe] = world.balls;
+  foe.hp = 1e9; // 倒れないように
+  foe.maxHp = 1e9;
+  me.hp = foe.hp; // 逆境ブーストが起きないようにHPをそろえる
+  me.maxHp = foe.maxHp;
+  for (let i = 0; i < 60; i++) landHit(world, me, foe, 1);
+  assert.equal(Math.floor(me.w.n), 10, '周回玉の数は見た目の限界(10)で止まる');
+  assert.ok(me.w.nT > 30, `表示用の数は伸び続ける: ${me.w.nT}`);
+  assert.ok(me.power > 1.5, `威力が上がっていない: ${me.power}`);
+  const before = foe.hp;
+  landHit(world, me, foe, 1);
+  assert.ok(before - foe.hp > 1.5, '威力がダメージに反映されていない');
+});
+
+test('逆境ブースト: HPで負けている側は当てたときに多く成長する', () => {
+  const grow = (myHp) => {
+    const world = createBattle(W.sword, W.unarmed, 14);
+    const [me, foe] = world.balls;
+    me.hp = myHp;
+    for (let i = 0; i < 10; i++) {
+      foe.hp = 100;
+      landHit(world, me, foe, 0.01);
+    }
+    return me.w.dmg;
+  };
+  const even = grow(100);
+  const behind = grow(30);
+  assert.equal(even, 11, 'HPが同じなら1回につき+1');
+  assert.ok(behind > even + 10, `負けている側の成長が大きくない: ${behind}`);
 });

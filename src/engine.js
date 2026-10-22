@@ -15,6 +15,8 @@ export const DT = 1 / 120;
 export const SUDDEN_DEATH_AT = 60;
 // それでも終わらなければ残りHPの多い方の勝ち
 export const HARD_LIMIT = 240;
+// 逆境ブーストの強さ。HP差が最大HPの 1/COMEBACK_BOOST あると、当てるたびに成長が2回分になる
+export const COMEBACK_BOOST = 4;
 
 export function mulberry32(seed) {
   let a = seed >>> 0;
@@ -90,6 +92,8 @@ function makeBall(def, id, x, y, angle) {
     angle: angle + Math.PI,
     spin: 4,
     speedMul: 1,
+    // 上限を超えて成長した分の与ダメージ倍率(weapons.js の growStat)
+    power: 1,
     blades: [],
     w: {},
     hits: 0,
@@ -138,7 +142,7 @@ export function foeOf(world, ball) {
 
 export function dealDamage(world, src, target, amount, opts = {}) {
   if (target.dead || world.over || !(amount > 0)) return 0;
-  amount *= world.dmgMul;
+  amount *= world.dmgMul * (src && src !== target ? src.power : 1);
   if (target.def.onTakeDamage) {
     const changed = target.def.onTakeDamage(world, target, src, amount, opts);
     if (changed !== undefined) amount = changed;
@@ -174,7 +178,20 @@ export function landHit(world, me, foe, amount, info = {}) {
   const dealt = dealDamage(world, me, foe, amount, info);
   if (dealt > 0) {
     me.hits++;
-    if (me.def.onHit) me.def.onHit(world, me, foe, info);
+    if (me.def.onHit) {
+      me.def.onHit(world, me, foe, info);
+      // 逆境ブースト: HPで負けているほど、当てたときにもう一度成長しやすい(逆転が起きるように)
+      let extra = Math.max(0, foe.hp - me.hp) / me.maxHp * COMEBACK_BOOST;
+      let surged = false;
+      while (extra > 0 && !foe.dead) {
+        if (extra >= 1 || world.rng() < extra) {
+          me.def.onHit(world, me, foe, info);
+          surged = true;
+        }
+        extra -= 1;
+      }
+      if (surged) world.events.push({ type: 'surge', x: me.x, y: me.y, target: me.id });
+    }
   }
   return dealt;
 }

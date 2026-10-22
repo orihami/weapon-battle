@@ -436,6 +436,7 @@ export class Renderer {
     this.texts = [];
     this.rings = [];
     this.bolts = [];
+    this.lastSurge = {};
     this.shake = 0;
     this.time = 0;
   }
@@ -468,6 +469,15 @@ export class Renderer {
           age: 0,
           size: dot ? 14 : 18 + Math.min(14, e.amount),
         });
+      } else if (e.type === 'surge') {
+        // 逆境ブースト: 同じボールで連続しないよう少し間をあける
+        const last = this.lastSurge[e.target] ?? -1;
+        if (this.time - last > 0.8) {
+          this.lastSurge[e.target] = this.time;
+          const ball = world.balls[e.target];
+          this.texts.push({ x: ball.x, y: ball.y - ball.r - 26, text: '逆境！', color: ball.def.color, life: 0.9, age: 0, size: 22, jp: true });
+          this.rings.push({ x: ball.x, y: ball.y, r0: ball.r, r1: ball.r * 2.2, life: 0.35, age: 0, color: ball.def.color });
+        }
       } else if (e.type === 'heal') {
         this.texts.push({ x: e.x, y: e.y - 40, text: '+' + Math.round(e.amount), color: '#2fc23a', life: 0.8, age: 0, size: 18 });
       } else if (e.type === 'parry' || e.type === 'block') {
@@ -609,7 +619,7 @@ export class Renderer {
     for (const tx of this.texts) {
       const k = tx.age / tx.life;
       main.globalAlpha = 1 - k * k;
-      main.font = `${tx.size}px ${NUM_FONT}`;
+      main.font = tx.jp ? `bold ${tx.size}px "DotGothic16", sans-serif` : `${tx.size}px ${NUM_FONT}`;
       main.lineWidth = 4;
       main.strokeStyle = '#ffffff';
       main.strokeText(tx.text, tx.x, tx.y - k * 30);

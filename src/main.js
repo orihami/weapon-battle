@@ -98,11 +98,12 @@ let lastStats = '';
 function updateStats() {
   const w = state.world;
   if (!w) return;
-  const render = (ball) =>
-    ball.def
-      .stats(ball, w)
-      .map(([k, v]) => `<div style="color:${ball.def.color}">${k}:<b>${v}</b></div>`)
-      .join('');
+  const render = (ball) => {
+    const rows = ball.def.stats(ball, w);
+    // 上限を超えて成長した分は「威力」として表示する
+    if (ball.power > 1.005) rows.push(['威力', '×' + ball.power.toFixed(2)]);
+    return rows.map(([k, v]) => `<div style="color:${ball.def.color}">${k}:<b>${v}</b></div>`).join('');
+  };
   const html = render(w.balls[0]) + '|' + render(w.balls[1]);
   if (html !== lastStats) {
     lastStats = html;
