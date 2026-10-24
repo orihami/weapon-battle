@@ -135,6 +135,30 @@ function mirrorBolt(world, me, foe, x, y) {
   });
 }
 
+// 磁石が奪える弾(持ち主の状態を使わない、まっすぐ飛ぶ弾だけ)
+const STEALABLE = new Set(['arrow', 'bolt', 'bullet', 'knife', 'shuriken', 'needle', 'fireball', 'icicle', 'mirrorbolt', 'arcane', 'feather', 'spiritsword', 'orbbullet', 'raindrop']);
+
+// レーザーが壁で跳ね返る道すじ(線分の配列)
+function traceBeam(x, y, angle, bounces) {
+  const segs = [];
+  let dx = Math.cos(angle);
+  let dy = Math.sin(angle);
+  for (let i = 0; i <= bounces; i++) {
+    // 次に当たる壁までの距離
+    const tx = dx > 0 ? (ARENA - x) / dx : dx < 0 ? -x / dx : Infinity;
+    const ty = dy > 0 ? (ARENA - y) / dy : dy < 0 ? -y / dy : Infinity;
+    const t = Math.min(tx, ty);
+    const nx = x + dx * t;
+    const ny = y + dy * t;
+    segs.push([x, y, nx, ny]);
+    x = nx;
+    y = ny;
+    if (tx <= ty) dx = -dx;
+    if (ty <= tx) dy = -dy;
+  }
+  return segs;
+}
+
 // 一度だけ当たって消える弾
 function hitOnce(info = {}) {
   return (world, p, owner, foe) => {
@@ -2794,6 +2818,761 @@ export const WEAPONS = [
     stats: (b) => [['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)]],
     onHit(world, me) {
       me.w.dmg += 0.6;
+    },
+  },
+  {
+    id: 'drones',
+    kind: 'ranged',
+    name: 'ドローン',
+    en: 'Drones',
+    color: '#5f7d8c',
+    grow: '2回当たるたびに ドローン +1(まわりを飛んで弾を撃つ)',
+    init(b) {
+      b.w = { n: 2, timer: 0.6, dist: 70 };
+      setSpin(b, 2);
+    },
+    stats: (b) => [['ドローン', fmt(Math.floor(shown(b, 'n')))]],
+    drones(b) {
+      const n = Math.floor(b.w.n);
+      return Array.from({ length: n }, (_, i) => {
+        const a = b.angle + (i * TAU) / n;
+        return [b.x + Math.cos(a) * b.w.dist, b.y + Math.sin(a) * b.w.dist];
+      });
+    },
+    update(world, me, foe, dt) {
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 1.1;
+      for (const [x, y] of this.drones(me)) {
+        const a = Math.atan2(foe.y - y, foe.x - x);
+        spawnProjectile(world, me, { x, y, vx: Math.cos(a) * 560, vy: Math.sin(a) * 560, angle: a, kind: 'bullet', r: 3.5, life: 1.4, damage: 1.2, onTouch: hitOnce() });
+      }
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 0.5, 10, 0.3);
+    },
+  },
+  {
+    id: 'quake',
+    kind: 'body',
+    name: '地震',
+    en: 'Earthquake',
+    color: '#8a6a45',
+    grow: '着地のたびに床を揺らし、床の近くの相手にダメージ。当たるたびに 揺れのダメージ +0.6',
+    init(b) {
+      b.w = { dmg: 5.5, cd: 0 };
+      b.speedMul = 1.05;
+    },
+    stats: (b) => [['衝撃波', fmt(Math.round(b.w.dmg * 10) / 10)]],
+    update(world, me, foe, dt) {
+      me.angle += dt * 2;
+      if (me.w.cd > 0) me.w.cd -= dt;
+      const onFloor = me.y >= ARENA - me.r - 2 && me.vy < 0;
+      if (!onFloor || me.w.cd > 0) return;
+      me.w.cd = 0.45;
+      world.events.push({ type: 'quake', x: me.x, y: ARENA });
+      // 床の近くにいる相手は揺れでダメージを受けて跳ね上がる
+      if (foe.y + foe.r > ARENA - 260) {
+        landHit(world, me, foe, me.w.dmg, { kind: 'quake', x: foe.x, y: foe.y + foe.r });
+        foe.vy = Math.min(foe.vy, -650);
+      }
+    },
+    onHit(world, me) {
+      me.w.dmg += 0.6;
+    },
+  },
+  {
+    id: 'phoenix',
+    kind: 'ranged',
+    name: '不死鳥',
+    en: 'Phoenix',
+    color: '#ff7a1a',
+    grow: '1度だけよみがえる。当たるたびに よみがえる時のHP +0.5・羽のダメージ +0.2',
+    init(b) {
+      b.w = { rebirth: 5, revived: false, dmg: 0.9, timer: 0.6 };
+    },
+    stats: (b) => [
+      [b.w.revived ? '復活ずみ' : '復活HP', b.w.revived ? '✓' : fmt(Math.round(b.w.rebirth))],
+      ['羽', fmt(Math.round(b.w.dmg * 10) / 10)],
+    ],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 1.4;
+      for (const s of [-0.25, 0.25]) {
+        shoot(world, me, me.angle + s, 420, {
+          kind: 'feather',
+          r: 5,
+          life: 1.8,
+          damage: me.w.dmg,
+          update: (world, p, owner, foe, dt) => homing(p, foe, 1.4, dt),
+          onTouch(world, p, owner, foe) {
+            p.dead = true;
+            if (landHit(world, owner, foe, p.damage, { kind: 'feather', x: p.x, y: p.y }) > 0) {
+              foe.burnT = 1.5;
+              foe.burnDps = Math.max(foe.burnDps, 0.8);
+              foe.burnSrc = owner.id;
+            }
+          },
+        });
+      }
+    },
+    onLethal(world, me) {
+      if (me.w.revived) return false;
+      me.w.revived = true;
+      me.hp = Math.min(me.maxHp, me.w.rebirth);
+      me.poison = 0;
+      me.burnT = 0;
+      world.events.push({ type: 'rebirth', x: me.x, y: me.y, target: me.id });
+      return true;
+    },
+    onHit(world, me) {
+      if (!me.w.revived) me.w.rebirth += 0.5;
+      me.w.dmg += 0.2;
+    },
+  },
+  {
+    id: 'magnet',
+    kind: 'ranged',
+    name: '磁石',
+    en: 'Magnet',
+    color: '#d64545',
+    grow: '近くの飛び道具を奪って撃ち返す。当たるたびに 磁力の範囲アップ',
+    init(b) {
+      b.w = { range: 140, timer: 0.8 };
+    },
+    stats: (b) => [['磁力', fmt(Math.round(shown(b, 'range')))]],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      // 相手の飛び道具を奪う(持ち主の状態を持たない、単純な弾だけ)
+      for (const p of world.projectiles) {
+        if (p.owner === me.id || p.dead || !STEALABLE.has(p.kind)) continue;
+        if (Math.hypot(p.x - me.x, p.y - me.y) > me.w.range) continue;
+        p.owner = me.id;
+        const a = Math.atan2(foe.y - p.y, foe.x - p.x);
+        const sp = Math.max(300, Math.hypot(p.vx, p.vy));
+        p.vx = Math.cos(a) * sp;
+        p.vy = Math.sin(a) * sp;
+        p.angle = a;
+        p.blockGrace = p.age + 0.15;
+        world.events.push({ type: 'magnet', x: p.x, y: p.y });
+      }
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 1.1;
+      // 砂鉄を飛ばす
+      for (const s of [-0.2, 0, 0.2]) shoot(world, me, me.angle + s, 520, { kind: 'bullet', r: 3.5, life: 1.3, damage: 2.6, onTouch: hitOnce() });
+    },
+    onHit(world, me) {
+      growStat(me, 'range', 4, 260, 0.4);
+    },
+  },
+  {
+    id: 'star',
+    kind: 'ranged',
+    name: '流れ星',
+    en: 'Shooting Star',
+    color: '#f5d742',
+    grow: '当たるたびに 弾ける小さな星 +1',
+    init(b) {
+      b.w = { k: 4, timer: 0.8 };
+    },
+    stats: (b) => [['小さな星', fmt(Math.floor(shown(b, 'k')))]],
+    update(world, me, foe, dt) {
+      me.angle = -Math.PI / 2;
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 1.2;
+      const k = Math.floor(me.w.k);
+      const side = world.rng() < 0.5 ? 0 : ARENA;
+      const sx = side + (side ? -20 : 20);
+      const a = Math.atan2(foe.y - 20, foe.x - sx);
+      spawnProjectile(world, me, {
+        x: sx,
+        y: 20,
+        vx: Math.cos(a) * 640,
+        vy: Math.sin(a) * 640,
+        angle: a,
+        kind: 'star',
+        r: 10,
+        life: 2,
+        wall: 'die',
+        blockable: false,
+        damage: 4,
+        onTouch(world, p, owner, foe) {
+          p.dead = true;
+          landHit(world, owner, foe, p.damage, { kind: 'star', x: p.x, y: p.y });
+          world.events.push({ type: 'burst', x: p.x, y: p.y, hue: 50 });
+          for (let i = 0; i < k; i++) {
+            const b = (i / k) * TAU;
+            spawnProjectile(world, owner, {
+              x: p.x + Math.cos(b) * (foe.r + 14),
+              y: p.y + Math.sin(b) * (foe.r + 14),
+              vx: Math.cos(b) * 300,
+              vy: Math.sin(b) * 300,
+              kind: 'ministar',
+              r: 5,
+              life: 1.2,
+              wall: 'bounce',
+              blockable: false,
+              damage: 1.5,
+              update: (world, q, owner, foe, dt) => {
+                if (q.age > 0.3) homing(q, foe, 5, dt, 340);
+              },
+              onTouch: hitOnce(),
+            });
+          }
+        },
+      });
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind === 'star') growStat(me, 'k', 1, 24, 0.3);
+    },
+  },
+  {
+    id: 'axethrow',
+    kind: 'ranged',
+    name: '斧投げ',
+    en: 'Throwing Axes',
+    color: '#9c5a2b',
+    grow: '3回当たるたびに 投げる斧 +1(重くて痛い)',
+    init(b) {
+      b.w = { n: 1, timer: 0.6 };
+    },
+    stats: (b) => [['斧', fmt(Math.floor(shown(b, 'n')))]],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 1.6;
+      const n = Math.floor(me.w.n);
+      for (let i = 0; i < n; i++) {
+        shoot(world, me, me.angle - 0.35 + (i - (n - 1) / 2) * 0.22, 560, {
+          kind: 'axe',
+          r: 11,
+          life: 2.5,
+          gravity: 0.6,
+          wall: 'die',
+          blockable: true,
+          damage: 4,
+          update(world, p, owner, foe, dt) {
+            p.angle += 16 * dt;
+          },
+          onTouch(world, p, owner, foe) {
+            p.dead = true;
+            landHit(world, owner, foe, p.damage, { kind: 'axe', x: p.x, y: p.y });
+            knockback(p, foe, 220);
+          },
+        });
+      }
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 0.34, 8, 0.4);
+    },
+  },
+  {
+    id: 'danmaku',
+    kind: 'ranged',
+    name: '弾幕',
+    en: 'Bullet Hell',
+    color: '#e04fd0',
+    grow: '当たるたびに 一度にばらまく弾 +1(うずまき状に広がる)',
+    init(b) {
+      b.w = { k: 8, timer: 0.6, rot: 0 };
+    },
+    stats: (b) => [['弾', fmt(Math.floor(shown(b, 'k')))]],
+    update(world, me, foe, dt) {
+      me.angle += dt * 3;
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 1.4;
+      me.w.rot += 0.35;
+      const k = Math.floor(me.w.k);
+      const hue = Math.floor(world.rng() * 360);
+      for (let i = 0; i < k; i++) {
+        const a = me.w.rot + (i / k) * TAU;
+        shoot(world, me, a, 260, {
+          kind: 'orbbullet',
+          hue,
+          r: 5,
+          life: 2.4,
+          damage: 0.8,
+          curve: 0.9,
+          update(world, p, owner, foe, dt) {
+            // ゆっくり曲がってうずまきに
+            const c = Math.cos(p.curve * dt);
+            const s = Math.sin(p.curve * dt);
+            [p.vx, p.vy] = [p.vx * c - p.vy * s, p.vx * s + p.vy * c];
+          },
+          onTouch: hitOnce(),
+        });
+      }
+    },
+    onHit(world, me) {
+      growStat(me, 'k', 1, 48, 0.3);
+    },
+  },
+  {
+    id: 'wrecking',
+    kind: 'ranged',
+    name: '鉄球',
+    en: 'Wrecking Ball',
+    color: '#4a4a52',
+    grow: '天井からつるした大きな鉄球が振り子で揺れる。当たるたびに ダメージ +1',
+    init(b) {
+      b.w = { dmg: 3.5, theta: 0.88, omega: 0, len: 380, cd: 0, hx: 300, hy: 380 };
+    },
+    stats: (b) => [['ダメージ', fmt(b.w.dmg)]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      // 振り子。振れ幅がいつも約50度(壁の手前まで)になるよう、速さを少しずつ合わせる
+      const g = GRAVITY / w.len;
+      w.omega += -g * Math.sin(w.theta) * dt;
+      w.theta += w.omega * dt;
+      const want = 2 * g * (Math.cos(w.theta) - Math.cos(0.88));
+      if (want > 0.01) {
+        const sp = Math.sqrt(want) * (Math.sign(w.omega) || 1);
+        w.omega += (sp - w.omega) * Math.min(1, dt * 2);
+      }
+      w.hx = ARENA / 2 + Math.sin(w.theta) * w.len;
+      w.hy = Math.cos(w.theta) * w.len;
+      me.angle = Math.PI / 2;
+      if (w.cd > 0) {
+        w.cd -= dt;
+        return;
+      }
+      if (Math.hypot(foe.x - w.hx, foe.y - w.hy) < foe.r + 30) {
+        w.cd = 0.6;
+        landHit(world, me, foe, w.dmg, { kind: 'wreck', x: w.hx, y: w.hy });
+        foe.vx += Math.cos(w.theta) * w.omega * w.len * 1.2;
+        foe.vy -= 200;
+        foe.slamT = 0.8;
+        foe.slamBy = me.id;
+      }
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind === 'wreck') me.w.dmg += 1;
+    },
+  },
+  {
+    id: 'storm',
+    kind: 'ranged',
+    name: '雷雲',
+    en: 'Storm Cloud',
+    color: '#5b6d8a',
+    grow: '相手の上に雨雲がついてくる。当たるたびに 雨の勢いアップ(ときどき落雷)',
+    init(b) {
+      b.w = { rain: 4, timer: 0, bolt: 1.5, cx: b.x, cy: 60 };
+    },
+    stats: (b) => [['雨', fmt(Math.round(b.w.rain * 10) / 10)]],
+    update(world, me, foe, dt) {
+      me.angle = -Math.PI / 2;
+      const w = me.w;
+      // 雲は相手の上空をゆっくり追う
+      w.cx += (foe.x - w.cx) * Math.min(1, dt * 1.6);
+      w.cy += (Math.max(50, foe.y - 200) - w.cy) * Math.min(1, dt * 1.2);
+      w.timer -= dt;
+      if (w.timer <= 0) {
+        w.timer = 1 / w.rain;
+        spawnProjectile(world, me, {
+          x: w.cx + (world.rng() - 0.5) * 80,
+          y: w.cy + 20,
+          vx: 0,
+          vy: 520,
+          kind: 'raindrop',
+          r: 3,
+          life: 1.5,
+          wall: 'die',
+          blockable: true,
+          damage: 1,
+          onTouch: hitOnce(),
+        });
+      }
+      w.bolt -= dt;
+      if (w.bolt <= 0) {
+        w.bolt = 1.6;
+        strike(world, me, foe.x, foe.y, 0.45, 0, true);
+      }
+    },
+    onHit(world, me) {
+      me.w.rain += 0.2;
+    },
+  },
+  {
+    id: 'giant',
+    kind: 'body',
+    name: '巨大化',
+    en: 'Giant',
+    color: '#c27a4a',
+    grow: '体当たりが当たるたびに 体が大きくなる(大きいほど痛い)',
+    init(b) {
+      b.w = { size: b.r };
+    },
+    stats: (b) => [['大きさ', fmt(Math.round(shown(b, 'size')))]],
+    onContact(world, me, foe) {
+      landHit(world, me, foe, me.r / 9, { kind: 'punch' });
+      knockback(me, foe, 150 + me.r * 2);
+    },
+    update(world, me) {
+      me.angle = Math.atan2(me.vy, me.vx);
+    },
+    onHit(world, me) {
+      growStat(me, 'size', 2, 95, 0.5);
+      me.r = me.w.size;
+    },
+  },
+  {
+    ...melee('vampire', {
+      spin: 3.8,
+      state: { steal: 2, dmg: 4 },
+      blade: { rIn: 22, rOut: 84, w: 10 },
+      damage: (w, me) => me.w.dmg,
+    }),
+    name: '吸命の牙',
+    en: 'Life Drain',
+    color: '#8c1c3a',
+    grow: '当たるたびに 相手の最大HPを2奪って自分のものにする・ダメージ +0.8',
+    stats: (b) => [
+      ['最大HP', fmt(Math.round(b.maxHp))],
+      ['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)],
+    ],
+    onHit(world, me, foe, info) {
+      if (info.kind === 'pre') {
+        me.w.dmg += 0.8;
+        return;
+      }
+      const s = Math.min(me.w.steal, Math.max(0, foe.maxHp - 20));
+      foe.maxHp -= s;
+      foe.hp = Math.min(foe.hp, foe.maxHp);
+      me.maxHp += s;
+      heal(world, me, s);
+      me.w.dmg += 0.8;
+    },
+  },
+  {
+    id: 'spirit',
+    kind: 'ranged',
+    name: '霊剣',
+    en: 'Spirit Swords',
+    color: '#8fd9ff',
+    grow: '2回当たるたびに 浮かぶ剣 +1(順番に飛んでいって刺さる)',
+    init(b) {
+      b.w = { n: 2, timer: 0.5, next: 0 };
+      setSpin(b, 2.5);
+    },
+    stats: (b) => [['霊剣', fmt(Math.floor(shown(b, 'n')))]],
+    update(world, me, foe, dt) {
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      const n = Math.floor(me.w.n);
+      me.w.timer = 2.0 / n;
+      const i = me.w.next++ % n;
+      const a = me.angle + (i * TAU) / n;
+      const x = me.x + Math.cos(a) * 58;
+      const y = me.y + Math.sin(a) * 58;
+      const b = Math.atan2(foe.y - y, foe.x - x);
+      spawnProjectile(world, me, {
+        x,
+        y,
+        vx: Math.cos(b) * 200,
+        vy: Math.sin(b) * 200,
+        angle: b,
+        kind: 'spiritsword',
+        r: 6,
+        life: 1.8,
+        blockable: true,
+        damage: 0.75,
+        update(world, p, owner, foe, dt) {
+          homing(p, foe, 3, dt, Math.min(760, Math.hypot(p.vx, p.vy) + 1400 * dt));
+        },
+        onTouch: hitOnce(),
+      });
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 0.5, 12, 0.3);
+    },
+  },
+  {
+    id: 'lava',
+    kind: 'ranged',
+    name: '溶岩',
+    en: 'Lava Floor',
+    color: '#e8461a',
+    grow: 'ときどき床を溶岩にする(自分は平気)。当たるたびに 溶岩の時間 +0.1秒',
+    init(b) {
+      b.w = { dur: 1.6, timer: 1.5, ball: 0.8 };
+    },
+    stats: (b) => [['溶岩', fmt(Math.round(shown(b, 'dur') * 10) / 10) + '秒']],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      me.w.ball -= dt;
+      if (me.w.ball <= 0) {
+        me.w.ball = 1.6;
+        shoot(world, me, me.angle - 0.4, 420, {
+          kind: 'magma',
+          r: 8,
+          life: 2,
+          gravity: 0.6,
+          wall: 'die',
+          damage: 3,
+          onTouch: hitOnce(),
+        });
+      }
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 2.6;
+      spawnProjectile(world, me, {
+        x: ARENA / 2,
+        y: ARENA - 4,
+        kind: 'lava',
+        r: 1,
+        life: me.w.dur,
+        wall: 'stop',
+        blockable: false,
+        tick: 0,
+        update(world, p, owner, foe, dt) {
+          p.tick -= dt;
+          if (p.tick <= 0 && foe.y + foe.r >= ARENA - 10) {
+            p.tick = 0.25;
+            if (landHit(world, owner, foe, 3, { kind: 'lava', x: foe.x, y: ARENA - 10 }) > 0) {
+              foe.burnT = 1.5;
+              foe.burnDps = Math.max(foe.burnDps, 1);
+              foe.burnSrc = owner.id;
+            }
+          }
+        },
+      });
+    },
+    onHit(world, me, foe, info) {
+      growStat(me, 'dur', 0.1, 3.5, 0.4);
+    },
+  },
+  {
+    id: 'gears',
+    kind: 'ranged',
+    name: '歯車',
+    en: 'Gears',
+    color: '#a88b4a',
+    grow: '2回当たるたびに 壁をつたって走る歯車 +1',
+    init(b) {
+      b.w = { n: 2, timer: 0.3 };
+    },
+    stats: (b) => [['歯車', fmt(Math.floor(shown(b, 'n')))]],
+    update(world, me, foe, dt) {
+      me.angle += dt * 5;
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 0.7;
+      const alive = world.projectiles.filter((p) => p.owner === me.id && p.kind === 'gear').length;
+      if (alive >= Math.floor(me.w.n)) return;
+      const dir = world.rng() < 0.5 ? 1 : -1;
+      spawnProjectile(world, me, {
+        x: 0,
+        y: 0,
+        kind: 'gear',
+        r: 18,
+        life: 9,
+        wall: 'stop',
+        blockable: false,
+        s: world.rng() * 4 * (ARENA - 36),
+        dir,
+        hitCd: 0,
+        update(world, p, owner, foe, dt) {
+          // 四角い壁ぞいを一周し続ける(s は周の上の位置)
+          const side = ARENA - 2 * p.r;
+          const per = 4 * side;
+          p.s = (p.s + p.dir * 400 * dt + per) % per;
+          const k = Math.floor(p.s / side);
+          const t = p.s - k * side;
+          const lo = p.r;
+          const hi = ARENA - p.r;
+          [p.x, p.y] = k === 0 ? [lo + t, lo] : k === 1 ? [hi, lo + t] : k === 2 ? [hi - t, hi] : [lo, hi - t];
+          p.vx = p.vy = 0;
+          p.angle += p.dir * 10 * dt;
+          if (p.hitCd > 0) p.hitCd -= dt;
+        },
+        onTouch(world, p, owner, foe) {
+          if (p.hitCd > 0) return;
+          p.hitCd = 0.5;
+          landHit(world, owner, foe, 4, { kind: 'gear', x: p.x, y: p.y });
+          knockback(p, foe, 220);
+        },
+      });
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 0.5, 10, 0.4);
+    },
+  },
+  {
+    id: 'kamaitachi',
+    kind: 'ranged',
+    name: '鎌鼬',
+    en: 'Wind Blades',
+    color: '#7fd6b0',
+    grow: '2回当たるたびに 飛ばす風の刃 +1(刃をすり抜ける)',
+    init(b) {
+      b.w = { n: 1, timer: 0.5 };
+    },
+    stats: (b) => [['風の刃', fmt(Math.floor(shown(b, 'n')))]],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 1.3;
+      const n = Math.floor(me.w.n);
+      for (let i = 0; i < n; i++) {
+        shoot(world, me, me.angle + (i - (n - 1) / 2) * 0.3, 520, {
+          kind: 'wind',
+          r: 13,
+          life: 1.4,
+          wall: 'die',
+          blockable: false,
+          damage: 1.6,
+          onTouch: hitOnce(),
+        });
+      }
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 0.5, 12, 0.4);
+    },
+  },
+  {
+    id: 'bumper',
+    kind: 'ranged',
+    name: 'バンパー',
+    en: 'Bumpers',
+    color: '#ff5fa2',
+    grow: '2回当たるたびに 置けるバンパー +1(ぶつかると大きく弾かれて壁ドン)',
+    init(b) {
+      b.w = { n: 1, timer: 0.4, slamMul: 0.2 };
+    },
+    stats: (b) => [['バンパー', fmt(Math.floor(shown(b, 'n')))]],
+    update(world, me, foe, dt) {
+      me.angle += dt * 3;
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 2;
+      const mine = world.projectiles.filter((p) => p.owner === me.id && p.kind === 'bumper');
+      if (mine.length >= Math.floor(me.w.n)) mine[0].dead = true;
+      spawnProjectile(world, me, {
+        x: 80 + world.rng() * (ARENA - 160),
+        y: 80 + world.rng() * (ARENA - 220),
+        kind: 'bumper',
+        r: 22,
+        life: 12,
+        wall: 'stop',
+        blockable: false,
+        hitCd: 0,
+        pop: 0,
+        update(world, p, owner, foe, dt) {
+          if (p.hitCd > 0) p.hitCd -= dt;
+          if (p.pop > 0) p.pop -= dt;
+        },
+        onTouch(world, p, owner, foe) {
+          if (p.hitCd > 0) return;
+          p.hitCd = 0.4;
+          p.pop = 0.15;
+          const a = Math.atan2(foe.y - p.y, foe.x - p.x);
+          foe.vx = Math.cos(a) * 750;
+          foe.vy = Math.sin(a) * 750;
+          foe.slamT = 0.7;
+          foe.slamBy = owner.id;
+          landHit(world, owner, foe, 0.8, { kind: 'bumper', x: p.x, y: p.y });
+        },
+      });
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 0.5, 9, 0.4);
+    },
+  },
+  {
+    id: 'prism',
+    kind: 'ranged',
+    name: 'プリズム',
+    en: 'Prism Laser',
+    color: '#b07cff',
+    grow: '3回当たるたびに レーザーが壁で跳ね返る回数 +1',
+    init(b) {
+      b.w = { bounces: 1, timer: 1 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [['反射', fmt(Math.floor(shown(b, 'bounces')))]],
+    update(world, me, foe, dt) {
+      const want = aimAt(me, foe);
+      const diff = ((want - me.angle + Math.PI) % TAU + TAU) % TAU - Math.PI;
+      me.angle += diff * Math.min(1, dt * 6);
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 1.8;
+      const bounces = Math.floor(me.w.bounces);
+      spawnProjectile(world, me, {
+        kind: 'prismcharge',
+        r: 1,
+        life: 0.5,
+        wall: 'stop',
+        blockable: false,
+        update(world, p, owner) {
+          p.x = owner.x;
+          p.y = owner.y;
+          p.angle = owner.angle;
+        },
+        onExpire(world, p, owner, foe) {
+          const segs = traceBeam(owner.x, owner.y, owner.angle, bounces);
+          world.events.push({ type: 'prism', segs });
+          if (segs.some(([x1, y1, x2, y2]) => segPointDist(x1, y1, x2, y2, foe.x, foe.y) < foe.r + 8)) {
+            landHit(world, owner, foe, 9, { kind: 'prism', x: foe.x, y: foe.y });
+          }
+        },
+      });
+    },
+    onHit(world, me) {
+      growStat(me, 'bounces', 0.34, 8, 0.4);
+    },
+  },
+  {
+    id: 'ghost',
+    kind: 'ranged',
+    name: 'ゴースト',
+    en: 'Ghosts',
+    color: '#d8d8f0',
+    grow: '2回おどかすたびに ゴースト +1(何でもすり抜け、触れた相手を遅くする)',
+    init(b) {
+      b.w = { n: 1, timer: 0.4 };
+    },
+    stats: (b) => [['ゴースト', fmt(Math.floor(shown(b, 'n')))]],
+    update(world, me, foe, dt) {
+      me.angle += dt * 2;
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 0.8;
+      const alive = world.projectiles.filter((p) => p.owner === me.id && p.kind === 'ghost').length;
+      if (alive >= Math.floor(me.w.n)) return;
+      shoot(world, me, world.rng() * TAU, 120, {
+        kind: 'ghost',
+        r: 14,
+        life: 7,
+        wall: 'stop',
+        blockable: false,
+        hitCd: 0,
+        wob: world.rng() * TAU,
+        update(world, p, owner, foe, dt) {
+          p.wob += dt * 3;
+          homing(p, foe, 1.5, dt, 150 + Math.sin(p.wob) * 40);
+          if (p.hitCd > 0) p.hitCd -= dt;
+        },
+        onTouch(world, p, owner, foe) {
+          if (p.hitCd > 0) return;
+          p.hitCd = 1;
+          if (landHit(world, owner, foe, 1.5, { kind: 'ghost', x: p.x, y: p.y }) > 0) {
+            foe.slow = Math.max(foe.slow, 0.35);
+            foe.slowT = 0.8;
+          }
+        },
+      });
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 0.5, 10, 0.4);
     },
   },
 ];

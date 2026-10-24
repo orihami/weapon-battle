@@ -75,7 +75,7 @@ test('全ての組み合わせが制限時間内に決着し、数値が壊れ�
       assert.ok(world.t <= HARD_LIMIT + 0.01);
       for (const ball of world.balls) {
         assert.ok(Number.isFinite(ball.x) && Number.isFinite(ball.y), `${a.id} vs ${b.id}: 位置がNaN`);
-        assert.ok(ball.hp >= 0 && ball.hp <= MAX_HP, `${a.id} vs ${b.id}: HP=${ball.hp}`);
+        assert.ok(ball.hp >= 0 && ball.hp <= Math.max(MAX_HP, ball.maxHp), `${a.id} vs ${b.id}: HP=${ball.hp}`);
         for (const [, v] of ball.def.stats(ball, world)) assert.ok(!String(v).includes('NaN'));
       }
     }
@@ -216,4 +216,34 @@ test('ものまね: 相手と同じ武器の動きになる', () => {
   assert.ok(me.w.n >= 1, '周回玉の状態を持っていない');
   runToEnd(world);
   assert.ok(world.over);
+});
+
+test('チャレンジ: 強化が試合に反映され、敵はステージごとに強くなる', async () => {
+  const { newChallenge, enemyBoost, offerUpgrades, applyUpgrade, UPGRADES } = await import('../src/challenge.js');
+  const ch = newChallenge(W.bomb);
+  const hp = UPGRADES.find((u) => u.id === 'hp');
+  applyUpgrade(ch, hp);
+  applyUpgrade(ch, UPGRADES.find((u) => u.id === 'grow'));
+  assert.equal(ch.stage, 3);
+  assert.equal(ch.stats.maxHp, 125);
+  const offer = offerUpgrades(() => 0.5);
+  assert.equal(new Set(offer).size, 3);
+  assert.ok(enemyBoost(5).maxHp > enemyBoost(1).maxHp);
+  const world = createBattle(W.sword, W.bomb, 7, { a: { ...ch.stats }, b: enemyBoost(ch.stage) });
+  assert.equal(world.balls[0].maxHp, 125);
+  assert.equal(world.balls[0].hp, 125);
+  assert.equal(world.balls[0].w.dmg, 1 + 3, '初期成長3回で剣のダメージが4');
+  assert.equal(world.balls[1].maxHp, enemyBoost(3).maxHp);
+  assert.equal(world.balls[1].poison, 0);
+  runToEnd(world);
+  assert.ok(world.over);
+});
+
+test('不死鳥は1度だけよみがえる', () => {
+  const world = createBattle(W.phoenix, W.sword, 3);
+  const [ph, foe] = world.balls;
+  landHit(world, foe, ph, 500);
+  assert.ok(!ph.dead && ph.hp > 0, '1度目でよみがえっていない');
+  landHit(world, foe, ph, 500);
+  assert.ok(ph.dead, '2度目もよみがえってしまった');
 });

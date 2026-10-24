@@ -3,10 +3,12 @@ import { WEAPONS, WEAPON_BY_ID } from './weapons.js';
 import { Renderer, drawIcon } from './render.js';
 import { Sound } from './sound.js';
 import { createTournament, nextMatch, reportWinner, pickEntries, roundName } from './tournament.js';
+import { newChallenge, enemyBoost, offerUpgrades, applyUpgrade, describeStats } from './challenge.js';
 
 const $ = (id) => document.getElementById(id);
 const SPEEDS = [1, 2, 4];
 const RECORD_KEY = 'weapon-battle-records';
+const BEST_KEY = 'weapon-battle-challenge-best';
 
 const params = new URLSearchParams(location.search);
 const renderer = new Renderer($('arena'));
@@ -21,6 +23,9 @@ const state = {
   picking: 0,
   records: loadRecords(),
   tour: null, // トーナメント中なら進行状況
+  chal: null, // チャレンジ中なら進行状況
+  opts: {}, // チャレンジの強化(createBattle の opts)
+  auto: false, // 連続観戦
   bookSort: 'no',
 };
 
@@ -56,13 +61,17 @@ function randomOne(side) {
 }
 
 function newBattle() {
-  state.world = createBattle(state.a, state.b, (Math.random() * 2 ** 32) >>> 0);
+  state.world = createBattle(state.a, state.b, (Math.random() * 2 ** 32) >>> 0, state.chal ? state.opts : {});
   state.running = false;
   renderer.particles = [];
   renderer.texts = [];
   renderer.rings = [];
   renderer.bolts = [];
   renderer.beams = [];
+  renderer.prisms = [];
+  renderer.ko = null;
+  $('upgrades').hidden = true;
+  $('overlayButtons').hidden = false;
   $('overlay').hidden = true;
   $('startBtn').textContent = 'スタート';
   updateHeader();
@@ -135,6 +144,7 @@ function finish() {
     text.textContent = '引き分け！';
     text.style.color = '#ffffff';
     if (state.tour) setTimeout(() => state.world === w && playTourMatch(), 1500); // 引き分けは同じ組み合わせでやり直し
+    if (state.chal) setTimeout(() => state.world === w && state.chal && playChalStage(), 1500);
   } else {
     // ボールの def は「ものまね」だと相手の武器になっているので、選んだ武器(state.a/b)で記録する
     const win = w.winner === 0 ? state.a : state.b;
@@ -148,6 +158,16 @@ function finish() {
     rec[lose.id].l++;
     saveRecords();
     renderBook();
+    if (state.chal) {
+      chalResult(w.winner === 0);
+    } else if (state.auto && !state.tour) {
+      setTimeout(() => {
+        if (state.world !== w || !state.auto) return;
+        [state.a, state.b] = randomPair();
+        newBattle();
+        start();
+      }, 2200);
+    }
     if (state.tour) {
       reportWinner(state.tour, win);
       renderBracket();
@@ -164,8 +184,127 @@ function finish() {
   }, 700);
 }
 
+function loadBest() {
+  try {
+    return Number(localStorage.getItem(BEST_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveBest(n) {
+  try {
+    localStorage.setItem(BEST_KEY, String(n));
+  } catch {
+    // 保存できない環境では記録しない
+  }
+}
+
+function startChallenge() {
+  sound.unlock();
+  stopTournament();
+  stopAuto();
+  state.chal = newChallenge(state.a);
+  $('chalStopBtn').hidden = false;
+  playChalStage();
+}
+
+function stopChallenge() {
+  if (!state.chal) return;
+  state.chal = null;
+  state.opts = {};
+  $('chalStopBtn').hidden = true;
+  renderChal();
+}
+
+function playChalStage() {
+  const ch = state.chal;
+  const pool = WEAPONS.filter((w) => w !== ch.weapon);
+  state.a = ch.weapon;
+  state.b = pool[Math.floor(Math.random() * pool.length)];
+  state.opts = { a: { ...ch.stats }, b: enemyBoost(ch.stage) };
+  newBattle();
+  renderChal();
+  start();
+  $('arenaWrap').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function chalResult(won) {
+  const ch = state.chal;
+  const text = $('resultText');
+  if (!won) {
+    const cleared = ch.stage - 1;
+    const best = Math.max(loadBest(), cleared);
+    saveBest(best);
+    text.textContent = `ステージ${ch.stage}で敗退…`;
+    $('chalInfo').innerHTML = `<b>${ch.weapon.name}</b>はステージ${ch.stage}で負けました(${cleared}勝)。最高記録: ${best}勝`;
+    state.chal = null;
+    state.opts = {};
+    $('chalStopBtn').hidden = true;
+    return;
+  }
+  text.textContent = `ステージ${ch.stage} クリア！`;
+  // 強化を3つから選ぶ
+  const box = $('upgrades');
+  box.replaceChildren(Object.assign(document.createElement('p'), { textContent: '強化を1つ選んでください' }));
+  for (const up of offerUpgrades()) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = `<b>${up.name}</b><small>${up.desc}</small>`;
+    b.addEventListener('click', () => {
+      applyUpgrade(ch, up);
+      playChalStage();
+    });
+    box.append(b);
+  }
+  box.hidden = false;
+  $('overlayButtons').hidden = true;
+}
+
+function renderChal() {
+  const ch = state.chal;
+  if (!ch) {
+    $('chalInfo').innerHTML ||= '';
+    return;
+  }
+  $('chalInfo').innerHTML = `<b>${ch.weapon.name}</b> ステージ <b>${ch.stage}</b>(最高記録 ${loadBest()}勝)<br>自分: ${describeStats(ch.stats)}<br>敵: HP${enemyBoost(ch.stage).maxHp}・初期成長+${enemyBoost(ch.stage).preGrow}`;
+}
+
+function setAuto(on) {
+  state.auto = on;
+  $('autoBtn').classList.toggle('on', on);
+  $('autoBtn').textContent = on ? '📺 連続観戦中(止める)' : '📺 連続観戦';
+}
+
+function stopAuto() {
+  if (state.auto) setAuto(false);
+}
+
+async function share() {
+  const url = `${location.origin}${location.pathname}?a=${state.a.id}&b=${state.b.id}`;
+  const msg = (t) => {
+    const el = $('toast');
+    el.textContent = t;
+    el.hidden = false;
+    clearTimeout(share.timer);
+    share.timer = setTimeout(() => (el.hidden = true), 2500);
+  };
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: `${state.a.name} VS ${state.b.name} | ウェポンバトル`, url });
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    msg('この対戦のURLをコピーしました');
+  } catch {
+    msg(url);
+  }
+}
+
 function startTournament(n) {
   sound.unlock();
+  stopChallenge();
+  stopAuto();
   state.tour = createTournament(pickEntries(WEAPONS, n));
   $('tourStopBtn').hidden = false;
   playTourMatch();
@@ -282,6 +421,7 @@ function openPicker(side) {
 
 function choose(side, def) {
   stopTournament();
+  stopChallenge();
   if (side === 0) state.a = def;
   else state.b = def;
   newBattle();
@@ -338,17 +478,20 @@ function init() {
   $('startBtn').addEventListener('click', start);
   $('againBtn').addEventListener('click', () => {
     stopTournament();
+    stopChallenge();
     newBattle();
     start();
   });
   $('nextBtn').addEventListener('click', () => {
     stopTournament();
+    stopChallenge();
     [state.a, state.b] = randomPair();
     newBattle();
     start();
   });
   $('randomBtn').addEventListener('click', () => {
     stopTournament();
+    stopChallenge();
     [state.a, state.b] = randomPair();
     newBattle();
   });
@@ -360,6 +503,7 @@ function init() {
   });
   $('swapBtn').addEventListener('click', () => {
     stopTournament();
+    stopChallenge();
     [state.a, state.b] = [state.b, state.a];
     newBattle();
   });
@@ -375,6 +519,22 @@ function init() {
     sound.enabled = !sound.enabled;
     $('soundBtn').textContent = sound.enabled ? '🔊' : '🔇';
   });
+  $('chalBtn').addEventListener('click', startChallenge);
+  $('chalStopBtn').addEventListener('click', stopChallenge);
+  $('autoBtn').addEventListener('click', () => {
+    setAuto(!state.auto);
+    if (state.auto) {
+      sound.unlock();
+      stopTournament();
+      stopChallenge();
+      if (!state.running) {
+        if (state.world && state.world.over) [state.a, state.b] = randomPair();
+        newBattle();
+        start();
+      }
+    }
+  });
+  $('shareBtn').addEventListener('click', share);
   $('tour8Btn').addEventListener('click', () => startTournament(8));
   $('tour16Btn').addEventListener('click', () => startTournament(16));
   $('tourStopBtn').addEventListener('click', stopTournament);

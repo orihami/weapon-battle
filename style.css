@@ -304,3 +304,23 @@ button.primary { background: var(--accent); color: #fff; -webkit-text-stroke: 0;
 .sort select { font: inherit; font-size: 14px; padding: 4px; border: 2px solid var(--line); border-radius: 6px; background: #fff; }
 
 .card .rank { font-family: var(--num); color: var(--accent); margin-right: 4px; }
+
+.extra-row button { flex: 1; font-size: 15px; padding: 8px 6px; }
+
+.extra-row button.on { background: #2f7de1; color: #fff; }
+
+.toast { margin: -4px 0 8px; text-align: center; font-size: 14px; color: #2f7de1; }
+
+.chal { background: #f4f0ff; }
+
+.chal .hint b { color: var(--ink); }
+
+.upgrades { display: flex; flex-direction: column; gap: 8px; width: min(320px, 86%); }
+
+.upgrades button { display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 8px 12px; background: #fffbe6; }
+
+.upgrades button b { font-size: 17px; }
+
+.upgrades button small { font-size: 12px; color: var(--muted); }
+
+.upgrades p { margin: 0; text-align: center; font-size: 15px; background: rgba(255, 255, 255, 0.85); border-radius: 8px; padding: 4px; }

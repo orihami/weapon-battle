@@ -115,6 +115,34 @@ try {
   const ranks = await page.evaluate(() => [...document.querySelectorAll('#bookGrid .rank')].map((r) => r.textContent));
   check(ranks[0] === '1位' && ranks.length >= 2, `ランキング表示: ${ranks.slice(0, 3).join(', ')}`);
 
+  // 2.9) チャレンジ: 4倍速で1ステージ戦い、勝てば強化を選んで次へ / 負ければ終了
+  await page.goto(base + '?a=lightning&b=sword&speed=4');
+  await page.click('#chalBtn');
+  const info1 = await page.textContent('#chalInfo');
+  check(/ステージ 1/.test(info1.replace(/\s+/g, ' ')), `チャレンジ開始: ${info1.trim().slice(0, 40)}`);
+  await page.waitForSelector('#overlay:not([hidden])', { timeout: 120000 });
+  const upgradeShown = await page.isVisible('#upgrades button');
+  if (upgradeShown) {
+    await page.click('#upgrades button');
+    await page.waitForTimeout(500);
+    const info2 = await page.textContent('#chalInfo');
+    check(/ステージ 2/.test(info2.replace(/\s+/g, ' ')), `勝って強化を選び次のステージへ: ${info2.trim().slice(0, 60)}`);
+    const hp = await page.evaluate(() => window.__weaponBattle.state.world.balls[0].maxHp);
+    check(hp >= 100, `強化が反映された最大HP: ${hp}`);
+  } else {
+    const res = await page.textContent('#resultText');
+    check(/敗退/.test(res), `負けてチャレンジ終了: ${res}`);
+  }
+  await page.screenshot({ path: join(outDir, '3d-challenge.png') });
+  await page.click('#chalStopBtn').catch(() => {});
+
+  // 2.95) 共有ボタン(クリップボードが使えない環境ではURLを表示)
+  await page.goto(base + '?a=bomb&b=lightning');
+  await page.click('#shareBtn');
+  await page.waitForTimeout(300);
+  const toast = await page.textContent('#toast');
+  check(/a=bomb&b=lightning|コピー/.test(toast), `共有: ${toast}`);
+
   // 3) 全武器を少しずつ動かして、描画でエラーが出ないか
   const ids = await page.evaluate(() => [...document.querySelectorAll('#bookGrid .card')].map((c) => c.dataset.id));
   check(ids.length >= 20, `ずかんの武器数: ${ids.length}`);

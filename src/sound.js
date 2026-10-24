@@ -69,6 +69,13 @@ export class Sound {
       } else if (e.type === 'burst') {
         this.noise(0.2, 0.08);
         this.tone('burst', 900 + Math.random() * 500, 0.15, 'triangle', 0.04, 1.6);
+      } else if (e.type === 'quake') {
+        this.noise(0.35, 0.16);
+        this.tone('quake', 60, 0.4, 'square', 0.07, 0.6);
+      } else if (e.type === 'rebirth') {
+        [392, 523, 659, 784].forEach((f, i) => setTimeout(() => this.tone('reb' + i, f, 0.16, 'triangle', 0.06), i * 70));
+      } else if (e.type === 'prism') {
+        this.tone('prism', 1700, 0.25, 'sawtooth', 0.05, 0.4);
       } else if (e.type === 'timestop') {
         this.tone('tick', 1800, 0.05, 'square', 0.05);
         setTimeout(() => this.tone('tock', 1200, 0.05, 'square', 0.05), 120);
@@ -82,6 +89,8 @@ export class Sound {
       } else if (e.type === 'heal') {
         this.tone('heal', 660, 0.12, 'sine', 0.05, 1.5);
       } else if (e.type === 'end') {
+        this.noise(0.5, 0.2);
+        this.tone('ko', 80, 0.5, 'square', 0.08, 0.4);
         [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => this.tone('end' + i, f, 0.18, 'square', 0.05), i * 110));
       }
     }

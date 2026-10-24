@@ -79,6 +79,16 @@ function shaft(ctx, rIn, rOut, color = WOOD, h = 6) {
   rect(ctx, rIn, -h / 2, rOut - rIn, h, color);
 }
 
+function starShape(ctx, r, fill) {
+  const pts = [];
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const rr = i % 2 ? r * 0.45 : r;
+    pts.push([Math.cos(a) * rr, Math.sin(a) * rr]);
+  }
+  poly(ctx, pts, fill);
+}
+
 function shurikenShape(ctx, r) {
   const pts = [];
   for (let i = 0; i < 8; i++) {
@@ -183,6 +193,11 @@ const BLADE_SPRITES = {
       ctx.stroke();
     }
     ctx.restore();
+  },
+  vampire(ctx, b) {
+    shaft(ctx, b.rIn, b.rOut - 26, '#3a1220', 6);
+    for (const y of [-7, 7]) poly(ctx, [[b.rOut - 30, y - 5], [b.rOut, y * 0.4], [b.rOut - 30, y + 5]], '#f4f0e8');
+    circle(ctx, b.rOut - 32, 0, 6, '#8c1c3a');
   },
   dual(ctx, b) {
     swordShape(ctx, b.rIn, b.rOut, 6, { guard: '#d94f8a' });
@@ -290,6 +305,82 @@ const BLADE_SPRITES = {
 
 // 遠距離武器などの「手に持っている物」
 const HELD = {
+  quake(ctx) {
+    rect(ctx, -10, -6, 20, 12, '#8a6a45');
+    ctx.beginPath();
+    ctx.moveTo(-8, 0);
+    ctx.lineTo(-2, -4);
+    ctx.lineTo(2, 3);
+    ctx.lineTo(8, -2);
+    ctx.stroke();
+  },
+  phoenix(ctx, ball) {
+    poly(ctx, [[-12, 6], [0, -12], [12, 6], [0, 2]], ball.w.revived ? '#ffd23f' : '#ff7a1a');
+  },
+  magnet(ctx) {
+    ctx.lineWidth = 9;
+    ctx.strokeStyle = '#d64545';
+    ctx.beginPath();
+    ctx.arc(0, 0, 9, Math.PI * 0.5, Math.PI * 1.5, true);
+    ctx.stroke();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = OUT;
+    rect(ctx, -2, -13, 7, 8, '#dddddd');
+    rect(ctx, -2, 5, 7, 8, '#dddddd');
+  },
+  star(ctx) {
+    starShape(ctx, 11, '#f5d742');
+  },
+  axethrow(ctx) {
+    shaft(ctx, -12, 10, '#7a4a26', 5);
+    poly(ctx, [[4, -3], [0, -16], [12, -18], [16, -4]], STEEL);
+  },
+  danmaku(ctx, ball, t) {
+    for (let i = 0; i < 5; i++) {
+      const a = t * 4 + (i * Math.PI * 2) / 5;
+      circle(ctx, Math.cos(a) * 9, Math.sin(a) * 9, 3.5, `hsl(${i * 72},90%,62%)`, false);
+    }
+  },
+  lava(ctx) {
+    circle(ctx, 0, 0, 9, '#e8461a');
+    circle(ctx, -2, -2, 4, '#ffd23f', false);
+  },
+  gears(ctx, ball, t) {
+    ctx.rotate(t * 3);
+    const pts = [];
+    for (let i = 0; i < 16; i++) {
+      const a = (i * Math.PI) / 8;
+      const rr = i % 2 ? 7 : 11;
+      pts.push([Math.cos(a) * rr, Math.sin(a) * rr]);
+    }
+    poly(ctx, pts, '#a88b4a');
+  },
+  kamaitachi(ctx) {
+    ctx.beginPath();
+    ctx.arc(-4, 0, 11, -1.2, 1.2);
+    ctx.arc(-11, 0, 10, 1.1, -1.1, true);
+    ctx.closePath();
+    ctx.fillStyle = '#bff2dc';
+    ctx.fill();
+    ctx.stroke();
+  },
+  bumper(ctx) {
+    circle(ctx, 0, 0, 10, '#ff5fa2');
+    circle(ctx, 0, 0, 5, '#ffd1e6');
+  },
+  prism(ctx) {
+    poly(ctx, [[-10, 9], [0, -11], [10, 9]], '#e8dcff');
+  },
+  ghost(ctx) {
+    ctx.beginPath();
+    ctx.arc(0, -2, 9, Math.PI, 0);
+    ctx.lineTo(9, 9);
+    ctx.lineTo(-9, 9);
+    ctx.closePath();
+    ctx.fillStyle = '#f2f2ff';
+    ctx.fill();
+    ctx.stroke();
+  },
   sticky(ctx) {
     circle(ctx, 0, 0, 9, '#d97a2b');
     circle(ctx, 3, -3, 3, '#ffe0b0', false);
@@ -557,6 +648,126 @@ const HELD = {
 };
 
 const PROJ = {
+  feather(ctx, p) {
+    ctx.rotate(Math.atan2(p.vy, p.vx));
+    poly(ctx, [[-10, 0], [0, -5], [10, 0], [0, 5]], '#ff9a3a');
+    ctx.fillStyle = '#ffe08a';
+    ctx.fillRect(-8, -1, 16, 2);
+  },
+  star(ctx, p) {
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = '#fff3a0';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-p.vx * 0.08, -p.vy * 0.08);
+    ctx.stroke();
+    ctx.restore();
+    starShape(ctx, p.r + 4, '#f5d742');
+  },
+  ministar(ctx, p) {
+    ctx.rotate(p.age * 8);
+    starShape(ctx, p.r + 2, '#ffe680');
+  },
+  axe(ctx, p) {
+    ctx.rotate(p.angle);
+    shaft(ctx, -14, 10, '#7a4a26', 5);
+    poly(ctx, [[4, -3], [0, -16], [12, -18], [16, -4]], STEEL);
+  },
+  orbbullet(ctx, p) {
+    circle(ctx, 0, 0, p.r + 1, `hsl(${p.hue},90%,62%)`);
+    circle(ctx, 0, 0, p.r * 0.45, '#ffffff', false);
+  },
+  raindrop(ctx, p) {
+    ctx.fillStyle = '#6fa8ff';
+    ctx.fillRect(-1.5, -7, 3, 10);
+  },
+  spiritsword(ctx, p) {
+    ctx.rotate(p.angle);
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    swordShape(ctx, -14, 16, 4, { guard: '#8fd9ff', grip: 6 });
+    ctx.restore();
+  },
+  magma(ctx, p) {
+    circle(ctx, 0, 0, p.r + 2, '#e8461a');
+    circle(ctx, -2, -2, p.r * 0.5, '#ffd23f', false);
+  },
+  lava(ctx, p) {
+    // 床一面の溶岩(p.x は中央)
+    const k = Math.min(1, p.age / 0.25) * Math.min(1, (p.life - p.age) / 0.25);
+    ctx.save();
+    ctx.globalAlpha = k;
+    ctx.fillStyle = '#ff5a1a';
+    ctx.fillRect(-ARENA / 2, -14, ARENA, 18);
+    ctx.fillStyle = '#ffd23f';
+    for (let x = -ARENA / 2; x < ARENA / 2; x += 26) {
+      const h = 4 + Math.sin(x * 0.2 + p.age * 10) * 3;
+      ctx.fillRect(x, -14 - h, 12, h);
+    }
+    ctx.restore();
+  },
+  gear(ctx, p) {
+    ctx.rotate(p.angle);
+    const pts = [];
+    for (let i = 0; i < 20; i++) {
+      const a = (i * Math.PI) / 10;
+      const rr = i % 2 ? p.r - 4 : p.r + 2;
+      pts.push([Math.cos(a) * rr, Math.sin(a) * rr]);
+    }
+    poly(ctx, pts, '#a88b4a');
+    circle(ctx, 0, 0, p.r * 0.35, '#5a4a2a');
+  },
+  wind(ctx, p) {
+    ctx.rotate(Math.atan2(p.vy, p.vx));
+    ctx.save();
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    ctx.arc(-6, 0, p.r, -1.2, 1.2);
+    ctx.arc(-14, 0, p.r * 0.9, 1.1, -1.1, true);
+    ctx.closePath();
+    ctx.fillStyle = '#bff2dc';
+    ctx.fill();
+    ctx.strokeStyle = '#4fae86';
+    ctx.stroke();
+    ctx.restore();
+  },
+  bumper(ctx, p) {
+    const s = 1 + (p.pop > 0 ? 0.25 : 0);
+    ctx.scale(s, s);
+    circle(ctx, 0, 0, p.r, '#ff5fa2');
+    circle(ctx, 0, 0, p.r * 0.6, '#ffd1e6');
+    circle(ctx, 0, 0, p.r * 0.25, '#ff5fa2', false);
+  },
+  prismcharge(ctx, p) {
+    const k = p.age / p.life;
+    ctx.save();
+    ctx.rotate(p.angle);
+    ctx.strokeStyle = `rgba(176,124,255,${0.3 + 0.6 * k})`;
+    ctx.lineWidth = 2 + k * 3;
+    ctx.setLineDash([8, 8]);
+    ctx.beginPath();
+    ctx.moveTo(30, 0);
+    ctx.lineTo(900, 0);
+    ctx.stroke();
+    ctx.restore();
+  },
+  ghost(ctx, p) {
+    ctx.save();
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    ctx.arc(0, -2, p.r, Math.PI, 0);
+    for (let i = 0; i <= 4; i++) ctx.lineTo(p.r - (i * p.r) / 2, p.r + (i % 2 ? -4 : 2));
+    ctx.closePath();
+    ctx.fillStyle = '#f2f2ff';
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = OUT;
+    ctx.fillRect(-6, -5, 3, 5);
+    ctx.fillRect(3, -5, 3, 5);
+    ctx.restore();
+  },
   mirrorbolt(ctx, p) {
     ctx.rotate(p.angle);
     ctx.save();
@@ -958,6 +1169,8 @@ export class Renderer {
     this.bolts = [];
     this.lastSurge = {};
     this.beams = [];
+    this.prisms = [];
+    this.ko = null;
     this.flashA = 0;
     this.shake = 0;
     this.time = 0;
@@ -1042,7 +1255,32 @@ export class Renderer {
         this.shake = Math.min(12, this.shake + 4);
       } else if (e.type === 'end') {
         const loser = world.balls[1 - e.winner];
-        if (loser && loser.dead) this.burst(loser.x, loser.y, 40, loser.def.color, 2.2);
+        if (loser && loser.dead) {
+          // K.O.!: 大きな文字・白いフラッシュ・強い揺れ・飛び散る破片
+          this.burst(loser.x, loser.y, 60, loser.def.color, 2.6);
+          this.burst(loser.x, loser.y, 30, '#ffffff', 2);
+          this.rings.push({ x: loser.x, y: loser.y, r0: loser.r, r1: 260, life: 0.5, age: 0, color: loser.def.color, fill: true, strong: true });
+          this.ko = { age: 0, life: 1.6 };
+          this.flashA = 0.7;
+          this.shake = 22;
+        }
+      } else if (e.type === 'quake') {
+        this.shake = Math.min(16, this.shake + 7);
+        for (let i = 0; i < 16; i++) {
+          this.particles.push({ x: Math.random() * ARENA, y: ARENA - 4, vx: (Math.random() - 0.5) * 120, vy: -150 - Math.random() * 250, life: 0.5, age: 0, color: '#a07a50', size: 6 });
+        }
+      } else if (e.type === 'rebirth') {
+        const ball = world.balls[e.target];
+        this.texts.push({ x: ball.x, y: ball.y - 55, text: '復活！', color: '#ff7a1a', life: 1.2, age: 0, size: 30, jp: true });
+        this.burst(ball.x, ball.y, 40, '#ffb03a', 2);
+        this.rings.push({ x: ball.x, y: ball.y, r0: 10, r1: 140, life: 0.5, age: 0, color: '#ff7a1a', fill: true, strong: true });
+        this.flashA = Math.max(this.flashA, 0.4);
+      } else if (e.type === 'magnet') {
+        this.rings.push({ x: e.x, y: e.y, r0: 4, r1: 22, life: 0.2, age: 0, color: '#d64545' });
+      } else if (e.type === 'prism') {
+        this.prisms.push({ segs: e.segs, age: 0, life: 0.35 });
+        this.shake = Math.min(14, this.shake + 6);
+        this.flashA = Math.max(this.flashA, 0.2);
       }
     }
   }
@@ -1071,6 +1309,12 @@ export class Renderer {
     for (const r of this.rings) r.age += dt;
     for (const b of this.bolts) b.age += dt;
     for (const b of this.beams) b.age += dt;
+    for (const b of this.prisms) b.age += dt;
+    this.prisms = this.prisms.filter((b) => b.age < b.life);
+    if (this.ko) {
+      this.ko.age += dt;
+      if (this.ko.age > this.ko.life) this.ko = null;
+    }
     this.beams = this.beams.filter((b) => b.age < b.life);
     this.flashA = Math.max(0, this.flashA - dt * 3);
     this.bolts = this.bolts.filter((b) => b.age < b.life);
@@ -1157,6 +1401,24 @@ export class Renderer {
       ctx.fill();
       ctx.restore();
     }
+    for (const pr of this.prisms) {
+      // 虹色の反射レーザー
+      const k = pr.age / pr.life;
+      ctx.save();
+      ctx.globalAlpha = 1 - k;
+      ctx.lineCap = 'round';
+      pr.segs.forEach(([x1, y1, x2, y2], i) => {
+        for (const [w, c] of [[22, `hsla(${(i * 70 + 270) % 360},90%,60%,0.35)`], [9, `hsl(${(i * 70 + 270) % 360},90%,65%)`], [3, '#ffffff']]) {
+          ctx.lineWidth = w;
+          ctx.strokeStyle = c;
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+        }
+      });
+      ctx.restore();
+    }
     for (const bm of this.beams) {
       // レーザー: 太い光の帯
       const k = bm.age / bm.life;
@@ -1212,6 +1474,22 @@ export class Renderer {
       main.fillText(tx.text, tx.x, tx.y - k * 30);
     }
     main.globalAlpha = 1;
+    if (this.ko) {
+      const k = this.ko.age / this.ko.life;
+      const pop = k < 0.15 ? 0.4 + (k / 0.15) * 0.8 : 1.2 - Math.min(0.2, (k - 0.15));
+      main.save();
+      main.globalAlpha = k > 0.75 ? 1 - (k - 0.75) / 0.25 : 1;
+      main.translate(ARENA / 2, ARENA / 2);
+      main.rotate(-0.08);
+      main.scale(pop, pop);
+      main.font = `130px ${NUM_FONT}`;
+      main.lineWidth = 14;
+      main.strokeStyle = '#161616';
+      main.strokeText('K.O.!', 0, 0);
+      main.fillStyle = '#ffd23f';
+      main.fillText('K.O.!', 0, 0);
+      main.restore();
+    }
   }
 
   // ボールより下に描くもの(オーラ・渦・トゲなど)
@@ -1274,7 +1552,42 @@ export class Renderer {
       fn(ctx, bl, t);
       ctx.restore();
     }
-    if (def.id === 'orbital') {
+    if (def.id === 'drones') {
+      for (const [x, y] of def.drones(b)) {
+        rect(ctx, x - 9, y - 4, 18, 8, '#5f7d8c');
+        ctx.fillStyle = 'rgba(200,220,230,0.8)';
+        ctx.fillRect(x - 13, y - 7, 8, 2);
+        ctx.fillRect(x + 5, y - 7, 8, 2);
+      }
+    } else if (def.id === 'wrecking') {
+      const w = b.w;
+      for (let i = 1; i < 18; i++) {
+        const k = i / 18;
+        ctx.fillStyle = i % 2 ? '#555' : '#999';
+        ctx.fillRect(ARENA / 2 + (w.hx - ARENA / 2) * k - 3, w.hy * k - 3, 6, 6);
+      }
+      circle(ctx, w.hx, w.hy, 30, '#3a3a40');
+      circle(ctx, w.hx - 9, w.hy - 9, 8, '#6a6a74', false);
+    } else if (def.id === 'storm') {
+      const w = b.w;
+      ctx.save();
+      ctx.globalAlpha = 0.9;
+      for (const [dx, dy, r] of [[-34, 6, 22], [-10, -6, 28], [20, 2, 24], [40, 8, 18]]) circle(ctx, w.cx + dx, w.cy + dy, r, '#7d8ba3', false);
+      ctx.restore();
+    } else if (def.id === 'spirit') {
+      const n = Math.floor(b.w.n);
+      ctx.save();
+      ctx.globalAlpha = 0.75;
+      for (let i = 0; i < n; i++) {
+        const a = b.angle + (i * Math.PI * 2) / n;
+        ctx.save();
+        ctx.translate(b.x + Math.cos(a) * 58, b.y + Math.sin(a) * 58);
+        ctx.rotate(a + Math.PI / 2);
+        swordShape(ctx, -16, 16, 4, { guard: '#8fd9ff', grip: 6 });
+        ctx.restore();
+      }
+      ctx.restore();
+    } else if (def.id === 'orbital') {
       for (const [x, y] of def.orbiters(b)) circle(ctx, x, y, 9, def.color);
     } else if (def.id === 'flail') {
       const w = b.w;

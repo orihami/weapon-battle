@@ -28,7 +28,8 @@
       <div class="timer" id="timer">0.0</div>
       <div class="overlay" id="overlay" hidden>
         <p class="result" id="resultText"></p>
-        <div class="overlay-buttons">
+        <div class="upgrades" id="upgrades" hidden></div>
+        <div class="overlay-buttons" id="overlayButtons">
           <button type="button" id="againBtn" class="primary">もう一度</button>
           <button type="button" id="nextBtn">別の組み合わせ</button>
         </div>
@@ -57,6 +58,23 @@
       <button type="button" id="randomBtn">🎲 両方</button>
       <button type="button" id="randomBBtn">🎲 右だけ</button>
     </div>
+
+    <div class="row extra-row">
+      <button type="button" id="autoBtn">📺 連続観戦</button>
+      <button type="button" id="shareBtn">🔗 この対戦を共有</button>
+    </div>
+    <p class="toast" id="toast" hidden></p>
+
+    <section class="tour chal" id="chal">
+      <div class="tour-head">
+        <h2>⚔ チャレンジ</h2>
+        <div class="tour-buttons">
+          <button type="button" id="chalBtn">左の武器で挑戦</button>
+          <button type="button" id="chalStopBtn" hidden>やめる</button>
+        </div>
+      </div>
+      <p class="hint" id="chalInfo">自分の武器(左)で、だんだん強くなる敵と連戦します。勝つたびに強化を1つ選べます。負けたら終わり。</p>
+    </section>
 
     <section class="tour" id="tour">
       <div class="tour-head">

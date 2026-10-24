@@ -119,7 +119,9 @@ function makeBall(def, id, x, y, angle) {
   };
 }
 
-export function createBattle(defA, defB, seed = 1) {
+// opts: チャレンジモード用の強化。{ a: {...}, b: {...} } のそれぞれに
+//   maxHp(最大HP) / preGrow(試合前に成長させる回数) / power(与ダメージ倍率) / speedMul(素早さ)
+export function createBattle(defA, defB, seed = 1, opts = {}) {
   const rng = mulberry32(seed);
   const world = {
     t: 0,
@@ -140,7 +142,24 @@ export function createBattle(defA, defB, seed = 1) {
   world.balls.push(makeBall(defB, 1, ARENA - 150, ARENA / 2 - jy, a2));
   world.balls[1].spin = -world.balls[1].spin;
   for (const b of world.balls) b.def.init(b, world);
+  world.balls.forEach((b, i) => applyBoost(world, b, (i === 0 ? opts.a : opts.b) || {}));
   return world;
+}
+
+function applyBoost(world, b, o) {
+  if (o.maxHp) b.maxHp = b.hp = o.maxHp;
+  if (o.power) b.power *= o.power;
+  if (o.speedMul) b.speedMul *= o.speedMul;
+  if (o.preGrow && b.def.onHit) {
+    // 試合前の成長。相手に付く効果(毒・気絶など)は消しておく
+    const foe = world.balls[1 - b.id];
+    const saved = { poison: foe.poison, curse: foe.curse, stun: foe.stun, slow: foe.slow, freeze: foe.freeze, hp: foe.hp, maxHp: foe.maxHp, gravFlip: foe.gravFlip };
+    const myHp = [b.hp, b.maxHp];
+    for (let i = 0; i < o.preGrow; i++) b.def.onHit(world, b, foe, { kind: 'pre' });
+    Object.assign(foe, saved);
+    [b.hp, b.maxHp] = myHp;
+    world.events.length = 0;
+  }
 }
 
 export function foeOf(world, ball) {
@@ -169,6 +188,8 @@ export function dealDamage(world, src, target, amount, opts = {}) {
   });
   if (src && src !== target && src.def.onDealDamage) src.def.onDealDamage(world, src, target, amount, opts);
   if (target.hp <= 0) {
+    // 倒れる直前に一度だけ生き返る武器(不死鳥)など
+    if (target.def.onLethal && target.def.onLethal(world, target)) return amount;
     target.hp = 0;
     target.dead = true;
   }
@@ -190,7 +211,8 @@ export function landHit(world, me, foe, amount, info = {}) {
     if (me.def.onHit) {
       me.def.onHit(world, me, foe, info);
       // 逆境ブースト: HPで負けているほど、当てたときにもう一度成長しやすい(逆転が起きるように)
-      let extra = Math.max(0, foe.hp - me.hp) / me.maxHp * COMEBACK_BOOST;
+      // (最大HPがちがう場合もあるので、HPの割合で比べる)
+      let extra = Math.max(0, foe.hp / foe.maxHp - me.hp / me.maxHp) * COMEBACK_BOOST;
       let surged = false;
       while (extra > 0 && !foe.dead) {
         if (extra >= 1 || world.rng() < extra) {

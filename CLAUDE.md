@@ -10,8 +10,9 @@
 ```
 index.html, style.css     画面
 src/engine.js             シミュレーション本体（DOM非依存。Nodeのテストからそのまま動く）
-src/weapons.js            武器の定義（72種）。onHit で「当たったら成長」を書く
+src/weapons.js            武器の定義（90種）。onHit で「当たったら成長」を書く
 src/tournament.js         トーナメント(勝ち抜き戦)の進行（DOM非依存）
+src/challenge.js          チャレンジ(ローグライク連戦)の強化と敵の強さ（DOM非依存）
 src/render.js             描画（端末の解像度でそのまま描く。低解像度で引き伸ばすと画質が悪いとユーザーに不評だった）
 src/sound.js              効果音（WebAudioで合成）
 src/main.js               画面の操作・ループ
