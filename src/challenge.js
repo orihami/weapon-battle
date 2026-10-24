@@ -1,42 +1,43 @@
-// チャレンジモード(ローグライク): 自分の武器でステージを勝ち進み、勝つたびに強化を1つ選ぶ。
+// チャレンジモード(1人用ローグライク): 自分の武器でステージを勝ち進み、勝つたびにスキルカードを選ぶ。
+// 5ステージごとにボス。ボスに勝つと「大進化」で4枚から2枚選べる。敵もステージが進むとスキルを持つ。
 // DOMに依存しないので Node のテストから使える。
 
-export const UPGRADES = [
-  { id: 'hp', name: '体力 +25', desc: '最大HPが25増える', apply: (s) => (s.maxHp += 25) },
-  { id: 'grow', name: '初期成長 +3', desc: '試合開始の時点で3回分成長している', apply: (s) => (s.preGrow += 3) },
-  { id: 'power', name: '威力 +15%', desc: '与えるダメージが15%増える', apply: (s) => (s.power *= 1.15) },
-  { id: 'speed', name: '素早さ +10%', desc: '動きが10%速くなる', apply: (s) => (s.speedMul *= 1.1) },
-  { id: 'all', name: 'ちょっとずつ全部', desc: '体力+8・初期成長+1・威力+5%', apply: (s) => ((s.maxHp += 8), (s.preGrow += 1), (s.power *= 1.05)) },
-];
+import { drawSkills, SKILLS } from './skills.js';
+
+export const BOSS_EVERY = 5;
 
 export function newChallenge(weapon) {
-  return { weapon, stage: 1, stats: { maxHp: 100, preGrow: 0, power: 1, speedMul: 1 }, picked: [] };
+  return { weapon, stage: 1, skills: [], picked: [] };
 }
 
-// ステージが進むほど敵が強くなる
-export function enemyBoost(stage) {
-  return { maxHp: 100 + 12 * (stage - 1), preGrow: 2 * (stage - 1), power: 1 + 0.04 * (stage - 1) };
+export function isBoss(stage) {
+  return stage % BOSS_EVERY === 0;
 }
 
-// 勝ったときに選べる強化を3つ(重複なし)
-export function offerUpgrades(rng = Math.random) {
-  const pool = UPGRADES.slice();
-  const out = [];
-  while (out.length < 3) out.push(pool.splice(Math.floor(rng() * pool.length), 1)[0]);
-  return out;
+// ステージの敵の強化(createBattle の opts.b)。rng は敵のスキル選び用
+export function enemyBoost(stage, rng = Math.random) {
+  const boss = isBoss(stage);
+  const commons = SKILLS.filter((s) => s.rarity === 'common' || s.rarity === 'rare');
+  const skills = [];
+  for (let i = 0; i < Math.floor((stage - 1) / 2); i++) skills.push(commons[Math.floor(rng() * commons.length)]);
+  if (boss) skills.push(...drawSkills(1 + Math.floor(stage / 10), rng, true));
+  return {
+    maxHp: Math.round((100 + 8 * (stage - 1)) * (boss ? 1.6 : 1)),
+    preGrow: stage - 1,
+    power: 1 + 0.03 * (stage - 1),
+    skills,
+    boss,
+  };
 }
 
-export function applyUpgrade(ch, upgrade) {
-  upgrade.apply(ch.stats);
-  ch.picked.push(upgrade.id);
+// 勝ったあとに選べるカード。ボスのあとは大進化(4枚から2枚)
+export function offerCards(ch, rng = Math.random) {
+  const big = isBoss(ch.stage);
+  return { big, cards: drawSkills(big ? 4 : 3, rng, big), choose: big ? 2 : 1 };
+}
+
+export function takeCards(ch, cards) {
+  ch.skills.push(...cards);
+  ch.picked.push(...cards.map((c) => c.id));
   ch.stage++;
-}
-
-// 画面に出す強化の一覧(短く)
-export function describeStats(s) {
-  const parts = [`HP${Math.round(s.maxHp)}`];
-  if (s.preGrow) parts.push(`初期成長+${s.preGrow}`);
-  if (s.power > 1.001) parts.push(`威力×${s.power.toFixed(2)}`);
-  if (s.speedMul > 1.001) parts.push(`素早さ×${s.speedMul.toFixed(2)}`);
-  return parts.join(' / ');
 }

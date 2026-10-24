@@ -648,6 +648,10 @@ const HELD = {
 };
 
 const PROJ = {
+  skillbolt(ctx, p) {
+    ctx.rotate(p.angle || Math.atan2(p.vy, p.vx));
+    poly(ctx, [[-8, -4], [9, 0], [-8, 4]], '#ffe680');
+  },
   feather(ctx, p) {
     ctx.rotate(Math.atan2(p.vy, p.vx));
     poly(ctx, [[-10, 0], [0, -5], [10, 0], [0, 5]], '#ff9a3a');
@@ -1275,6 +1279,16 @@ export class Renderer {
         this.burst(ball.x, ball.y, 40, '#ffb03a', 2);
         this.rings.push({ x: ball.x, y: ball.y, r0: 10, r1: 140, life: 0.5, age: 0, color: '#ff7a1a', fill: true, strong: true });
         this.flashA = Math.max(this.flashA, 0.4);
+      } else if (e.type === 'crit') {
+        this.texts.push({ x: e.x, y: e.y - 44, text: '会心！', color: '#ff3b3b', life: 0.7, age: 0, size: 22, jp: true });
+      } else if (e.type === 'dodge') {
+        const ball = world.balls[e.target];
+        this.texts.push({ x: ball.x, y: ball.y - 46, text: 'ミス', color: '#7a8a99', life: 0.6, age: 0, size: 20, jp: true });
+      } else if (e.type === 'guts') {
+        const ball = world.balls[e.target];
+        this.texts.push({ x: ball.x, y: ball.y - 55, text: '根性！', color: '#e8484d', life: 1.1, age: 0, size: 28, jp: true });
+        this.burst(ball.x, ball.y, 24, '#ffd23f', 1.6);
+        this.flashA = Math.max(this.flashA, 0.3);
       } else if (e.type === 'magnet') {
         this.rings.push({ x: e.x, y: e.y, r0: 4, r1: 22, life: 0.2, age: 0, color: '#d64545' });
       } else if (e.type === 'prism') {
@@ -1648,6 +1662,18 @@ export class Renderer {
     if (b.burnT > 0) {
       ctx.fillStyle = 'rgba(255,120,30,0.6)';
       ctx.fillRect(b.x - 4 + Math.sin(this.time * 30) * 10, b.y - b.r - 10, 8, 8);
+    }
+    if (b.barrier > 0) {
+      // バリア: 青い泡
+      ctx.save();
+      ctx.strokeStyle = 'rgba(80,170,255,0.8)';
+      ctx.fillStyle = 'rgba(80,170,255,0.12)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r + 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
     }
     if (b.freeze > 0) {
       // 時間停止中: 灰色の膜と時計の針

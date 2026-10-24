@@ -12,13 +12,16 @@ index.html, style.css     画面
 src/engine.js             シミュレーション本体（DOM非依存。Nodeのテストからそのまま動く）
 src/weapons.js            武器の定義（90種）。onHit で「当たったら成長」を書く
 src/tournament.js         トーナメント(勝ち抜き戦)の進行（DOM非依存）
-src/challenge.js          チャレンジ(ローグライク連戦)の強化と敵の強さ（DOM非依存）
+src/skills.js             スキルカード（32種・レア度・重ねがけ）。engine のフックで効く（DOM非依存）
+src/rounds.js             ラウンズ(2〜4人、負けた人がカードを選ぶ)の進行（DOM非依存）
+src/challenge.js          チャレンジ(1人用ローグライク)のステージ・ボス・敵の強さ（DOM非依存）
 src/render.js             描画（端末の解像度でそのまま描く。低解像度で引き伸ばすと画質が悪いとユーザーに不評だった）
 src/sound.js              効果音（WebAudioで合成）
 src/main.js               画面の操作・ループ
 test/engine.test.js       ユニットテスト（node --test）
 test/e2e.mjs              ブラウザテスト（Playwright。スクショを e2e-artifacts/ へ）
 scripts/balance.mjs       総当たりの勝率表（バランス調整用）
+scripts/skills-balance.mjs スキル1枚でどれくらい勝ちやすくなるか（目安: ふつう60〜70% / レア65〜80% / エピック70〜85% / レジェンド80〜92%）
 ```
 
 ## 開発の手順
@@ -38,6 +41,12 @@ scripts/balance.mjs       総当たりの勝率表（バランス調整用）
 - **成長に上限を付けない**（ユーザーの指示）。見た目や仕組みに限界がある値（周回玉の数・槍の長さなど）は `growStat(me, key, step, cap, over)` を使い、超えた分は「威力」（`ball.power`、その武器の与ダメージ倍率）として伸ばし続ける。画面には本当の値と「威力 ×n」が出る。
 - 逆転が起きるように **逆境ブースト**（`engine.js` の `COMEBACK_BOOST`）: HPで負けている側は、当てたときにもう一度成長しやすい。
 - 目安: `npm run balance 4` で全武器の勝率が おおむね 30〜70%、1試合 30〜60秒。`node scripts/comeback.mjs` で逆転勝ち（HP30以上の差をひっくり返した試合）の割合を見る（今は約13%）。
+
+## スキルとモード
+
+- スキルは `ball.skills`（1枚ごとに `{ def, st }`）。engine は `outgoing / incoming / afterDeal / onHit / update / lethal / contact / apply` のフックを呼ぶ。スキルのダメージは `kind: 'skill'` で与え、武器の成長やスキルの連鎖は起こさない。
+- `createBattle(a, b, seed, { a: { skills, maxHp, preGrow, power, speedMul }, b: {...} })` でスキルや強化を持たせる。
+- 「複数人」は同じ端末を交代で操作する方式（サーバーがないのでネット対戦はない）。
 
 ## URL パラメータ
 

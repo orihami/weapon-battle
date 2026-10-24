@@ -96,6 +96,8 @@ function makeBall(def, id, x, y, angle) {
     speedMul: 1,
     // 上限を超えて成長した分の与ダメージ倍率(weapons.js の growStat)
     power: 1,
+    haste: 1,
+    skills: [], // スキルカード { def, st }
     curse: 0,
     slamT: 0,
     gravFlip: 0,
@@ -148,6 +150,12 @@ export function createBattle(defA, defB, seed = 1, opts = {}) {
 
 function applyBoost(world, b, o) {
   if (o.maxHp) b.maxHp = b.hp = o.maxHp;
+  // スキルカード(同じものを何枚も持てる。1枚ごとに状態を持つ)
+  for (const def of o.skills || []) {
+    const sk = { def, st: {} };
+    b.skills.push(sk);
+    if (def.apply) def.apply(world, b, sk.st);
+  }
   if (o.power) b.power *= o.power;
   if (o.speedMul) b.speedMul *= o.speedMul;
   if (o.preGrow && b.def.onHit) {
@@ -171,6 +179,9 @@ export function dealDamage(world, src, target, amount, opts = {}) {
   amount *= world.dmgMul * (src && src !== target ? src.power : 1);
   // 呪い: 重ねがけされた分だけ、どこから受けるダメージも増える
   amount *= 1 + target.curse * CURSE_PER_STACK;
+  // スキル: 与えるダメージ・受けるダメージの補正
+  if (src && src !== target) for (const sk of src.skills) if (sk.def.outgoing) amount = sk.def.outgoing(world, src, target, amount, opts, sk.st);
+  for (const sk of target.skills) if (sk.def.incoming) amount = sk.def.incoming(world, target, src, amount, opts, sk.st);
   if (target.def.onTakeDamage) {
     const changed = target.def.onTakeDamage(world, target, src, amount, opts);
     if (changed !== undefined) amount = changed;
@@ -187,8 +198,10 @@ export function dealDamage(world, src, target, amount, opts = {}) {
     kind: opts.kind || 'hit',
   });
   if (src && src !== target && src.def.onDealDamage) src.def.onDealDamage(world, src, target, amount, opts);
+  if (src && src !== target) for (const sk of src.skills) if (sk.def.afterDeal) sk.def.afterDeal(world, src, target, amount, opts, sk.st);
   if (target.hp <= 0) {
-    // 倒れる直前に一度だけ生き返る武器(不死鳥)など
+    // 倒れる直前に一度だけ生き返る武器(不死鳥)やスキル(根性)など
+    for (const sk of target.skills) if (sk.def.lethal && sk.def.lethal(world, target, sk.st)) return amount;
     if (target.def.onLethal && target.def.onLethal(world, target)) return amount;
     target.hp = 0;
     target.dead = true;
@@ -223,6 +236,7 @@ export function landHit(world, me, foe, amount, info = {}) {
       }
       if (surged) world.events.push({ type: 'surge', x: me.x, y: me.y, target: me.id });
     }
+    for (const sk of me.skills) if (sk.def.onHit && !foe.dead) sk.def.onHit(world, me, foe, info, sk.st);
   }
   return dealt;
 }
@@ -360,12 +374,13 @@ function collideBalls(world, a, b) {
       me.contactCd = 0.3;
       me.def.onContact(world, me, foe, rel);
     }
+    for (const sk of me.skills) if (sk.def.contact) sk.def.contact(world, me, foe, sk.st);
   }
 }
 
 function meleeStep(world, me, foe, dt) {
   for (const bl of me.blades) {
-    if (bl.cdLeft > 0) bl.cdLeft -= dt;
+    if (bl.cdLeft > 0) bl.cdLeft -= dt * me.haste;
   }
   if (me.stun > 0) return;
   for (const bl of me.blades) {
@@ -480,9 +495,11 @@ export function step(world, dt = DT) {
     const foe = foeOf(world, ball);
     stepStatus(world, ball, dt);
     if (ball.stun <= 0) {
-      ball.angle += ball.spin * SPIN_SCALE * (1 - ball.slow) * dt;
-      if (ball.def.update) ball.def.update(world, ball, foe, dt);
+      // haste: 攻撃速度(スキル)。回転も武器の発射間隔も速くなる
+      ball.angle += ball.spin * SPIN_SCALE * (1 - ball.slow) * ball.haste * dt;
+      if (ball.def.update) ball.def.update(world, ball, foe, dt * ball.haste);
     }
+    for (const sk of ball.skills) if (sk.def.update) sk.def.update(world, ball, foe, dt, sk.st);
     // 時間停止中はその場で止まる
     if (ball.freeze > 0) ball.freeze -= dt;
     else wallSlam(world, ball, moveBall(ball, dt), dt);

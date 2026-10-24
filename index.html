@@ -23,6 +23,7 @@
       <p class="sub" id="subTitle"></p>
     </header>
 
+    <div class="score-bar" id="scoreBar" hidden></div>
     <div class="arena-wrap" id="arenaWrap">
       <canvas id="arena" aria-label="対戦フィールド"></canvas>
       <div class="timer" id="timer">0.0</div>
@@ -65,6 +66,34 @@
     </div>
     <p class="toast" id="toast" hidden></p>
 
+    <section class="tour rounds" id="rounds">
+      <div class="tour-head">
+        <h2>🃏 ラウンズ <small>2〜4人</small></h2>
+        <div class="tour-buttons">
+          <button type="button" id="roundsStopBtn" hidden>やめる</button>
+        </div>
+      </div>
+      <p class="hint">負けた人がスキルカードを選んで強くなります。3回目ごとのカード選びは「大進化」で2枚。先に決めた数だけ勝った人が優勝。3人以上は勝ち残り戦(勝った人が残り、次の人が挑戦)。1台を交代で操作します。</p>
+      <div id="roundsSetup">
+        <div class="setup-row">
+          <span>人数</span>
+          <button type="button" data-count="2">2人</button>
+          <button type="button" data-count="3">3人</button>
+          <button type="button" data-count="4">4人</button>
+          <label>勝利数
+            <select id="roundsTarget">
+              <option value="3">3勝</option>
+              <option value="5">5勝</option>
+              <option value="7">7勝</option>
+            </select>
+          </label>
+        </div>
+        <div id="setupPlayers"></div>
+        <button type="button" class="primary wide" id="roundsBtn">ラウンズ開始</button>
+      </div>
+      <div class="board" id="roundsBoard"></div>
+    </section>
+
     <section class="tour chal" id="chal">
       <div class="tour-head">
         <h2>⚔ チャレンジ</h2>
@@ -73,7 +102,7 @@
           <button type="button" id="chalStopBtn" hidden>やめる</button>
         </div>
       </div>
-      <p class="hint" id="chalInfo">自分の武器(左)で、だんだん強くなる敵と連戦します。勝つたびに強化を1つ選べます。負けたら終わり。</p>
+      <p class="hint" id="chalInfo">自分の武器(左)で、だんだん強くなる敵と連戦します。勝つたびにスキルカードを1枚。5ステージごとにボスが出て、倒すと「大進化」で4枚から2枚選べます。負けたら終わり。</p>
     </section>
 
     <section class="tour" id="tour">

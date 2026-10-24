@@ -218,25 +218,81 @@ test('ものまね: 相手と同じ武器の動きになる', () => {
   assert.ok(world.over);
 });
 
-test('チャレンジ: 強化が試合に反映され、敵はステージごとに強くなる', async () => {
-  const { newChallenge, enemyBoost, offerUpgrades, applyUpgrade, UPGRADES } = await import('../src/challenge.js');
-  const ch = newChallenge(W.bomb);
-  const hp = UPGRADES.find((u) => u.id === 'hp');
-  applyUpgrade(ch, hp);
-  applyUpgrade(ch, UPGRADES.find((u) => u.id === 'grow'));
-  assert.equal(ch.stage, 3);
-  assert.equal(ch.stats.maxHp, 125);
-  const offer = offerUpgrades(() => 0.5);
-  assert.equal(new Set(offer).size, 3);
-  assert.ok(enemyBoost(5).maxHp > enemyBoost(1).maxHp);
-  const world = createBattle(W.sword, W.bomb, 7, { a: { ...ch.stats }, b: enemyBoost(ch.stage) });
-  assert.equal(world.balls[0].maxHp, 125);
-  assert.equal(world.balls[0].hp, 125);
-  assert.equal(world.balls[0].w.dmg, 1 + 3, '初期成長3回で剣のダメージが4');
-  assert.equal(world.balls[1].maxHp, enemyBoost(3).maxHp);
+test('チャレンジ: スキルが試合に反映され、5ステージごとにボスと大進化', async () => {
+  const { newChallenge, enemyBoost, offerCards, takeCards, isBoss } = await import('../src/challenge.js');
+  const { SKILL_BY_ID } = await import('../src/skills.js');
+  const ch = newChallenge(W.sword);
+  takeCards(ch, [SKILL_BY_ID.hp, SKILL_BY_ID.pregrow]);
+  assert.equal(ch.stage, 2);
+  const world = createBattle(W.sword, W.bomb, 7, { a: { skills: ch.skills }, b: enemyBoost(2, () => 0.1) });
+  assert.equal(world.balls[0].maxHp, 120);
+  assert.equal(world.balls[0].w.dmg, 1 + 4, '先取り成長4回で剣のダメージが5');
   assert.equal(world.balls[1].poison, 0);
+  assert.ok(isBoss(5) && !isBoss(4));
+  const boss = enemyBoost(5, () => 0.5);
+  assert.ok(boss.boss && boss.maxHp > enemyBoost(4, () => 0.5).maxHp * 1.4);
+  ch.stage = 5;
+  const offer = offerCards(ch, () => 0.4);
+  assert.equal(offer.cards.length, 4);
+  assert.equal(offer.choose, 2);
   runToEnd(world);
   assert.ok(world.over);
+});
+
+test('スキル: 全スキルを重ねがけしても決着し、数値が壊れない', async () => {
+  const { SKILLS } = await import('../src/skills.js');
+  let seed = 1;
+  for (const sk of SKILLS) {
+    for (const foeDef of [W.sword, W.bomb, W.lightning, W.magnet, W.copycat]) {
+      const world = runToEnd(createBattle(W.dagger, foeDef, seed++, { a: { skills: [sk, sk, sk] }, b: { skills: [SKILLS[seed % SKILLS.length]] } }));
+      assert.ok(world.over, `${sk.id} が終わらない`);
+      for (const b of world.balls) {
+        assert.ok(Number.isFinite(b.x) && Number.isFinite(b.hp) && Number.isFinite(b.r), `${sk.id} vs ${foeDef.id}: 数値がおかしい`);
+      }
+    }
+  }
+});
+
+test('スキル: 根性・会心・追加の剣が効く', async () => {
+  const { SKILL_BY_ID } = await import('../src/skills.js');
+  const w1 = createBattle(W.sword, W.sword, 1, { a: { skills: [SKILL_BY_ID.guts] } });
+  landHit(w1, w1.balls[1], w1.balls[0], 999);
+  assert.ok(!w1.balls[0].dead && w1.balls[0].hp === 12, '根性で耐えていない');
+  const w2 = createBattle(W.sword, W.sword, 1, { a: { skills: [SKILL_BY_ID.extraBlade, SKILL_BY_ID.extraBlade] } });
+  assert.equal(w2.balls[0].blades.length, 3, '追加の剣が2本ふえていない');
+});
+
+test('ラウンズ: 負けた人がカードを選び、3回目は大進化(2枚)。先に3勝で優勝', async () => {
+  const { createRounds, currentPair, reportRound, pickSkills, cpuPickPending, BIG_EVERY } = await import('../src/rounds.js');
+  const r = createRounds(
+    [
+      { name: 'P1', weapon: W.sword, cpu: true },
+      { name: 'P2', weapon: W.bomb, cpu: true },
+      { name: 'P3', weapon: W.dagger, cpu: true },
+    ],
+    3,
+  );
+  assert.deepEqual(currentPair(r), [0, 1]);
+  reportRound(r, 0);
+  assert.equal(r.pending.player, 1);
+  assert.equal(r.pending.cards.length, 3);
+  pickSkills(r, cpuPickPending(r));
+  assert.deepEqual(currentPair(r), [0, 2], '勝った人が残り、次の人が挑戦する');
+  assert.equal(r.players[1].skills.length, 1);
+  let guard = 0;
+  while (!r.champion && guard++ < 100) {
+    const [a, b] = currentPair(r);
+    const pa = r.players[a];
+    const pb = r.players[b];
+    const world = runToEnd(createBattle(pa.weapon, pb.weapon, guard, { a: { skills: pa.skills }, b: { skills: pb.skills } }));
+    reportRound(r, world.winner === 1 ? b : a);
+    if (r.pending) {
+      const loser = r.players[r.pending.player];
+      if (loser.picks % BIG_EVERY === 0) assert.equal(r.pending.choose, 2, '大進化で2枚選べない');
+      pickSkills(r, cpuPickPending(r));
+    }
+  }
+  assert.ok(r.champion && r.champion.wins === 3);
 });
 
 test('不死鳥は1度だけよみがえる', () => {

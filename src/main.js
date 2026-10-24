@@ -3,7 +3,9 @@ import { WEAPONS, WEAPON_BY_ID } from './weapons.js';
 import { Renderer, drawIcon } from './render.js';
 import { Sound } from './sound.js';
 import { createTournament, nextMatch, reportWinner, pickEntries, roundName } from './tournament.js';
-import { newChallenge, enemyBoost, offerUpgrades, applyUpgrade, describeStats } from './challenge.js';
+import { newChallenge, enemyBoost, offerCards, takeCards, isBoss } from './challenge.js';
+import { RARITY, cpuPick } from './skills.js';
+import { createRounds, currentPair, reportRound, pickSkills, cpuPickPending } from './rounds.js';
 
 const $ = (id) => document.getElementById(id);
 const SPEEDS = [1, 2, 4];
@@ -24,6 +26,9 @@ const state = {
   records: loadRecords(),
   tour: null, // トーナメント中なら進行状況
   chal: null, // チャレンジ中なら進行状況
+  rounds: null, // ラウンズ中なら進行状況
+  sideIdx: [0, 1], // ラウンズで左右に出ているプレイヤーの番号
+  setup: { count: 2, target: 5, players: [] }, // ラウンズの準備(人数・勝利数・各プレイヤー)
   opts: {}, // チャレンジの強化(createBattle の opts)
   auto: false, // 連続観戦
   bookSort: 'no',
@@ -61,7 +66,7 @@ function randomOne(side) {
 }
 
 function newBattle() {
-  state.world = createBattle(state.a, state.b, (Math.random() * 2 ** 32) >>> 0, state.chal ? state.opts : {});
+  state.world = createBattle(state.a, state.b, (Math.random() * 2 ** 32) >>> 0, state.chal || state.rounds ? state.opts : {});
   state.running = false;
   renderer.particles = [];
   renderer.texts = [];
@@ -72,13 +77,17 @@ function newBattle() {
   renderer.ko = null;
   $('upgrades').hidden = true;
   $('overlayButtons').hidden = false;
+  $('overlay').classList.remove('picking');
   $('overlay').hidden = true;
   $('startBtn').textContent = 'スタート';
   updateHeader();
+  renderScoreBar();
 }
 
 function start() {
   sound.unlock();
+  // モードの途中(カード選び・次の試合待ち)に試合を勝手にやり直さない
+  if (state.world && state.world.over && ((state.rounds && !state.rounds.champion) || state.chal || (state.tour && !state.tour.champion))) return;
   if (!state.world || state.world.over) newBattle();
   state.running = !state.running;
   $('startBtn').textContent = state.running ? '一時停止' : '再開';
@@ -123,7 +132,10 @@ function updateStats() {
     const rows = ball.def.stats(ball, w);
     // 上限を超えて成長した分は「威力」として表示する
     if (ball.power > 1.005) rows.push(['威力', '×' + ball.power.toFixed(2)]);
-    return rows.map(([k, v]) => `<div style="color:${ball.def.color}">${k}:<b>${v}</b></div>`).join('');
+    const chips = ball.skills.length
+      ? `<div class="chips">${ball.skills.map((sk) => `<span title="${sk.def.name}" style="border-color:${RARITY[sk.def.rarity].color}">${sk.def.icon}</span>`).join('')}</div>`
+      : '';
+    return rows.map(([k, v]) => `<div style="color:${ball.def.color}">${k}:<b>${v}</b></div>`).join('') + chips;
   };
   const html = render(w.balls[0]) + '|' + render(w.balls[1]);
   if (html !== lastStats) {
@@ -145,6 +157,7 @@ function finish() {
     text.style.color = '#ffffff';
     if (state.tour) setTimeout(() => state.world === w && playTourMatch(), 1500); // 引き分けは同じ組み合わせでやり直し
     if (state.chal) setTimeout(() => state.world === w && state.chal && playChalStage(), 1500);
+    if (state.rounds) setTimeout(() => state.world === w && state.rounds && playRound(), 1500);
   } else {
     // ボールの def は「ものまね」だと相手の武器になっているので、選んだ武器(state.a/b)で記録する
     const win = w.winner === 0 ? state.a : state.b;
@@ -158,7 +171,9 @@ function finish() {
     rec[lose.id].l++;
     saveRecords();
     renderBook();
-    if (state.chal) {
+    if (state.rounds) {
+      roundResult(state.sideIdx[w.winner]);
+    } else if (state.chal) {
       chalResult(w.winner === 0);
     } else if (state.auto && !state.tour) {
       setTimeout(() => {
@@ -203,6 +218,7 @@ function saveBest(n) {
 function startChallenge() {
   sound.unlock();
   stopTournament();
+  stopRounds();
   stopAuto();
   state.chal = newChallenge(state.a);
   $('chalStopBtn').hidden = false;
@@ -215,6 +231,7 @@ function stopChallenge() {
   state.opts = {};
   $('chalStopBtn').hidden = true;
   renderChal();
+  renderScoreBar();
 }
 
 function playChalStage() {
@@ -222,7 +239,8 @@ function playChalStage() {
   const pool = WEAPONS.filter((w) => w !== ch.weapon);
   state.a = ch.weapon;
   state.b = pool[Math.floor(Math.random() * pool.length)];
-  state.opts = { a: { ...ch.stats }, b: enemyBoost(ch.stage) };
+  ch.enemy = enemyBoost(ch.stage);
+  state.opts = { a: { skills: ch.skills }, b: ch.enemy };
   newBattle();
   renderChal();
   start();
@@ -237,37 +255,225 @@ function chalResult(won) {
     const best = Math.max(loadBest(), cleared);
     saveBest(best);
     text.textContent = `ステージ${ch.stage}で敗退…`;
-    $('chalInfo').innerHTML = `<b>${ch.weapon.name}</b>はステージ${ch.stage}で負けました(${cleared}勝)。最高記録: ${best}勝`;
+    $('chalInfo').innerHTML = `<b>${ch.weapon.name}</b>はステージ${ch.stage}で負けました(${cleared}勝)。最高記録: ${best}勝<br>最後の構成: ${skillIcons(ch.skills) || 'スキルなし'}`;
     state.chal = null;
     state.opts = {};
     $('chalStopBtn').hidden = true;
+    renderScoreBar();
     return;
   }
-  text.textContent = `ステージ${ch.stage} クリア！`;
-  // 強化を3つから選ぶ
-  const box = $('upgrades');
-  box.replaceChildren(Object.assign(document.createElement('p'), { textContent: '強化を1つ選んでください' }));
-  for (const up of offerUpgrades()) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.innerHTML = `<b>${up.name}</b><small>${up.desc}</small>`;
-    b.addEventListener('click', () => {
-      applyUpgrade(ch, up);
+  const offer = offerCards(ch);
+  text.textContent = ch.enemy.boss ? `ボス撃破！ ステージ${ch.stage} クリア` : `ステージ${ch.stage} クリア！`;
+  showCards({
+    title: offer.big ? '🌟 大進化！ 4枚から2枚選べます' : 'スキルを1枚選んでください',
+    cards: offer.cards,
+    choose: offer.choose,
+    onDone(cards) {
+      takeCards(ch, cards);
       playChalStage();
-    });
-    box.append(b);
-  }
-  box.hidden = false;
-  $('overlayButtons').hidden = true;
+    },
+  });
 }
 
 function renderChal() {
   const ch = state.chal;
-  if (!ch) {
-    $('chalInfo').innerHTML ||= '';
+  if (!ch) return;
+  const e = ch.enemy || enemyBoost(ch.stage);
+  $('chalInfo').innerHTML =
+    `<b>${ch.weapon.name}</b> ステージ <b>${ch.stage}</b>${isBoss(ch.stage) ? ' <b class="boss">BOSS</b>' : ''}(最高記録 ${loadBest()}勝)` +
+    `<br>自分のスキル: ${skillIcons(ch.skills) || 'まだなし'}` +
+    `<br>敵: HP${e.maxHp}・初期成長+${e.preGrow}${e.skills.length ? '・' + skillIcons(e.skills) : ''}`;
+}
+
+function skillIcons(list) {
+  return list.map((sk) => `<span class="ic" title="${sk.name}" style="border-color:${RARITY[sk.rarity].color}">${sk.icon}</span>`).join('');
+}
+
+// スキルカードを選ぶ画面(結果の上に出す)。choose 枚選んだら onDone(cards)。cpu なら自動で選ぶ
+function showCards({ title, cards, choose, cpu = false, onDone }) {
+  const box = $('upgrades');
+  box.replaceChildren(Object.assign(document.createElement('p'), { textContent: title }));
+  const picked = new Set();
+  const buttons = cards.map((card) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'skill-card';
+    b.style.borderColor = RARITY[card.rarity].color;
+    b.innerHTML = `<span class="sc-icon">${card.icon}</span><span class="sc-text"><b>${card.name}</b><small>${card.desc}</small></span><span class="sc-rare" style="background:${RARITY[card.rarity].color}">${RARITY[card.rarity].name}</span>`;
+    b.addEventListener('click', () => {
+      if (cpu) return;
+      if (choose === 1) return finishPick([card]);
+      if (picked.has(card)) picked.delete(card);
+      else if (picked.size < choose) picked.add(card);
+      b.classList.toggle('picked', picked.has(card));
+      if (picked.size === choose) finishPick([...picked]);
+    });
+    box.append(b);
+    return [card, b];
+  });
+  let done = false;
+  function finishPick(list) {
+    if (done) return;
+    done = true;
+    for (const [card, b] of buttons) b.classList.toggle('picked', list.includes(card));
+    setTimeout(() => onDone(list), 450);
+  }
+  box.hidden = false;
+  $('overlayButtons').hidden = true;
+  $('overlay').classList.add('picking');
+  $('overlay').hidden = false;
+  if (cpu) setTimeout(() => finishPick(cpuPick(cards, choose)), 1300);
+}
+
+// ---- ラウンズ(2〜4人、負けた人がスキルを選ぶ) ----
+
+const PLAYER_COLORS = ['#e8484d', '#2f7de1', '#2fa84f', '#e0a600'];
+
+function ensureSetupPlayers() {
+  const ps = state.setup.players;
+  while (ps.length < 4) ps.push({ weapon: WEAPONS[Math.floor(Math.random() * WEAPONS.length)], cpu: ps.length > 0 });
+}
+
+function renderSetup() {
+  ensureSetupPlayers();
+  const st = state.setup;
+  for (const b of document.querySelectorAll('[data-count]')) b.classList.toggle('on', Number(b.dataset.count) === st.count);
+  $('roundsTarget').value = String(st.target);
+  const box = $('setupPlayers');
+  box.replaceChildren();
+  st.players.slice(0, st.count).forEach((p, i) => {
+    const row = document.createElement('div');
+    row.className = 'player-row';
+    const tag = Object.assign(document.createElement('span'), { className: 'ptag', textContent: `P${i + 1}` });
+    tag.style.background = PLAYER_COLORS[i];
+    const pick = document.createElement('button');
+    pick.type = 'button';
+    pick.className = 'pick';
+    pick.append(iconCanvas(p.weapon, 64), Object.assign(document.createElement('span'), { textContent: p.weapon.name }));
+    pick.addEventListener('click', () =>
+      openPicker(`P${i + 1} の武器をえらぶ`, (def) => {
+        p.weapon = def;
+        renderSetup();
+      }),
+    );
+    const dice = Object.assign(document.createElement('button'), { type: 'button', className: 'icon-btn', textContent: '🎲' });
+    dice.addEventListener('click', () => {
+      p.weapon = WEAPONS[Math.floor(Math.random() * WEAPONS.length)];
+      renderSetup();
+    });
+    const who = Object.assign(document.createElement('button'), { type: 'button', className: 'who', textContent: p.cpu ? '🤖 CPU' : '🙂 人' });
+    who.addEventListener('click', () => {
+      p.cpu = !p.cpu;
+      renderSetup();
+    });
+    row.append(tag, pick, dice, who);
+    box.append(row);
+  });
+}
+
+function startRounds() {
+  sound.unlock();
+  stopTournament();
+  stopChallenge();
+  stopAuto();
+  const st = state.setup;
+  state.rounds = createRounds(
+    st.players.slice(0, st.count).map((p, i) => ({ name: `P${i + 1}`, weapon: p.weapon, cpu: p.cpu, color: PLAYER_COLORS[i] })),
+    st.target,
+  );
+  $('roundsSetup').hidden = true;
+  $('roundsStopBtn').hidden = false;
+  playRound();
+}
+
+function stopRounds() {
+  if (!state.rounds) return;
+  state.rounds = null;
+  state.opts = {};
+  $('roundsSetup').hidden = false;
+  $('roundsStopBtn').hidden = true;
+  renderRounds();
+  renderScoreBar();
+}
+
+function playRound() {
+  const r = state.rounds;
+  const [ia, ib] = currentPair(r);
+  // 左右はラウンドごとに入れかえる
+  state.sideIdx = r.round % 2 ? [ia, ib] : [ib, ia];
+  const [pa, pb] = state.sideIdx.map((i) => r.players[i]);
+  state.a = pa.weapon;
+  state.b = pb.weapon;
+  state.opts = { a: { skills: pa.skills }, b: { skills: pb.skills } };
+  newBattle();
+  renderRounds();
+  start();
+  $('arenaWrap').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function roundResult(winnerIdx) {
+  const r = state.rounds;
+  const text = $('resultText');
+  const winner = r.players[winnerIdx];
+  reportRound(r, winnerIdx);
+  renderRounds();
+  renderScoreBar();
+  if (r.champion) {
+    text.textContent = `🏆 ${winner.name}(${winner.weapon.name})が優勝！`;
+    text.style.color = winner.color;
+    $('roundsSetup').hidden = false;
+    $('roundsStopBtn').hidden = true;
     return;
   }
-  $('chalInfo').innerHTML = `<b>${ch.weapon.name}</b> ステージ <b>${ch.stage}</b>(最高記録 ${loadBest()}勝)<br>自分: ${describeStats(ch.stats)}<br>敵: HP${enemyBoost(ch.stage).maxHp}・初期成長+${enemyBoost(ch.stage).preGrow}`;
+  text.textContent = `${winner.name}の勝ち！`;
+  text.style.color = winner.color;
+  const pend = r.pending;
+  const loser = r.players[pend.player];
+  setTimeout(() => {
+    if (state.rounds !== r) return;
+    showCards({
+      title: `${loser.name}${loser.cpu ? '(CPU)' : ''}のカード選び${pend.big ? ' 🌟大進化: 2枚選べる' : ''}`,
+      cards: pend.cards,
+      choose: pend.choose,
+      cpu: loser.cpu,
+      onDone(cards) {
+        pickSkills(r, cards);
+        renderRounds();
+        playRound();
+      },
+    });
+  }, 900);
+}
+
+function renderRounds() {
+  const r = state.rounds;
+  const box = $('roundsBoard');
+  box.replaceChildren();
+  if (!r) return;
+  const [ia, ib] = currentPair(r);
+  for (const p of r.players) {
+    const row = document.createElement('div');
+    row.className = 'board-row' + (p.idx === ia || p.idx === ib ? ' fighting' : '');
+    const stars = '★'.repeat(p.wins) + '☆'.repeat(Math.max(0, r.target - p.wins));
+    row.innerHTML = `<span class="ptag" style="background:${p.color}">${p.name}</span><span class="bname" style="color:${p.weapon.color}">${p.weapon.name}${p.cpu ? ' 🤖' : ''}</span><span class="stars">${stars}</span><span class="bskills">${skillIcons(p.skills)}</span>`;
+    box.append(row);
+  }
+}
+
+// 戦場の上に「誰と誰が戦っているか・勝ち数」を出す
+function renderScoreBar() {
+  const bar = $('scoreBar');
+  const r = state.rounds;
+  if (r) {
+    const [pa, pb] = state.sideIdx.map((i) => r.players[i]);
+    bar.innerHTML = `<span style="color:${pa.color}">${pa.name} ${'★'.repeat(pa.wins)}</span><span>ラウンド${r.round}${r.target ? `(${r.target}勝で優勝)` : ''}</span><span style="color:${pb.color}">${'★'.repeat(pb.wins)} ${pb.name}</span>`;
+    bar.hidden = false;
+  } else if (state.chal) {
+    bar.innerHTML = `<span>⚔ ステージ${state.chal.stage}${isBoss(state.chal.stage) ? ' BOSS' : ''}</span><span>${skillIcons(state.chal.skills)}</span>`;
+    bar.hidden = false;
+  } else {
+    bar.hidden = true;
+  }
 }
 
 function setAuto(on) {
@@ -304,6 +510,7 @@ async function share() {
 function startTournament(n) {
   sound.unlock();
   stopChallenge();
+  stopRounds();
   stopAuto();
   state.tour = createTournament(pickEntries(WEAPONS, n));
   $('tourStopBtn').hidden = false;
@@ -400,9 +607,11 @@ function resize() {
   renderer.resize(wrap.clientWidth - 10);
 }
 
-function openPicker(side) {
-  state.picking = side;
-  $('pickerTitle').textContent = side === 0 ? '左の武器をえらぶ' : '右の武器をえらぶ';
+// 武器を選ぶ画面。onPick(def) を呼ぶ。「ランダムにおまかせ」も onPick に渡す
+function openPicker(title, onPick) {
+  $('pickerTitle').textContent = title;
+  state.onPick = onPick;
+  state.onPickRandom = null;
   const grid = $('pickerGrid');
   grid.replaceChildren();
   for (const def of WEAPONS) {
@@ -411,7 +620,7 @@ function openPicker(side) {
     btn.dataset.id = def.id;
     btn.append(iconCanvas(def, 104), Object.assign(document.createElement('span'), { textContent: def.name }));
     btn.addEventListener('click', () => {
-      choose(side, def);
+      onPick(def);
       $('picker').close();
     });
     grid.append(btn);
@@ -419,9 +628,16 @@ function openPicker(side) {
   $('picker').showModal();
 }
 
+function openSidePicker(side) {
+  state.picking = side;
+  openPicker(side === 0 ? '左の武器をえらぶ' : '右の武器をえらぶ', (def) => choose(side, def));
+  state.onPickRandom = () => randomOne(side);
+}
+
 function choose(side, def) {
   stopTournament();
   stopChallenge();
+  stopRounds();
   if (side === 0) state.a = def;
   else state.b = def;
   newBattle();
@@ -479,12 +695,14 @@ function init() {
   $('againBtn').addEventListener('click', () => {
     stopTournament();
     stopChallenge();
+    stopRounds();
     newBattle();
     start();
   });
   $('nextBtn').addEventListener('click', () => {
     stopTournament();
     stopChallenge();
+    stopRounds();
     [state.a, state.b] = randomPair();
     newBattle();
     start();
@@ -492,23 +710,26 @@ function init() {
   $('randomBtn').addEventListener('click', () => {
     stopTournament();
     stopChallenge();
+    stopRounds();
     [state.a, state.b] = randomPair();
     newBattle();
   });
   $('randomABtn').addEventListener('click', () => randomOne(0));
   $('randomBBtn').addEventListener('click', () => randomOne(1));
   $('pickerRandom').addEventListener('click', () => {
-    randomOne(state.picking);
+    if (state.onPickRandom) state.onPickRandom();
+    else state.onPick(WEAPONS[Math.floor(Math.random() * WEAPONS.length)]);
     $('picker').close();
   });
   $('swapBtn').addEventListener('click', () => {
     stopTournament();
     stopChallenge();
+    stopRounds();
     [state.a, state.b] = [state.b, state.a];
     newBattle();
   });
-  $('pickA').addEventListener('click', () => openPicker(0));
-  $('pickB').addEventListener('click', () => openPicker(1));
+  $('pickA').addEventListener('click', () => openSidePicker(0));
+  $('pickB').addEventListener('click', () => openSidePicker(1));
   $('speedBtn').textContent = '×' + state.speed;
   $('speedBtn').addEventListener('click', () => {
     state.speed = SPEEDS[(SPEEDS.indexOf(state.speed) + 1) % SPEEDS.length];
@@ -519,6 +740,16 @@ function init() {
     sound.enabled = !sound.enabled;
     $('soundBtn').textContent = sound.enabled ? '🔊' : '🔇';
   });
+  for (const b of document.querySelectorAll('[data-count]')) {
+    b.addEventListener('click', () => {
+      state.setup.count = Number(b.dataset.count);
+      renderSetup();
+    });
+  }
+  $('roundsTarget').addEventListener('change', (e) => (state.setup.target = Number(e.target.value)));
+  $('roundsBtn').addEventListener('click', startRounds);
+  $('roundsStopBtn').addEventListener('click', stopRounds);
+  renderSetup();
   $('chalBtn').addEventListener('click', startChallenge);
   $('chalStopBtn').addEventListener('click', stopChallenge);
   $('autoBtn').addEventListener('click', () => {
@@ -527,6 +758,7 @@ function init() {
       sound.unlock();
       stopTournament();
       stopChallenge();
+      stopRounds();
       if (!state.running) {
         if (state.world && state.world.over) [state.a, state.b] = randomPair();
         newBattle();

@@ -121,20 +121,66 @@ try {
   const info1 = await page.textContent('#chalInfo');
   check(/ステージ 1/.test(info1.replace(/\s+/g, ' ')), `チャレンジ開始: ${info1.trim().slice(0, 40)}`);
   await page.waitForSelector('#overlay:not([hidden])', { timeout: 120000 });
-  const upgradeShown = await page.isVisible('#upgrades button');
+  const upgradeShown = await page.isVisible('#upgrades .skill-card');
   if (upgradeShown) {
-    await page.click('#upgrades button');
+    await page.click('#upgrades .skill-card');
     await page.waitForTimeout(500);
     const info2 = await page.textContent('#chalInfo');
     check(/ステージ 2/.test(info2.replace(/\s+/g, ' ')), `勝って強化を選び次のステージへ: ${info2.trim().slice(0, 60)}`);
     const hp = await page.evaluate(() => window.__weaponBattle.state.world.balls[0].maxHp);
-    check(hp >= 100, `強化が反映された最大HP: ${hp}`);
+    check(hp >= 80, `スキルを持って次のステージ(最大HP ${hp})`);
   } else {
     const res = await page.textContent('#resultText');
     check(/敗退/.test(res), `負けてチャレンジ終了: ${res}`);
   }
   await page.screenshot({ path: join(outDir, '3d-challenge.png') });
   await page.click('#chalStopBtn').catch(() => {});
+
+  // 2.97) ラウンズ: P1(人) vs P2(CPU)、3勝先取。負けた人がカードを選ぶ
+  await page.goto(base + '?speed=4');
+  await page.click('[data-count="2"]');
+  await page.selectOption('#roundsTarget', '3');
+  let who = await page.$$eval('#setupPlayers .who', (els) => els.map((e) => e.textContent));
+  check(who.length === 2 && /人/.test(who[0]) && /CPU/.test(who[1]), `ラウンズの準備: ${who.join(' / ')}`);
+  // 2人とも「人」にして、負けた側のカード選びを画面から行う
+  await page.click('#setupPlayers .player-row:nth-child(2) .who');
+  who = await page.$$eval('#setupPlayers .who', (els) => els.map((e) => e.textContent));
+  check(/人/.test(who[1]), `P2を人に切り替え: ${who.join(' / ')}`);
+  await page.click('#roundsBtn');
+  let humanPicks = 0;
+  let cpuPicks = 0;
+  for (let i = 0; i < 40; i++) {
+    const res = await page.waitForFunction(
+      () => {
+        const t = document.querySelector('#resultText').textContent;
+        const cards = document.querySelector('#upgrades');
+        if (/優勝/.test(t) && !document.querySelector('#overlay').hidden) return 'champion';
+        if (!cards.hidden && cards.querySelector('.skill-card')) return cards.querySelector('p').textContent;
+        return false;
+      },
+      null,
+      { timeout: 200000 },
+    );
+    const v = await res.jsonValue();
+    if (v === 'champion') break;
+    if (/CPU/.test(v)) {
+      cpuPicks++;
+      await page.waitForFunction(() => document.querySelector('#upgrades').hidden || !document.querySelector('#upgrades .skill-card'), null, { timeout: 20000 }).catch(() => {});
+      await page.waitForTimeout(800);
+    } else {
+      humanPicks++;
+      const need = /2枚/.test(v) ? 2 : 1;
+      const cards = await page.$$('#upgrades .skill-card');
+      for (let k = 0; k < need; k++) await cards[k].click();
+      if (humanPicks === 1) await page.screenshot({ path: join(outDir, '3e-cards.png') });
+      await page.waitForTimeout(1200);
+    }
+  }
+  const champText = await page.textContent('#resultText');
+  const board = await page.$$eval('#roundsBoard .board-row', (rows) => rows.map((r) => r.textContent));
+  check(/優勝/.test(champText) && humanPicks >= 2, `ラウンズ: ${champText}(人の選択 ${humanPicks} / CPUの選択 ${cpuPicks})`);
+  check(board.length === 2, `ラウンズの勝ち数表: ${board.map((b) => b.replace(/\s+/g, ' ')).join(' | ')}`);
+  await page.screenshot({ path: join(outDir, '3f-rounds.png'), fullPage: false });
 
   // 2.95) 共有ボタン(クリップボードが使えない環境ではURLを表示)
   await page.goto(base + '?a=bomb&b=lightning');
