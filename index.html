@@ -114,16 +114,21 @@
       <h2>武器ずかん</h2>
       <span class="bar-space"></span>
     </header>
+    <div class="seg book-tabs" id="bookTabs">
+      <button type="button" data-book="weapons" class="on">武器</button>
+      <button type="button" data-book="skills">カード・進化</button>
+    </div>
     <div class="book-tools">
-      <input type="search" id="bookSearch" placeholder="武器をさがす" aria-label="武器をさがす">
+      <input type="search" id="bookSearch" placeholder="さがす" aria-label="さがす">
       <select id="bookSort" aria-label="並び">
         <option value="no">番号順</option>
         <option value="rate">勝率順(ランキング)</option>
         <option value="games">試合数順</option>
       </select>
     </div>
-    <p class="hint">数字は今までの勝敗です(このブラウザにだけ保存)。タップするとその武器で1対1の準備へ。</p>
+    <p class="hint" id="bookHint">数字は今までの勝敗です(このブラウザにだけ保存)。タップするとその武器で1対1の準備へ。</p>
     <div class="book-grid" id="bookGrid"></div>
+    <div class="skill-book" id="skillBook" hidden></div>
   </section>
 
   <!-- 武器を選ぶ(全画面) -->

@@ -239,6 +239,45 @@ test('チャレンジ: スキルが試合に反映され、5ステージごと�
   assert.ok(world.over);
 });
 
+test('進化: 材料がそろうと合体進化が出て、選ぶと材料と合体する。ボスのあとは武器進化', async () => {
+  const { SKILL_BY_ID: S, makeOffer, fusionsReady, fusionsNear, addSkills, awakenTier, awakenSuffix, FUSIONS, AWAKENS, CURSED } = await import('../src/skills.js');
+  const { newChallenge, offerCards, takeCards, takeAwaken } = await import('../src/challenge.js');
+  assert.ok(FUSIONS.length >= 20 && AWAKENS.length >= 10 && CURSED.length >= 5, '進化の種類が少ない');
+  const owned = [S.vamp, S.power];
+  assert.equal(fusionsReady(owned).length, 0);
+  assert.ok(fusionsNear(owned).some((n) => n.fusion.id === 'vampLord' && n.missing.id === 'hp'), 'あと1枚の合体進化が出ない');
+  owned.push(S.hp);
+  assert.deepEqual(fusionsReady(owned).map((f) => f.id), ['vampLord']);
+  // 大進化なら材料がそろった合体進化は必ず出る
+  for (let i = 0; i < 20; i++) assert.ok(makeOffer(owned, 4, Math.random, true).includes(S.vampLord));
+  addSkills(owned, [S.vampLord]);
+  assert.deepEqual(owned.map((s) => s.id), ['power', 'vampLord'], '材料のカードが消えていない');
+  const world = createBattle(W.sword, W.sword, 1, { a: { skills: owned } });
+  assert.equal(world.balls[0].maxHp, 140);
+  // チャレンジのボスのあと: 武器進化3つ → 大進化
+  const ch = newChallenge(W.bomb);
+  ch.stage = 5;
+  const offer = offerCards(ch);
+  assert.equal(offer.awaken.length, 3);
+  assert.ok(offer.awaken.every((c) => c.rarity === 'awaken'));
+  takeAwaken(ch, offer.awaken[0]);
+  takeAwaken(ch, AWAKENS.find((c) => c !== offer.awaken[0]));
+  takeCards(ch, offer.cards.slice(0, 2));
+  assert.equal(awakenTier(ch.skills), 2);
+  assert.equal(awakenSuffix(1), '・改');
+  assert.equal(awakenSuffix(4), '・神');
+  assert.equal(awakenSuffix(6), '・神+2');
+  const w2 = createBattle(W.bomb, W.sword, 2, { a: { skills: ch.skills } });
+  assert.equal(w2.balls[0].awaken, 2, '武器進化の段階がボールに付いていない');
+  // 不滅は2回よみがえる
+  const w3 = createBattle(W.sword, W.sword, 1, { a: { skills: [S.immortal] } });
+  landHit(w3, w3.balls[1], w3.balls[0], 999);
+  landHit(w3, w3.balls[1], w3.balls[0], 999);
+  assert.ok(!w3.balls[0].dead, '不滅で2回よみがえらない');
+  landHit(w3, w3.balls[1], w3.balls[0], 999);
+  assert.ok(w3.balls[0].dead);
+});
+
 test('スキル: 全スキルを重ねがけしても決着し、数値が壊れない', async () => {
   const { SKILLS } = await import('../src/skills.js');
   let seed = 1;
@@ -262,8 +301,24 @@ test('スキル: 根性・会心・追加の剣が効く', async () => {
   assert.equal(w2.balls[0].blades.length, 3, '追加の剣が2本ふえていない');
 });
 
+test('スキルの追加の剣は武器と別に回るので、遠距離武器でも当たる', async () => {
+  const { SKILL_BY_ID } = await import('../src/skills.js');
+  for (const id of ['bow', 'laser', 'gatling']) {
+    let hits = 0;
+    for (let seed = 1; seed <= 5; seed++) {
+      const w = createBattle(W[id], W.dagger, seed, { a: { skills: [SKILL_BY_ID.extraBlade] } });
+      for (let i = 0; i < 120 * 20 && !w.over; i++) {
+        step(w);
+        for (const e of w.events) if (e.type === 'hit' && e.src === 0 && e.kind === 'melee') hits++;
+        w.events.length = 0;
+      }
+    }
+    assert.ok(hits > 0, `${id} の追加の剣が当たらない`);
+  }
+});
+
 test('ラウンズ: 全員同時に戦い、負けた全員がカードを選ぶ。3回目は大進化(2枚)。先に3勝で優勝', async () => {
-  const { createRounds, fighters, reportRound, pickSkills, cpuPickPending, BIG_EVERY } = await import('../src/rounds.js');
+  const { createRounds, fighters, reportRound, pickSkills, pickAwaken, cpuPickPending, BIG_EVERY } = await import('../src/rounds.js');
   const r = createRounds(
     [
       { name: 'P1', weapon: W.sword, cpu: true },
@@ -291,7 +346,11 @@ test('ラウンズ: 全員同時に戦い、負けた全員がカードを選ぶ
     reportRound(r, world.winner, Math.random, world.outOrder);
     while (r.pending) {
       const loser = r.players[r.pending.player];
-      if (loser.picks % BIG_EVERY === 0) assert.equal(r.pending.choose, 2, '大進化で2枚選べない');
+      if (loser.picks % BIG_EVERY === 0) {
+        assert.equal(r.pending.choose, 2, '大進化で2枚選べない');
+        assert.equal(r.pending.awaken.length, 3, '大進化の前に武器進化を選べない');
+        pickAwaken(r, cpuPickPending(r)[0]);
+      }
       pickSkills(r, cpuPickPending(r));
     }
   }

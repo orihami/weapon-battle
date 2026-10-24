@@ -115,6 +115,13 @@ function sawShape(ctx, r) {
 }
 
 const BLADE_SPRITES = {
+  tongue(ctx, b) {
+    // カエルの舌: 根元から先まで伸びるピンクの帯
+    const len = b.rOut - b.rIn;
+    if (len < 8) return;
+    rect(ctx, b.rIn, -4, len, 8, '#ff7aa2');
+    circle(ctx, b.rOut, 0, 7, '#ff5c8a');
+  },
   sword(ctx, b) {
     swordShape(ctx, b.rIn, b.rOut, 7);
   },
@@ -308,6 +315,101 @@ const BLADE_SPRITES = {
 
 // 遠距離武器などの「手に持っている物」
 const HELD = {
+  frog(ctx) {
+    // 体の前に出っぱった目
+    circle(ctx, -10, -8, 6, '#ffffff');
+    circle(ctx, -10, 8, 6, '#ffffff');
+    circle(ctx, -8, -8, 2.5, '#1a1a1a', false);
+    circle(ctx, -8, 8, 2.5, '#1a1a1a', false);
+  },
+  sakura(ctx, ball, t) {
+    for (let i = 0; i < 5; i++) {
+      const a = (i * Math.PI * 2) / 5 + t;
+      circle(ctx, Math.cos(a) * 6, Math.sin(a) * 6, 5, '#ffc2dc');
+    }
+    circle(ctx, 0, 0, 3, '#ffe066', false);
+  },
+  pinball(ctx) {
+    circle(ctx, 0, 0, 9, '#c9d1da');
+    circle(ctx, -3, -3, 3, '#ffffff', false);
+  },
+  splitter(ctx, ball, t) {
+    ctx.rotate(t * 2);
+    rect(ctx, -9, -9, 18, 18, '#5fbf77');
+    ctx.beginPath();
+    ctx.moveTo(-9, 0);
+    ctx.lineTo(9, 0);
+    ctx.moveTo(0, -9);
+    ctx.lineTo(0, 9);
+    ctx.stroke();
+  },
+  balloon(ctx) {
+    ctx.beginPath();
+    ctx.moveTo(-10, 0);
+    ctx.lineTo(0, 0);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(8, 0, 10, 8, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff5c8a';
+    ctx.fill();
+    ctx.stroke();
+  },
+  cards(ctx) {
+    ctx.rotate(-0.3);
+    rect(ctx, -6, -9, 12, 18, '#ffffff');
+    ctx.rotate(0.5);
+    rect(ctx, -4, -9, 12, 18, '#ffffff');
+    ctx.fillStyle = '#c0392b';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('♥', 2, 0);
+  },
+  skeleton(ctx) {
+    circle(ctx, 0, 0, 9, '#efe9dc');
+    circle(ctx, -3, -1, 2.2, '#222', false);
+    circle(ctx, 3, -1, 2.2, '#222', false);
+  },
+  firecracker(ctx, ball, t) {
+    rect(ctx, -10, -5, 9, 10, '#e5383b');
+    rect(ctx, 1, -5, 9, 10, '#e5383b');
+    circle(ctx, 13, -6, 2.5 + Math.sin(t * 30), '#ffcc33', false);
+  },
+  urchin(ctx) {
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a) * 13, Math.sin(a) * 13);
+      ctx.stroke();
+    }
+    circle(ctx, 0, 0, 7, '#3d2c5e');
+  },
+  plasma(ctx, ball, t) {
+    circle(ctx, 0, 0, 9, '#b9a8ff');
+    ctx.strokeStyle = '#7b5cff';
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = i + t * 9;
+      ctx.lineTo(Math.cos(a) * 12, Math.sin(a * 1.7) * 12);
+    }
+    ctx.stroke();
+  },
+  chakram(ctx, ball, t) {
+    ctx.rotate(t * 12);
+    circle(ctx, 0, 0, 11, '#f2c230');
+    circle(ctx, 0, 0, 6, '#ffffff');
+  },
+  butterfly(ctx, ball, t) {
+    const f = 0.5 + Math.abs(Math.sin(t * 10)) * 0.5;
+    ctx.save();
+    ctx.scale(f, 1);
+    circle(ctx, -6, -5, 6, '#5ec8e5');
+    circle(ctx, 6, -5, 6, '#5ec8e5');
+    circle(ctx, -4, 5, 4, '#a7e8f7');
+    circle(ctx, 4, 5, 4, '#a7e8f7');
+    ctx.restore();
+  },
   quake(ctx) {
     rect(ctx, -10, -6, 20, 12, '#8a6a45');
     ctx.beginPath();
@@ -651,6 +753,116 @@ const HELD = {
 };
 
 const PROJ = {
+  petal(ctx, p) {
+    ctx.rotate(p.spin);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 7, 4, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffc2dc';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  },
+  pinball(ctx, p) {
+    circle(ctx, 0, 0, p.r, '#c9d1da');
+    circle(ctx, -p.r * 0.35, -p.r * 0.35, p.r * 0.3, '#ffffff', false);
+  },
+  cube(ctx, p) {
+    ctx.rotate(p.angle);
+    rect(ctx, -p.r, -p.r, p.r * 2, p.r * 2, p.gen > 1 ? '#5fbf77' : '#a8e6b8');
+  },
+  balloon(ctx, p) {
+    ctx.beginPath();
+    ctx.moveTo(0, p.r);
+    ctx.lineTo(Math.sin(p.age * 6) * 4, p.r + 16);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(0, 0, p.r * 0.85, p.r, 0, 0, Math.PI * 2);
+    ctx.fillStyle = `hsl(${p.hue},85%,62%)`;
+    ctx.fill();
+    ctx.stroke();
+    circle(ctx, -p.r * 0.3, -p.r * 0.4, p.r * 0.22, 'rgba(255,255,255,0.8)', false);
+  },
+  dart(ctx, p) {
+    ctx.rotate(Math.atan2(p.vy, p.vx));
+    rect(ctx, -10, -1.5, 14, 3, '#7a4a26');
+    poly(ctx, [[4, -3], [10, 0], [4, 3]], STEEL);
+    poly(ctx, [[-10, 0], [-14, -4], [-12, 0], [-14, 4]], '#ff5c8a');
+  },
+  card(ctx, p) {
+    ctx.rotate(p.age * 14);
+    rect(ctx, -6, -8, 12, 16, '#ffffff');
+    ctx.fillStyle = p.suit === 1 || p.suit === 2 ? '#d62828' : '#1a1a1a';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('♠♥♦♣'[p.suit], 0, 0);
+  },
+  skeleton(ctx, p) {
+    const step = Math.sin(p.age * 14) * 4;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-4, 4);
+    ctx.lineTo(-5 + step, 12);
+    ctx.moveTo(4, 4);
+    ctx.lineTo(5 - step, 12);
+    ctx.stroke();
+    rect(ctx, -5, -2, 10, 8, '#efe9dc');
+    circle(ctx, 0, -7, 7, '#efe9dc');
+    circle(ctx, -2.5, -8, 1.8, '#222', false);
+    circle(ctx, 2.5, -8, 1.8, '#222', false);
+  },
+  cracker(ctx, p) {
+    rect(ctx, -3, -6, 6, 12, '#e5383b');
+    circle(ctx, 0, -9, 2 + Math.random() * 2, '#ffcc33', false);
+  },
+  spine(ctx, p) {
+    ctx.rotate(Math.atan2(p.vy, p.vx));
+    poly(ctx, [[-8, -2.5], [9, 0], [-8, 2.5]], '#4b3a73');
+  },
+  plasma(ctx, p) {
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    circle(ctx, 0, 0, p.reach, '#7b5cff', false);
+    ctx.restore();
+    ctx.save();
+    ctx.strokeStyle = 'rgba(160,140,255,0.9)';
+    ctx.lineWidth = 2;
+    for (let k = 0; k < 4; k++) {
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      const a = Math.random() * Math.PI * 2;
+      for (let i = 1; i <= 4; i++) {
+        const r = (p.reach * i) / 4;
+        ctx.lineTo(Math.cos(a + (Math.random() - 0.5) * 0.6) * r, Math.sin(a + (Math.random() - 0.5) * 0.6) * r);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+    circle(ctx, 0, 0, p.r, '#b9a8ff');
+    circle(ctx, 0, 0, p.r * 0.5, '#ffffff', false);
+  },
+  chakram(ctx, p) {
+    ctx.rotate(p.angle);
+    for (let i = 0; i < 6; i++) {
+      const a = (i * Math.PI) / 3;
+      poly(ctx, [[Math.cos(a) * p.r, Math.sin(a) * p.r], [Math.cos(a + 0.5) * (p.r + 6), Math.sin(a + 0.5) * (p.r + 6)], [Math.cos(a + 0.6) * p.r, Math.sin(a + 0.6) * p.r]], STEEL);
+    }
+    circle(ctx, 0, 0, p.r, '#f2c230');
+    circle(ctx, 0, 0, p.r * 0.5, '#ffffff');
+  },
+  butterfly(ctx, p) {
+    const f = 0.35 + Math.abs(Math.sin(p.age * 14)) * 0.65;
+    ctx.rotate(Math.atan2(p.vy, p.vx) + Math.PI / 2);
+    ctx.lineWidth = 2;
+    ctx.save();
+    ctx.scale(f, 1);
+    circle(ctx, -6, -3, 6, '#5ec8e5');
+    circle(ctx, 6, -3, 6, '#5ec8e5');
+    circle(ctx, -4, 5, 4, '#a7e8f7');
+    circle(ctx, 4, 5, 4, '#a7e8f7');
+    ctx.restore();
+    rect(ctx, -1.5, -7, 3, 14, '#2a2a2a');
+  },
   skillbolt(ctx, p) {
     ctx.rotate(p.angle || Math.atan2(p.vy, p.vx));
     poly(ctx, [[-8, -4], [9, 0], [-8, 4]], '#ffe680');
@@ -1256,6 +1468,10 @@ export class Renderer {
         const c = `hsl(${e.hue},95%,60%)`;
         this.rings.push({ x: e.x, y: e.y, r0: 6, r1: 60, life: 0.3, age: 0, color: hslHex(e.hue), fill: true });
         this.burst(e.x, e.y, 10, c, 1.2);
+      } else if (e.type === 'shock') {
+        // スキルの衝撃波(つむじ風・光の覚醒など)
+        this.rings.push({ x: e.x, y: e.y, r0: 20, r1: e.r, life: 0.35, age: 0, color: e.color, fill: true });
+        this.shake = Math.min(10, this.shake + 3);
       } else if (e.type === 'boom') {
         const potion = e.kind === 'potion';
         this.rings.push({ x: e.x, y: e.y, r0: e.radius * 0.3, r1: e.radius, life: 0.3, age: 0, color: potion ? '#d6335a' : '#ff7a1a', fill: true, strong: true });
@@ -1487,7 +1703,12 @@ export class Renderer {
         if (b.dead) continue;
         const hp = Math.ceil(b.hp);
         main.font = `${hp >= 100 ? 34 : 40}px ${NUM_FONT}`;
-        main.fillStyle = b.flash > 0 ? '#e8484d' : textColorFor(b.def.color);
+        // どんな色のボールでも(白っぽいボールや、当たって白く光ったときも)読めるように黒い縁取りを付ける
+        main.lineWidth = 6;
+        main.lineJoin = 'round';
+        main.strokeStyle = '#1a1a1a';
+        main.strokeText(String(hp), b.x, b.y + 1);
+        main.fillStyle = b.flash > 0 ? '#ff5a5a' : '#ffffff';
         main.fillText(String(hp), b.x, b.y + 1);
         // 3人以上などで「どれが誰か」を出す名札(P1 など)
         const tag = this.labels && this.labels[b.id];
@@ -1591,7 +1812,7 @@ export class Renderer {
       if (!fn) continue;
       ctx.save();
       ctx.translate(b.x, b.y);
-      ctx.rotate(b.angle + bl.off);
+      ctx.rotate((bl.free ? bl.rot : b.angle) + bl.off);
       // 動画のドット絵のように太めに見せる(当たり判定の太さは変えない)
       ctx.scale(1, 1.5);
       fn(ctx, bl, t);
@@ -1681,6 +1902,28 @@ export class Renderer {
 
   drawBall(ctx, b) {
     ctx.save();
+    if (b.awaken > 0) {
+      // 武器進化: 段階が上がるほど光のトゲが増え、色が変わる(改 橙 → 真 桃 → 極 紫 → 神 金)
+      const tier = b.awaken;
+      const color = ['#ff7a1a', '#ff3d9a', '#8b3fe0', '#f2c230'][Math.min(3, tier - 1)];
+      const n = 6 + Math.min(10, tier * 2);
+      const spin = this.time * (1 + tier * 0.4);
+      ctx.save();
+      ctx.globalAlpha = 0.55 + 0.15 * Math.sin(this.time * 6);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      for (let i = 0; i < n * 2; i++) {
+        const a = spin + (i * Math.PI) / n;
+        const r = i % 2 ? b.r + 4 : b.r + 14 + Math.min(16, tier * 3);
+        const x = b.x + Math.cos(a) * r;
+        const y = b.y + Math.sin(a) * r;
+        if (i) ctx.lineTo(x, y);
+        else ctx.moveTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
     ctx.lineWidth = 3;
     circle(ctx, b.x, b.y, b.r, b.flash > 0 ? '#ffffff' : b.def.color);
     if (b.poison > 0) {

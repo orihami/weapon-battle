@@ -74,7 +74,8 @@ export function segSegDist(a, b) {
 
 // 武器の刃(線分)の両端をワールド座標で返す
 export function bladeSegment(ball, blade) {
-  const ang = ball.angle + blade.off;
+  // free: 武器とは別に自分で回る刃(スキルの追加の剣)。遠距離武器は相手の方を向き続けるので、武器の向きに付けると当たらない
+  const ang = (blade.free ? blade.rot : ball.angle) + blade.off;
   const c = Math.cos(ang);
   const s = Math.sin(ang);
   return [ball.x + c * blade.rIn, ball.y + s * blade.rIn, ball.x + c * blade.rOut, ball.y + s * blade.rOut];
@@ -557,6 +558,7 @@ export function step(world, dt = DT) {
     if (ball.stun <= 0) {
       // haste: 攻撃速度(スキル)。回転も武器の発射間隔も速くなる
       ball.angle += ball.spin * SPIN_SCALE * (1 - ball.slow) * ball.haste * dt;
+      for (const bl of ball.blades) if (bl.free) bl.rot += Math.sign(ball.spin || 1) * 4 * SPIN_SCALE * (1 - ball.slow) * ball.haste * dt;
       if (ball.def.update) ball.def.update(world, ball, foe, dt * ball.haste);
     }
     for (const sk of ball.skills) if (sk.def.update) sk.def.update(world, ball, foe, dt, sk.st);

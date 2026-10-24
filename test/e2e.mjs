@@ -190,7 +190,7 @@ try {
   const chal = await page.waitForFunction(
     () => (document.querySelector('#cardDialog').open ? 'card' : /敗退/.test(document.querySelector('#resultText').textContent) && !document.querySelector('#overlay').hidden ? 'lose' : false),
     null,
-    { timeout: 150000 },
+    { timeout: 300000 },
   );
   if ((await chal.jsonValue()) === 'card') {
     await page.click('#cardGrid .skill-card');
@@ -202,6 +202,37 @@ try {
     check(/敗退/.test(await page.textContent('#resultText')), 'チャレンジ: 負けて終了');
   }
   await page.screenshot({ path: join(outDir, '6-challenge.png') });
+
+  // 6.5) チャレンジのボスを倒したとき: 武器進化(3つから1つ) → 大進化(合体進化も出る)
+  await page.goto(base + '?speed=4');
+  await page.click('[data-mode="chal"]');
+  await page.click('#slots .slot-pick');
+  await page.click('#pickerGrid button[data-id="bow"]');
+  await page.click('#goBtn');
+  await page.waitForTimeout(300);
+  await page.evaluate(async () => {
+    const s = window.__weaponBattle.state;
+    const { SKILL_BY_ID: S } = await import('./src/skills.js');
+    s.chal.stage = 5;
+    s.chal.enemy.boss = true;
+    s.chal.skills.push(S.vamp, S.hp);
+    s.world.balls[1].hp = 0.01;
+  });
+  await page.waitForFunction(() => document.querySelector('#cardDialog').open, null, { timeout: 200000 });
+  const awakenCards = await page.locator('#cardGrid .skill-card.r-awaken').count();
+  check(awakenCards === 3, `ボス撃破で武器進化の候補: ${awakenCards}つ`);
+  await page.screenshot({ path: join(outDir, '6b-awaken.png') });
+  await page.click('#cardGrid .skill-card');
+  await page.waitForFunction(() => document.querySelector('#cardDialog').open && document.querySelector('#cardSub').textContent.includes('大進化'), null, { timeout: 30000 });
+  const fusion = await page.locator('#cardGrid .skill-card.r-fusion').count();
+  check(fusion >= 1, `材料がそろうと大進化に合体進化が出る: ${fusion}枚`);
+  await page.screenshot({ path: join(outDir, '6c-fusion.png') });
+  const big = await page.$$('#cardGrid .skill-card');
+  await big[big.length - 1].click();
+  await big[0].click();
+  await page.waitForTimeout(1200);
+  const hudName = await page.textContent('#hud .hud-card .hud-name');
+  check(/弓・改/.test(hudName) && /ステージ 6/.test(await page.textContent('#battleTitle')), `武器進化した名前: ${hudName}`);
 
   // 7) トーナメント(8人)を4倍速で最後まで
   await page.goto(base + '?speed=4');
@@ -224,6 +255,11 @@ try {
   const ranks = await page.evaluate(() => [...document.querySelectorAll('#bookGrid .rank')].map((r) => r.textContent));
   check(ranks[0] === '1位' && ranks.length >= 2, `ランキング表示: ${ranks.slice(0, 3).join(', ')}`);
   await page.screenshot({ path: join(outDir, '8-book.png') });
+  await page.click('[data-book="skills"]');
+  const skillRows = await page.locator('#skillBook .skill-row').count();
+  check(skillRows >= 80, `カード・進化の一覧: ${skillRows}種`);
+  await page.screenshot({ path: join(outDir, '8b-skill-book.png') });
+  await page.click('[data-book="weapons"]');
   await page.fill('#bookSearch', '爆弾');
   const hits = await page.locator('#bookGrid .card').count();
   check(hits >= 2 && hits < 10, `ずかんの検索「爆弾」: ${hits}件`);

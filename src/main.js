@@ -4,9 +4,9 @@ import { WEAPONS, WEAPON_BY_ID } from './weapons.js';
 import { Renderer, drawIcon } from './render.js';
 import { Sound } from './sound.js';
 import { createTournament, nextMatch, reportWinner, pickEntries, roundName } from './tournament.js';
-import { newChallenge, enemyBoost, offerCards, takeCards, isBoss } from './challenge.js';
-import { RARITY, cpuPick } from './skills.js';
-import { createRounds, fighters, reportRound, pickSkills } from './rounds.js';
+import { newChallenge, enemyBoost, offerCards, takeCards, takeAwaken, isBoss } from './challenge.js';
+import { RARITY, SKILLS, SKILL_BY_ID, cpuPick, awakenSuffix, fusionsReady, fusionsNear } from './skills.js';
+import { createRounds, fighters, reportRound, pickSkills, pickAwaken } from './rounds.js';
 
 const $ = (id) => document.getElementById(id);
 const SPEEDS = [1, 2, 4];
@@ -137,6 +137,20 @@ function el(tag, props = {}, ...children) {
 
 function skillIcons(list) {
   return list.map((sk) => `<span class="ic" title="${sk.name}" style="border-color:${RARITY[sk.rarity].color}">${sk.icon}</span>`).join('');
+}
+
+// 白っぽい色は、HPバーや名前に使うと背景にとけて見づらいので少し暗くする
+function readable(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  if (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2] < 185) return hex;
+  return '#' + rgb.map((c) => Math.round(c * 0.62).toString(16).padStart(2, '0')).join('');
+}
+
+// 武器進化した武器の名前(剣 → 剣・改 → 剣・真 …)
+function weaponName(i) {
+  const ball = state.world && state.world.balls[i];
+  return state.fighters[i].name + awakenSuffix((ball && ball.awaken) || 0);
 }
 
 function toast(text) {
@@ -372,7 +386,7 @@ function updatePlay() {
 function nameOf(i) {
   const def = state.fighters[i];
   const tag = state.labels && state.labels[i];
-  return tag && /^P\d/.test(tag.text) ? `${tag.text} ${def.name}` : def.name;
+  return tag && /^P\d/.test(tag.text) ? `${tag.text} ${weaponName(i)}` : weaponName(i);
 }
 
 function renderTitle() {
@@ -407,14 +421,15 @@ function renderHud() {
     const def = state.fighters[i];
     const tag = state.labels && state.labels[i];
     const card = el('div', { className: 'hud-card' });
-    card.style.setProperty('--c', def.color);
+    card.style.setProperty('--c', readable(def.color));
+    if (ball.awaken) card.classList.add('awakened');
     const top = el('div', { className: 'hud-top' });
     if (tag) {
       const t = el('span', { className: 'ptag', textContent: tag.text });
       t.style.background = tag.color;
       top.append(t);
     }
-    top.append(iconCanvas(def, 56), el('span', { className: 'hud-name', textContent: def.name }));
+    top.append(iconCanvas(def, 56), el('span', { className: 'hud-name', textContent: weaponName(i) }));
     if (state.rounds) {
       const p = state.rounds.players[i];
       top.append(el('span', { className: 'stars', textContent: '★'.repeat(p.wins) }));
@@ -581,6 +596,22 @@ function nextPick(r) {
     return;
   }
   const p = r.players[pend.player];
+  if (pend.awaken) {
+    showCards({
+      who: `${p.name}${p.cpu ? '(CPU)' : ''} の武器進化`,
+      color: p.color,
+      sub: `${p.weapon.name} の進化先を1つ選ぶ`,
+      cards: pend.awaken,
+      choose: 1,
+      cpu: p.cpu,
+      mine: p.skills,
+      onDone([card]) {
+        pickAwaken(r, card);
+        nextPick(r);
+      },
+    });
+    return;
+  }
   showCards({
     who: `${p.name}${p.cpu ? '(CPU)' : ''} のカード選び`,
     color: p.color,
@@ -639,8 +670,7 @@ function chalResult(won) {
   }
   const offer = offerCards(ch);
   text.textContent = ch.enemy.boss ? 'ボス撃破！' : `ステージ${ch.stage} クリア！`;
-  setTimeout(() => {
-    if (state.chal !== ch) return;
+  const cardPick = () =>
     showCards({
       who: 'スキルカードを選ぶ',
       color: '#8b3fe0',
@@ -651,6 +681,23 @@ function chalResult(won) {
       onDone(cards) {
         takeCards(ch, cards);
         playChalStage();
+      },
+    });
+  setTimeout(() => {
+    if (state.chal !== ch) return;
+    if (!offer.awaken) return cardPick();
+    // ボスのあと: まず武器進化、そのあと大進化
+    const tier = ch.skills.filter((c) => c.rarity === 'awaken').length;
+    showCards({
+      who: '⚔️ 武器進化！',
+      color: '#ff7a1a',
+      sub: `${ch.weapon.name}${awakenSuffix(tier)} → ${ch.weapon.name}${awakenSuffix(tier + 1)}  進化先を1つ選ぶ`,
+      cards: offer.awaken,
+      choose: 1,
+      mine: ch.skills,
+      onDone([card]) {
+        takeAwaken(ch, card);
+        cardPick();
       },
     });
   }, 1100);
@@ -735,6 +782,7 @@ function renderSideInfo() {
     box.innerHTML =
       `<h3>${ch.weapon.name}の挑戦(最高記録 ${loadBest()}勝)</h3>` +
       `<p>自分のスキル: ${skillIcons(ch.skills) || 'まだなし'}</p>` +
+      recipeHints(ch.skills) +
       `<p>敵: HP${e.maxHp}・初期成長+${e.preGrow}${e.skills.length ? '・' + skillIcons(e.skills) : ''}</p>`;
   } else if (state.auto) {
     box.innerHTML = '<p>ランダムな対戦を自動で流し続けます。止めるときは ← でもどる。</p>';
@@ -742,6 +790,20 @@ function renderSideInfo() {
     box.innerHTML = '';
   }
   box.hidden = !box.innerHTML;
+}
+
+// 合体進化のヒント(作れるもの・あと1枚で作れるもの)
+function recipeHints(owned) {
+  const ready = fusionsReady(owned);
+  const near = fusionsNear(owned);
+  let html = '';
+  if (ready.length) html += `<p class="recipe">🧪 合体できる: ${ready.map((f) => `${f.icon}${f.name}`).join('・')}(次のカード選びに出やすい)</p>`;
+  if (near.length) html += `<p class="recipe">あと1枚で合体: ${near.slice(0, 4).map(({ fusion, missing }) => `${fusion.icon}${fusion.name}(${missing.icon}${missing.name})`).join('・')}</p>`;
+  return html;
+}
+
+function recipeText(card) {
+  return card.needs ? card.needs.map((id) => `${SKILL_BY_ID[id].icon}${SKILL_BY_ID[id].name}`).join(' + ') : '';
 }
 
 // ---- スキルカード選び ----
@@ -759,9 +821,10 @@ function showCards({ who, color, sub, cards, choose, cpu = false, mine = [], onD
   let done = false;
   const buttons = cards.map((card) => {
     const rare = RARITY[card.rarity];
-    const b = el('button', { type: 'button', className: 'skill-card' });
+    const b = el('button', { type: 'button', className: 'skill-card r-' + card.rarity });
     b.style.setProperty('--r', rare.color);
-    b.innerHTML = `<span class="sc-rare">${rare.name}</span><span class="sc-icon">${card.icon}</span><b>${card.name}</b><small>${card.desc}</small>`;
+    const recipe = card.needs ? `<em class="sc-recipe">${recipeText(card)} を合体</em>` : '';
+    b.innerHTML = `<span class="sc-rare">${rare.name}</span><span class="sc-icon">${card.icon}</span><b>${card.name}</b>${recipe}<small>${card.desc}</small>`;
     b.addEventListener('click', () => {
       if (cpu || done) return;
       if (choose === 1) return finishPick([card]);
@@ -828,7 +891,42 @@ function renderPicker() {
 
 // ---- ずかん ----
 
+// カード・進化の一覧(レア度ごと。合体進化はレシピも出す)
+function renderSkillBook() {
+  const box = $('skillBook');
+  const q = state.bookQuery.trim();
+  box.replaceChildren();
+  for (const [rarity, title] of [
+    ['common', 'ふつう'],
+    ['rare', 'レア'],
+    ['epic', 'エピック'],
+    ['legend', 'レジェンド'],
+    ['fusion', '🧪 合体進化(2枚そろうとカード選びに出る。選ぶと2枚が合体)'],
+    ['awaken', '⚔️ 武器進化(ボスを倒すと3つから1つ。重ねると 改→真→極→神)'],
+    ['cursed', '😈 呪いのカード(とても強いが弱点もある。ときどき出る)'],
+  ]) {
+    const list = SKILLS.filter((c) => c.rarity === rarity && (!q || c.name.includes(q) || c.desc.includes(q) || recipeText(c).includes(q)));
+    if (!list.length) continue;
+    box.append(el('h3', { textContent: `${title} ${list.length}種` }));
+    for (const c of list) {
+      const row = el('div', { className: 'skill-row' });
+      row.style.setProperty('--r', RARITY[c.rarity].color);
+      row.innerHTML = `<span class="si">${c.icon}</span><b>${c.name}</b><small>${c.desc}</small>${c.needs ? `<em class="sc-recipe">${recipeText(c)}</em>` : ''}`;
+      box.append(row);
+    }
+  }
+}
+
 function renderBook() {
+  const skills = state.bookTab === 'skills';
+  for (const b of $('bookTabs').children) b.classList.toggle('on', b.dataset.book === (state.bookTab || 'weapons'));
+  $('bookGrid').hidden = skills;
+  $('bookSort').hidden = skills;
+  $('skillBook').hidden = !skills;
+  $('bookHint').textContent = skills
+    ? `カード ${SKILLS.length}種。ラウンズとチャレンジで選べます。`
+    : '数字は今までの勝敗です(このブラウザにだけ保存)。タップするとその武器で1対1の準備へ。';
+  if (skills) return renderSkillBook();
   const grid = $('bookGrid');
   grid.replaceChildren();
   const recOf = (def) => state.records[def.id] || { w: 0, l: 0 };
@@ -979,6 +1077,12 @@ function init() {
     state.bookSort = e.target.value;
     renderBook();
   });
+  for (const b of $('bookTabs').children) {
+    b.addEventListener('click', () => {
+      state.bookTab = b.dataset.book;
+      renderBook();
+    });
+  }
   $('bookSearch').addEventListener('input', (e) => {
     state.bookQuery = e.target.value;
     renderBook();

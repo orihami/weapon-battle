@@ -182,6 +182,60 @@ function explode(world, p, owner, foe, radius, damage, kind) {
   }
 }
 
+// 分裂キューブ: 壁か相手に当たると2つに割れる(gen が残っている間)
+function cube(world, me, x, y, angle, r, gen) {
+  spawnProjectile(world, me, {
+    x: Math.max(r, Math.min(ARENA - r, x)),
+    y: Math.max(r, Math.min(ARENA - r, y)),
+    vx: Math.cos(angle) * 380,
+    vy: Math.sin(angle) * 380,
+    angle,
+    kind: 'cube',
+    r,
+    gen,
+    life: 3,
+    wall: 'bounce',
+    bounces: 0,
+    damage: 1.5,
+    blockable: false,
+    update(world, p, owner, foe, dt) {
+      p.angle += dt * 5;
+    },
+    onTouch(world, p, owner, o) {
+      p.dead = true;
+      landHit(world, owner, o, p.damage, { kind: 'cube', x: p.x, y: p.y });
+      splitCube(world, p, owner, o);
+    },
+    onExpire: (world, p, owner, foe) => splitCube(world, p, owner, foe),
+  });
+}
+
+function splitCube(world, p, owner, foe) {
+  if (p.gen <= 1 || p.age < 0.05) return;
+  const a = Math.atan2(foe.y - p.y, foe.x - p.x);
+  for (const s of [-0.6, 0.6]) cube(world, owner, p.x, p.y, a + s, p.r * 0.8, p.gen - 1);
+}
+
+// 風船が割れたら矢を3本
+function popBalloon(world, p, owner, foe) {
+  world.events.push({ type: 'boom', x: p.x, y: p.y, radius: 26, kind: 'potion' });
+  const a = Math.atan2(foe.y - p.y, foe.x - p.x);
+  for (const s of [-0.25, 0, 0.25]) {
+    spawnProjectile(world, owner, {
+      x: p.x,
+      y: p.y,
+      vx: Math.cos(a + s) * 520,
+      vy: Math.sin(a + s) * 520,
+      angle: a + s,
+      kind: 'dart',
+      r: 4,
+      life: 1.4,
+      damage: 0.7,
+      onTouch: hitOnce(),
+    });
+  }
+}
+
 // 回転する近接武器の共通定義
 function melee(id, o) {
   return {
@@ -3579,6 +3633,502 @@ export const WEAPONS = [
     },
     onHit(world, me) {
       growStat(me, 'n', 0.5, 10, 0.4);
+    },
+  },
+  // ---- 102種への追加分 ----
+  {
+    id: 'sakura',
+    kind: 'ranged',
+    name: '桜吹雪',
+    en: 'Cherry Blossom',
+    color: '#f49ac1',
+    grow: '当たるたびに 花びら +1(うずを巻いて相手へ流れていく)',
+    init(b) {
+      b.w = { n: 3, timer: 0.5 };
+    },
+    stats: (b) => [['花びら', fmt(shown(b, 'n'))]],
+    update(world, me, foe, dt) {
+      me.angle += dt;
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 1.5;
+      const n = Math.floor(me.w.n);
+      for (let i = 0; i < n; i++) {
+        shoot(world, me, me.angle + (i * TAU) / n, 220, {
+          kind: 'petal',
+          r: 6,
+          life: 2.6,
+          damage: 0.45,
+          spin: world.rng() * TAU,
+          update(world, p, owner, foe, dt) {
+            p.spin += dt * 6;
+            if (p.age < 0.45) {
+              // はじめは渦を巻くように曲がる
+              const a = Math.atan2(p.vy, p.vx) + dt * 2.2;
+              const sp = Math.hypot(p.vx, p.vy);
+              p.vx = Math.cos(a) * sp;
+              p.vy = Math.sin(a) * sp;
+            } else {
+              homing(p, foe, 1.6, dt, 260);
+            }
+          },
+          onTouch: hitOnce(),
+        });
+      }
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 1, 40, 0.25);
+    },
+  },
+  {
+    id: 'pinball',
+    kind: 'ranged',
+    name: 'ピンボール',
+    en: 'Pinball',
+    color: '#8d99ae',
+    grow: '3回当たるたびに 鉄の玉 +1(壁や相手で何度も跳ね返る)',
+    init(b) {
+      b.w = { n: 1, timer: 0.6 };
+    },
+    stats: (b) => [['鉄の玉', fmt(Math.floor(shown(b, 'n')))]],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 2.4;
+      const n = Math.floor(me.w.n);
+      for (let i = 0; i < n; i++) {
+        shoot(world, me, me.angle + (i - (n - 1) / 2) * 0.3, 560, {
+          kind: 'pinball',
+          r: 9,
+          life: 4,
+          gravity: 0.6,
+          wall: 'bounce',
+          bounces: 4,
+          damage: 1,
+          blockable: false,
+          hitCd: 0,
+          left: 2,
+          update(world, p, owner, foe, dt) {
+            if (p.hitCd > 0) p.hitCd -= dt;
+          },
+          onTouch(world, p, owner, o) {
+            if (p.hitCd > 0) return;
+            p.hitCd = 0.35;
+            landHit(world, owner, o, p.damage, { kind: 'pinball', x: p.x, y: p.y });
+            // 相手から跳ね返る
+            const d = Math.hypot(p.x - o.x, p.y - o.y) || 1;
+            const sp = Math.max(420, Math.hypot(p.vx, p.vy));
+            p.vx = ((p.x - o.x) / d) * sp;
+            p.vy = ((p.y - o.y) / d) * sp - 120;
+            if (--p.left <= 0) p.dead = true;
+          },
+        });
+      }
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 0.34, 6, 0.5);
+    },
+  },
+  {
+    id: 'splitter',
+    kind: 'ranged',
+    name: '分裂キューブ',
+    en: 'Splitter Cube',
+    color: '#5fbf77',
+    grow: '3回当たるたびに 分裂する回数 +1(壁や相手に当たると2つに割れる。数が倍々に増える)',
+    init(b) {
+      b.w = { gen: 1, timer: 0.8 };
+    },
+    stats: (b) => [['分裂', fmt(Math.floor(shown(b, 'gen')))]],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 2.6;
+      cube(world, me, me.x + Math.cos(me.angle) * (me.r + 14), me.y + Math.sin(me.angle) * (me.r + 14), me.angle, 13, Math.floor(me.w.gen));
+    },
+    onHit(world, me) {
+      growStat(me, 'gen', 0.34, 5, 0.6);
+    },
+  },
+  {
+    id: 'frog',
+    kind: 'melee',
+    name: 'カエル',
+    en: 'Frog',
+    color: '#4caf50',
+    grow: '当たるたびに 舌が長くなる(相手に向けて舌をのばして叩く)',
+    init(b) {
+      b.w = { len: 90, timer: 0.5, lash: 0 };
+      setSpin(b, 0);
+      b.blades = [makeBlade({ sprite: 'tongue', rIn: b.r - 6, rOut: b.r, w: 14, damage: 3, knock: 260, cd: 0.45, parry: false })];
+    },
+    stats: (b) => [['舌の長さ', fmt(Math.round(shown(b, 'len')))]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      const bl = me.blades[0];
+      w.timer -= dt;
+      if (w.lash <= 0) me.angle = aimAt(me, foe);
+      if (w.timer <= 0 && w.lash <= 0) {
+        w.timer = 0.9;
+        w.lash = 0.4;
+      }
+      if (w.lash > 0) {
+        w.lash -= dt;
+        const k = Math.sin(Math.PI * Math.min(1, 1 - w.lash / 0.4));
+        bl.rOut = me.r + Math.max(0, k) * w.len;
+      } else {
+        bl.rOut = me.r;
+      }
+      bl.rIn = me.r - 6;
+    },
+    onHit(world, me) {
+      growStat(me, 'len', 12, 300, 0.8);
+    },
+  },
+  {
+    id: 'balloon',
+    kind: 'ranged',
+    name: '風船',
+    en: 'Balloons',
+    color: '#ff5c8a',
+    grow: '3回当たるたびに 風船 +1(ふわふわ上がって、割れると矢が飛び出す)',
+    init(b) {
+      b.w = { n: 1, timer: 0.7 };
+    },
+    stats: (b) => [['風船', fmt(Math.floor(shown(b, 'n')))]],
+    update(world, me, foe, dt) {
+      me.angle = -Math.PI / 2;
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 2.4;
+      const n = Math.floor(me.w.n);
+      for (let i = 0; i < n; i++) {
+        spawnProjectile(world, me, {
+          x: me.x + (i - (n - 1) / 2) * 18,
+          y: me.y - me.r - 12,
+          vx: (world.rng() - 0.5) * 140,
+          vy: -80,
+          kind: 'balloon',
+          r: 12,
+          life: 2.2 + world.rng() * 1.2,
+          gravity: -0.22,
+          wall: 'die',
+          blockable: false,
+          hue: Math.floor(world.rng() * 360),
+          onTouch(world, p, owner, o) {
+            p.dead = true;
+            popBalloon(world, p, owner, o);
+          },
+          onExpire: (world, p, owner, foe) => popBalloon(world, p, owner, foe),
+        });
+      }
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 0.34, 10, 0.5);
+    },
+  },
+  {
+    id: 'cards',
+    kind: 'ranged',
+    name: 'トランプ',
+    en: 'Playing Cards',
+    color: '#c0392b',
+    grow: '2回当たるたびに 投げるカード +1(♠大ダメージ ♥回復 ♦やけど ♣しびれ)',
+    init(b) {
+      b.w = { n: 2, timer: 0.6 };
+    },
+    stats: (b) => [['カード', fmt(Math.floor(shown(b, 'n')))]],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 1.6;
+      const n = Math.floor(me.w.n);
+      for (let i = 0; i < n; i++) {
+        shoot(world, me, me.angle + (i - (n - 1) / 2) * 0.18, 560, {
+          kind: 'card',
+          r: 6,
+          life: 1.6,
+          suit: Math.floor(world.rng() * 4),
+          onTouch(world, p, owner, o) {
+            p.dead = true;
+            const info = { kind: 'card', x: p.x, y: p.y };
+            if (p.suit === 0) landHit(world, owner, o, 2.2, info);
+            else if (landHit(world, owner, o, 1, info) > 0) {
+              if (p.suit === 1) heal(world, owner, 1.5);
+              if (p.suit === 2) {
+                o.burnT = 1.5;
+                o.burnDps = Math.max(o.burnDps, 1.5);
+                o.burnSrc = owner.id;
+              }
+              if (p.suit === 3) o.stun = Math.max(o.stun, 0.15);
+            }
+          },
+        });
+      }
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 0.5, 12, 0.5);
+    },
+  },
+  {
+    id: 'skeleton',
+    kind: 'ranged',
+    name: '骸骨使い',
+    en: 'Necromancer',
+    color: '#9c8f7a',
+    grow: '3回当たるたびに 呼び出す骸骨 +1(床を歩いて相手に飛びかかる)',
+    init(b) {
+      b.w = { n: 1, timer: 1 };
+    },
+    stats: (b) => [['骸骨', fmt(Math.floor(shown(b, 'n')))]],
+    update(world, me, foe, dt) {
+      me.angle = Math.PI / 2;
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 3;
+      const n = Math.floor(me.w.n);
+      for (let i = 0; i < n; i++) {
+        spawnProjectile(world, me, {
+          x: Math.max(20, Math.min(ARENA - 20, me.x + (i - (n - 1) / 2) * 26)),
+          y: me.y,
+          vx: 0,
+          vy: 0,
+          kind: 'skeleton',
+          r: 11,
+          life: 5,
+          gravity: 1,
+          wall: 'stop',
+          blockable: false,
+          hitCd: 0,
+          jump: world.rng() * 0.5,
+          update(world, p, owner, foe, dt) {
+            if (p.hitCd > 0) p.hitCd -= dt;
+            const onFloor = p.y >= ARENA - p.r - 1;
+            const dx = foe.x - p.x;
+            if (onFloor) {
+              if (p.vy > 0) p.vy = 0;
+              p.vx = Math.sign(dx) * 120;
+              p.jump -= dt;
+              if (p.jump <= 0 && Math.abs(dx) < 160) {
+                p.jump = 1;
+                p.vy = -520;
+                p.vx = Math.sign(dx) * 220;
+              }
+            }
+          },
+          onTouch(world, p, owner, o) {
+            if (p.hitCd > 0) return;
+            p.hitCd = 0.6;
+            landHit(world, owner, o, 1, { kind: 'skeleton', x: p.x, y: p.y });
+          },
+        });
+      }
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 0.34, 8, 0.5);
+    },
+  },
+  {
+    id: 'firecracker',
+    kind: 'ranged',
+    name: '爆竹',
+    en: 'Firecrackers',
+    color: '#e5383b',
+    grow: '当たるたびに 連なる爆竹 +1(相手に向かってパパパッと連続で爆発)',
+    init(b) {
+      b.w = { n: 3, timer: 1 };
+    },
+    stats: (b) => [['爆竹', fmt(shown(b, 'n'))]],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 2.2;
+      const n = Math.floor(me.w.n);
+      // 相手の少し手前から、相手を通りすぎるように一列に並べる(長くなると折れ曲がる)
+      const a = me.angle;
+      for (let i = 0; i < n; i++) {
+        const d = (i - 1.5) * 26;
+        const bend = Math.floor(i / 6) * 0.9;
+        // 爆発するころに相手がいそうな場所をねらう
+        const delay = 0.15 + i * 0.07;
+        const x = Math.max(16, Math.min(ARENA - 16, foe.x + foe.vx * delay + Math.cos(a + bend) * d));
+        const y = Math.max(16, Math.min(ARENA - 16, foe.y + foe.vy * delay + Math.sin(a + bend) * d));
+        spawnProjectile(world, me, {
+          x,
+          y,
+          kind: 'cracker',
+          r: 6,
+          life: 0.15 + i * 0.07,
+          wall: 'stop',
+          blockable: false,
+          onExpire: (world, p, owner, foe) => explode(world, p, owner, foe, 48, 2.2, 'bomb'),
+        });
+      }
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 1, 30, 0.3);
+    },
+  },
+  {
+    id: 'urchin',
+    kind: 'ranged',
+    name: 'ウニ',
+    en: 'Sea Urchin',
+    color: '#3d2c5e',
+    grow: '当たるたびに 全方向に飛ばすトゲ +2',
+    init(b) {
+      b.w = { n: 6, timer: 0.8 };
+    },
+    stats: (b) => [['トゲ', fmt(shown(b, 'n'))]],
+    update(world, me, foe, dt) {
+      me.angle += dt * 0.7;
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 1.5;
+      const n = Math.floor(me.w.n);
+      for (let i = 0; i < n; i++) {
+        shoot(world, me, me.angle + (i * TAU) / n, 480, { kind: 'spine', r: 5, life: 1.6, damage: 1.1, blockable: false, onTouch: hitOnce() });
+      }
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 2, 36, 0.3);
+    },
+  },
+  {
+    id: 'plasma',
+    kind: 'ranged',
+    name: 'プラズマ球',
+    en: 'Plasma Orb',
+    color: '#7b5cff',
+    grow: '当たるたびに 電気の届く範囲が広がる(ゆっくり進む球が、近くの相手全員に放電)',
+    init(b) {
+      b.w = { reach: 90, timer: 0.5 };
+    },
+    stats: (b) => [['放電範囲', fmt(Math.round(shown(b, 'reach')))]],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 3;
+      shoot(world, me, me.angle, 160, {
+        kind: 'plasma',
+        r: 14,
+        life: 4,
+        wall: 'bounce',
+        blockable: false,
+        reach: me.w.reach,
+        tick: 0.2,
+        update(world, p, owner, foe, dt) {
+          homing(p, foe, 1.4, dt, 170);
+          p.tick -= dt;
+          if (p.tick > 0) return;
+          p.tick = 0.5;
+          for (const o of world.balls) {
+            if (o === owner || o.dead) continue;
+            if (Math.hypot(o.x - p.x, o.y - p.y) < p.reach + o.r) {
+              landHit(world, owner, o, 1.7, { kind: 'plasma', x: o.x, y: o.y });
+            }
+          }
+        },
+      });
+    },
+    onHit(world, me) {
+      growStat(me, 'reach', 7, 240, 0.6);
+    },
+  },
+  {
+    id: 'chakram',
+    kind: 'ranged',
+    name: '円月輪',
+    en: 'Chakram',
+    color: '#e0b03a',
+    grow: '2回当たるたびに 跳ね返って当たり直す回数 +1',
+    init(b) {
+      b.w = { n: 2, timer: 0.5 };
+    },
+    stats: (b) => [['跳ね返り', fmt(Math.floor(shown(b, 'n')))]],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 2.2;
+      shoot(world, me, me.angle, 600, {
+        kind: 'chakram',
+        r: 11,
+        life: 4,
+        wall: 'bounce',
+        damage: 2,
+        hitCd: 0,
+        left: Math.floor(me.w.n),
+        update(world, p, owner, foe, dt) {
+          p.angle += dt * 18;
+          if (p.hitCd > 0) p.hitCd -= dt;
+          else homing(p, foe, 4, dt, 600);
+        },
+        onTouch(world, p, owner, o) {
+          if (p.hitCd > 0) return;
+          p.hitCd = 0.3;
+          landHit(world, owner, o, p.damage, { kind: 'chakram', x: p.x, y: p.y });
+          if (--p.left < 0) {
+            p.dead = true;
+            return;
+          }
+          // 当たった相手から跳ね返る(少しして、また相手に向かってくる)
+          const d = Math.hypot(p.x - o.x, p.y - o.y) || 1;
+          p.vx = ((p.x - o.x) / d) * 600;
+          p.vy = ((p.y - o.y) / d) * 600;
+        },
+      });
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 0.5, 12, 0.5);
+    },
+  },
+  {
+    id: 'butterfly',
+    kind: 'ranged',
+    name: '蝶',
+    en: 'Butterflies',
+    color: '#5ec8e5',
+    grow: '3回当たるたびに 蝶 +1(ひらひら飛んで、刺すと少し回復)',
+    init(b) {
+      b.w = { n: 1, timer: 0.6 };
+    },
+    stats: (b) => [['蝶', fmt(Math.floor(shown(b, 'n')))]],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 2.5;
+      const n = Math.floor(me.w.n);
+      for (let i = 0; i < n; i++) {
+        shoot(world, me, me.angle + (i - (n - 1) / 2) * 0.5 + (world.rng() - 0.5), 160, {
+          kind: 'butterfly',
+          r: 8,
+          life: 4.5,
+          wall: 'bounce',
+          blockable: false,
+          hitCd: 0,
+          wob: world.rng() * TAU,
+          update(world, p, owner, foe, dt) {
+            p.wob += dt * 5;
+            homing(p, foe, 1.8, dt, 150 + Math.sin(p.wob) * 60);
+            if (p.hitCd > 0) p.hitCd -= dt;
+          },
+          onTouch(world, p, owner, o) {
+            if (p.hitCd > 0) return;
+            p.hitCd = 0.9;
+            if (landHit(world, owner, o, 0.5, { kind: 'butterfly', x: p.x, y: p.y }) > 0) heal(world, owner, 0.25);
+          },
+        });
+      }
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 0.34, 12, 0.4);
     },
   },
 ];

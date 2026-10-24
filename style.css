@@ -259,11 +259,12 @@ input[type="search"], select {
 
 .hud-top .stars { margin-left: auto; color: #e0a600; font-size: 14px; white-space: nowrap; }
 
-.hp { position: relative; height: 16px; margin: 4px 0 3px; border: 2px solid var(--line); border-radius: 6px; background: #eee; overflow: hidden; }
+/* 空の部分は濃い色にして、白っぽい武器の色のバーでも残りHPがはっきり見えるようにする */
+.hp { position: relative; height: 18px; margin: 4px 0 3px; border: 2px solid var(--line); border-radius: 6px; background: #3b3b44; overflow: hidden; }
 
-.hp i { position: absolute; inset: 0 auto 0 0; background: var(--c); transition: width 0.15s; }
+.hp i { position: absolute; inset: 0 auto 0 0; background: var(--c); border-right: 2px solid var(--line); transition: width 0.15s; }
 
-.hp span { position: relative; display: block; text-align: center; font-family: var(--num); font-size: 12px; line-height: 12px; color: #fff; -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill; }
+.hp span { position: relative; display: block; text-align: center; font-family: var(--num); font-size: 13px; line-height: 14px; color: #fff; -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill; }
 
 .hud-stats { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -514,3 +515,46 @@ dialog { color: var(--ink); }
   .book-grid { grid-template-columns: 1fr 1fr 1fr; }
   .hud.n3, .hud.n4 { grid-template-columns: repeat(4, 1fr); }
 }
+
+/* ---- 進化のカード ---- */
+
+.skill-card.r-fusion {
+  border-color: transparent;
+  background: linear-gradient(#fffef8, #fffef8) padding-box, linear-gradient(120deg, #ff3d9a, #ffb03a, #3fd0ff, #8b3fe0) border-box;
+  animation: glow 1.4s ease-in-out infinite alternate;
+}
+
+.skill-card.r-awaken { background: #fff4e8; animation: glow 1.4s ease-in-out infinite alternate; }
+
+.skill-card.r-cursed { background: #2a1418; color: #f3dfe3; }
+
+.skill-card.r-cursed small { color: #d9b3bb; }
+
+.skill-card.picked.r-cursed { background: #4a1d27; }
+
+@keyframes glow {
+  from { box-shadow: 0 4px 0 var(--line), 0 0 0 rgba(255, 122, 26, 0); }
+  to { box-shadow: 0 4px 0 var(--line), 0 0 18px rgba(255, 122, 26, 0.75); }
+}
+
+.sc-recipe { font-style: normal; font-size: 12px; color: #c0247a; }
+
+.recipe { color: #c0247a; }
+
+.hud-card.awakened { box-shadow: 0 0 0 2px #ff7a1a, 0 0 12px rgba(255, 122, 26, 0.6); }
+
+.book-tabs { margin-bottom: 8px; }
+
+.skill-book { display: grid; gap: 6px; }
+
+.skill-book h3 { margin: 10px 0 2px; font-size: 16px; }
+
+.skill-row { display: grid; grid-template-columns: 34px 1fr; gap: 2px 8px; align-items: center; padding: 6px 8px; border: 2px solid var(--line); border-left: 8px solid var(--r); border-radius: 8px; background: #fff; font-size: 13px; }
+
+.skill-row .si { font-size: 24px; grid-row: span 2; text-align: center; }
+
+.skill-row b { font-size: 15px; }
+
+.skill-row small { color: var(--muted); }
+
+.skill-row .sc-recipe { grid-column: 2; }

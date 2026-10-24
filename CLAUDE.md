@@ -10,9 +10,9 @@
 ```
 index.html, style.css     画面
 src/engine.js             シミュレーション本体（DOM非依存。Nodeのテストからそのまま動く）
-src/weapons.js            武器の定義（90種）。onHit で「当たったら成長」を書く
+src/weapons.js            武器の定義（102種）。onHit で「当たったら成長」を書く
 src/tournament.js         トーナメント(勝ち抜き戦)の進行（DOM非依存）
-src/skills.js             スキルカード（32種・レア度・重ねがけ）。engine のフックで効く（DOM非依存）
+src/skills.js             スキルカード（87種: ふつう〜レジェンド49・合体進化22・武器進化10・呪い6）。engine のフックで効く（DOM非依存）
 src/rounds.js             ラウンズ(2〜4人が同時に戦い、負けた全員がカードを選ぶ)の進行（DOM非依存）
 src/challenge.js          チャレンジ(1人用ローグライク)のステージ・ボス・敵の強さ（DOM非依存）
 src/render.js             描画（端末の解像度でそのまま描く。低解像度で引き伸ばすと画質が悪いとユーザーに不評だった）
@@ -48,6 +48,9 @@ scripts/skills-balance.mjs スキル1枚でどれくらい勝ちやすくなる�
 - `createBattle(a, b, seed, { a: { skills, maxHp, preGrow, power, speedMul }, b: {...} })` でスキルや強化を持たせる。
 - 3人以上の同時バトルは `createMelee(defs, seed, { boosts: [...], size })`（3人以上は広さ820、1対1は600）。各ボールは一番近い相手をねらう（`foeOf`）。倒れた順は `world.outOrder`、`'out'` イベントが出る。武器のコードで「相手」が要るときは `world.balls[1 - id]` ではなく `foeOf(world, ball)` を使う。範囲攻撃は範囲内の全員に当てる。
 - フィールドの広さは試合ごと（`world.size`）。`engine.js` の `ARENA` は `step` のたびに今の試合の広さに合わせ直される。1対1の結果は人数対応の前と完全に同じ（同じシードで同じ結果）。
+- 進化: 合体進化（`rarity: 'fusion'`、`needs` の2枚がそろうと `makeOffer` が混ぜる。`addSkills` で材料と合体）、武器進化（`rarity: 'awaken'`、ボスのあと・ラウンズの大進化で3つから1つ。`ball.awaken` が段階、名前は `awakenSuffix`）、呪い（`rarity: 'cursed'`、ときどき出る）。カードを足すときは `scripts/skills-balance.mjs` で強さを見る。
+- スキルの追加の剣は `blade.free`（武器の向きと関係なく自分で回る）。遠距離武器は相手の方を向き続けるので、武器の向きに付けると当たらない（ユーザーの指摘）。
+- 白っぽい武器の色はHPバーや名前で見づらい（ユーザーの指摘）。main.js の `readable()` で暗くして使い、戦場のHPの数字は縁取りを付ける。
 - 「複数人」は同じ端末を交代で操作する方式（サーバーがないのでネット対戦はない）。
 
 ## URL パラメータ
