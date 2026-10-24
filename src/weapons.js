@@ -4,6 +4,7 @@
 import {
   ARENA,
   BASE_SPEED,
+  foeOf,
   GRAVITY,
   makeBlade,
   landHit,
@@ -171,9 +172,13 @@ function hitOnce(info = {}) {
 function explode(world, p, owner, foe, radius, damage, kind) {
   p.dead = true;
   world.events.push({ type: 'boom', x: p.x, y: p.y, radius, kind });
-  if (Math.hypot(foe.x - p.x, foe.y - p.y) < radius + foe.r) {
-    landHit(world, owner, foe, damage, { kind, x: foe.x, y: foe.y });
-    knockback(p, foe, 140);
+  // 範囲に入った相手全員に当たる(1対1では相手1人だけ)
+  for (const o of world.balls) {
+    if (o === owner || o.dead) continue;
+    if (Math.hypot(o.x - p.x, o.y - p.y) < radius + o.r) {
+      landHit(world, owner, o, damage, { kind, x: o.x, y: o.y });
+      knockback(p, o, 140);
+    }
   }
 }
 
@@ -314,7 +319,7 @@ export const WEAPONS = [
     en: 'Scythe',
     color: '#8b3fe0',
     grow: '当たるたびに 毒 +1(毒はずっと続く)',
-    stats: (b, world) => [['毒', fmt(world ? world.balls[1 - b.id].poison : 0)]],
+    stats: (b, world) => [['毒', fmt(world ? foeOf(world, b).poison : 0)]],
     onHit(world, me, foe) {
       foe.poison += 1;
       foe.poisonSrc = me.id;
@@ -1925,7 +1930,7 @@ export const WEAPONS = [
     init(b) {
       b.w = { timer: 0.6 };
     },
-    stats: (b, world) => [['呪い', fmt(world ? world.balls[1 - b.id].curse : 0)]],
+    stats: (b, world) => [['呪い', fmt(world ? foeOf(world, b).curse : 0)]],
     update(world, me, foe, dt) {
       me.angle = aimAt(me, foe);
       me.w.timer -= dt;
@@ -2460,13 +2465,14 @@ export const WEAPONS = [
           stuck: false,
           update(world, p, owner, foe) {
             if (!p.stuck) return;
-            p.x = foe.x + p.ox;
-            p.y = foe.y + p.oy;
+            p.x = p.on.x + p.ox;
+            p.y = p.on.y + p.oy;
             p.vx = p.vy = 0;
           },
           onTouch(world, p, owner, foe) {
             if (p.stuck) return;
             p.stuck = true;
+            p.on = foe;
             p.blockable = false;
             p.wall = 'stop';
             const a = Math.atan2(p.y - foe.y, p.x - foe.x);
@@ -2477,7 +2483,7 @@ export const WEAPONS = [
           onExpire(world, p, owner, foe) {
             if (!p.stuck) return;
             world.events.push({ type: 'boom', x: p.x, y: p.y, radius: 45, kind: 'bomb' });
-            landHit(world, owner, foe, 3, { kind: 'sticky', x: p.x, y: p.y });
+            landHit(world, owner, p.on, 3, { kind: 'sticky', x: p.x, y: p.y });
           },
         });
       }
@@ -2702,7 +2708,7 @@ export const WEAPONS = [
     color: '#b9b9b9',
     grow: '相手と同じ武器になって戦う(成長のしかたも相手と同じ)',
     init(b, world) {
-      const foe = world.balls[1 - b.id];
+      const foe = foeOf(world, b);
       let src = foe.def.id === 'copycat' ? WEAPON_BY_ID.sword : foe.def;
       // 相手の武器の動きをそのまま使い、見た目の色だけ灰色にする
       b.def = Object.assign(Object.create(src), { color: '#b9b9b9', copyOf: src.id });

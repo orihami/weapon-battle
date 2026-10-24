@@ -1,7 +1,11 @@
 // 対戦シミュレーション本体。DOMに依存しないので Node のテストからそのまま動かせる。
 // 座標系: 1辺 ARENA の正方形フィールド。時間は秒。
+// ボールは2個以上何個でもよい(バトルロイヤル)。それぞれ一番近い生きている相手を狙う。
 
-export const ARENA = 600;
+// フィールドの広さ。試合ごとに createWorld が設定する(人数が多いと広くする)。
+// 他のファイルからは import した ARENA がそのまま新しい値になる(ES Modules のライブバインディング)
+export let ARENA = 600;
+export const BASE_ARENA = 600;
 export const BALL_R = 40;
 export const MAX_HP = 100;
 // 重力(下向き)。ボールは床と壁で跳ね返り、天井近くまで跳ね上がる
@@ -121,30 +125,51 @@ function makeBall(def, id, x, y, angle) {
   };
 }
 
-// opts: チャレンジモード用の強化。{ a: {...}, b: {...} } のそれぞれに
-//   maxHp(最大HP) / preGrow(試合前に成長させる回数) / power(与ダメージ倍率) / speedMul(素早さ)
+// 1対1の試合。opts: { a: 強化, b: 強化, size: フィールドの広さ }
+//   強化 = { maxHp, preGrow(試合前に成長させる回数), power(与ダメージ倍率), speedMul(素早さ), skills(スキルカード) }
 export function createBattle(defA, defB, seed = 1, opts = {}) {
+  return createWorld([defA, defB], seed, [opts.a, opts.b], opts.size);
+}
+
+// 3人以上の同時バトル(バトルロイヤル)。boosts[i] は i 番目のボールの強化
+export function createMelee(defs, seed = 1, { boosts = [], size } = {}) {
+  return createWorld(defs, seed, boosts, size ?? (defs.length > 2 ? 820 : BASE_ARENA));
+}
+
+function createWorld(defs, seed, boosts, size) {
+  ARENA = size || BASE_ARENA;
   const rng = mulberry32(seed);
   const world = {
     t: 0,
     rng,
     seed,
+    size: ARENA,
     balls: [],
     projectiles: [],
     events: [],
     parryCd: 0,
     dmgMul: 1,
     over: false,
-    winner: null, // 0 / 1 / -1(引き分け)
+    winner: null, // 勝ったボールの番号 / -1(引き分け)
+    outOrder: [], // 倒れた順(ボールの番号)
   };
-  const jy = (rng() - 0.5) * 200;
-  const a1 = rng() * Math.PI * 2;
-  const a2 = rng() * Math.PI * 2;
-  world.balls.push(makeBall(defA, 0, 150, ARENA / 2 + jy, a1));
-  world.balls.push(makeBall(defB, 1, ARENA - 150, ARENA / 2 - jy, a2));
-  world.balls[1].spin = -world.balls[1].spin;
+  if (defs.length === 2) {
+    const jy = (rng() - 0.5) * 200;
+    const a1 = rng() * Math.PI * 2;
+    const a2 = rng() * Math.PI * 2;
+    world.balls.push(makeBall(defs[0], 0, ARENA * 0.25, ARENA / 2 + jy, a1));
+    world.balls.push(makeBall(defs[1], 1, ARENA * 0.75, ARENA / 2 - jy, a2));
+  } else {
+    // 円の上に等間隔に並べる
+    const base = rng() * Math.PI * 2;
+    defs.forEach((def, i) => {
+      const a = base + (i * Math.PI * 2) / defs.length;
+      world.balls.push(makeBall(def, i, ARENA / 2 + Math.cos(a) * ARENA * 0.3, ARENA / 2 + Math.sin(a) * ARENA * 0.3, rng() * Math.PI * 2));
+    });
+  }
+  world.balls.forEach((b) => b.id % 2 === 1 && (b.spin = -b.spin));
   for (const b of world.balls) b.def.init(b, world);
-  world.balls.forEach((b, i) => applyBoost(world, b, (i === 0 ? opts.a : opts.b) || {}));
+  world.balls.forEach((b, i) => applyBoost(world, b, boosts[i] || {}));
   return world;
 }
 
@@ -160,7 +185,7 @@ function applyBoost(world, b, o) {
   if (o.speedMul) b.speedMul *= o.speedMul;
   if (o.preGrow && b.def.onHit) {
     // 試合前の成長。相手に付く効果(毒・気絶など)は消しておく
-    const foe = world.balls[1 - b.id];
+    const foe = foeOf(world, b);
     const saved = { poison: foe.poison, curse: foe.curse, stun: foe.stun, slow: foe.slow, freeze: foe.freeze, hp: foe.hp, maxHp: foe.maxHp, gravFlip: foe.gravFlip };
     const myHp = [b.hp, b.maxHp];
     for (let i = 0; i < o.preGrow; i++) b.def.onHit(world, b, foe, { kind: 'pre' });
@@ -170,8 +195,25 @@ function applyBoost(world, b, o) {
   }
 }
 
+// ball が狙う相手: 一番近い生きている相手(いなければ誰か)
 export function foeOf(world, ball) {
-  return world.balls[1 - ball.id];
+  const balls = world.balls;
+  if (balls.length === 2) return balls[1 - ball.id];
+  let best = null;
+  let bestD = Infinity;
+  for (const o of balls) {
+    if (o === ball || o.dead) continue;
+    const d = (o.x - ball.x) ** 2 + (o.y - ball.y) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      best = o;
+    }
+  }
+  return best || balls.find((o) => o !== ball);
+}
+
+export function aliveOthers(world, ball) {
+  return world.balls.filter((o) => o !== ball && !o.dead);
 }
 
 export function dealDamage(world, src, target, amount, opts = {}) {
@@ -195,6 +237,7 @@ export function dealDamage(world, src, target, amount, opts = {}) {
     y: opts.y ?? target.y,
     amount,
     target: target.id,
+    src: src ? src.id : -1,
     kind: opts.kind || 'hit',
   });
   if (src && src !== target && src.def.onDealDamage) src.def.onDealDamage(world, src, target, amount, opts);
@@ -426,6 +469,11 @@ function projectileStep(world, dt) {
   for (const p of world.projectiles) {
     if (p.dead) continue;
     const owner = world.balls[p.owner];
+    if (owner.dead) {
+      // 倒れたボールの弾は消える(3人以上のとき)
+      p.dead = true;
+      continue;
+    }
     const foe = foeOf(world, owner);
     p.age += dt;
     if (p.update) p.update(world, p, owner, foe, dt);
@@ -462,36 +510,48 @@ function projectileStep(world, dt) {
     // 相手の刃に当たると防がれる
     // blockGrace: 撃ち返された直後の弾がすぐまた防がれて、無限に跳ね返り合わないようにする
     if (p.blockable && p.age > (p.blockGrace ?? 0)) {
-      let blocked = false;
-      for (const bl of foe.blades) {
-        const s = bladeSegment(foe, bl);
-        if (segPointDist(s[0], s[1], s[2], s[3], p.x, p.y) < p.r + bl.w / 2) {
-          blocked = true;
-          break;
+      let blocker = null;
+      for (const o of world.balls) {
+        if (o === owner || o.dead) continue;
+        for (const bl of o.blades) {
+          const s = bladeSegment(o, bl);
+          if (segPointDist(s[0], s[1], s[2], s[3], p.x, p.y) < p.r + bl.w / 2) {
+            blocker = o;
+            break;
+          }
         }
+        if (blocker) break;
       }
-      if (blocked) {
+      if (blocker) {
         p.dead = true;
         world.events.push({ type: 'block', x: p.x, y: p.y });
-        if (p.onBlocked) p.onBlocked(world, p, owner, foe);
-        if (foe.def.onBlock) foe.def.onBlock(world, foe, owner, p);
+        if (p.onBlocked) p.onBlocked(world, p, owner, blocker);
+        if (blocker.def.onBlock) blocker.def.onBlock(world, blocker, owner, p);
         continue;
       }
     }
-    if (p.onTouch && Math.hypot(foe.x - p.x, foe.y - p.y) < foe.r + p.r) {
-      p.onTouch(world, p, owner, foe);
+    if (p.onTouch) {
+      for (const o of world.balls) {
+        if (o === owner || o.dead) continue;
+        if (Math.hypot(o.x - p.x, o.y - p.y) < o.r + p.r) {
+          p.onTouch(world, p, owner, o);
+          if (p.dead) break;
+        }
+      }
     }
   }
   world.projectiles = world.projectiles.filter((p) => !p.dead);
 }
 
 export function step(world, dt = DT) {
+  ARENA = world.size;
   if (world.over) return;
   world.t += dt;
   if (world.t > SUDDEN_DEATH_AT) world.dmgMul = 1 + (world.t - SUDDEN_DEATH_AT) / 15;
   if (world.parryCd > 0) world.parryCd -= dt;
-  const [a, b] = world.balls;
-  for (const ball of world.balls) {
+  const balls = world.balls;
+  for (const ball of balls) {
+    if (ball.dead) continue;
     const foe = foeOf(world, ball);
     stepStatus(world, ball, dt);
     if (ball.stun <= 0) {
@@ -504,17 +564,36 @@ export function step(world, dt = DT) {
     if (ball.freeze > 0) ball.freeze -= dt;
     else wallSlam(world, ball, moveBall(ball, dt), dt);
   }
-  collideBalls(world, a, b);
-  parryStep(world, a, b);
-  meleeStep(world, a, b, dt);
-  meleeStep(world, b, a, dt);
+  // すべての組み合わせで、ぶつかり・受け流し・刃の当たりを調べる
+  for (let i = 0; i < balls.length; i++) {
+    for (let j = i + 1; j < balls.length; j++) {
+      const a = balls[i];
+      const b = balls[j];
+      if (a.dead || b.dead) continue;
+      collideBalls(world, a, b);
+      parryStep(world, a, b);
+      meleeStep(world, a, b, dt);
+      meleeStep(world, b, a, dt);
+    }
+  }
   projectileStep(world, dt);
-  if (a.dead || b.dead) {
+  // 倒れたボールを記録
+  for (const b of balls) {
+    if (b.dead && !world.outOrder.includes(b.id)) {
+      world.outOrder.push(b.id);
+      world.events.push({ type: 'out', target: b.id, x: b.x, y: b.y });
+    }
+  }
+  const alive = balls.filter((b) => !b.dead);
+  if (alive.length <= 1) {
     world.over = true;
-    world.winner = a.dead && b.dead ? -1 : a.dead ? 1 : 0;
+    world.winner = alive.length === 1 ? alive[0].id : -1;
   } else if (world.t >= HARD_LIMIT) {
     world.over = true;
-    world.winner = a.hp === b.hp ? -1 : a.hp > b.hp ? 0 : 1;
+    // 時間切れ: HPの割合がいちばん多い人の勝ち
+    const ratio = (b) => b.hp / b.maxHp;
+    alive.sort((x, y) => ratio(y) - ratio(x));
+    world.winner = ratio(alive[0]) === ratio(alive[1]) ? -1 : alive[0].id;
   }
   if (world.over) world.events.push({ type: 'end', winner: world.winner });
 }

@@ -1,6 +1,9 @@
 // 描画。フィールドは画面の解像度(端末のピクセル密度まで)でそのまま描き、くっきり見せる。
 
-import { ARENA, createBattle } from './engine.js';
+import { createBattle } from './engine.js';
+
+// 今描いている試合のフィールドの広さ(人数が多いと広い)
+let ARENA = 600;
 
 const OUT = '#1a1a1a';
 const STEEL = '#e9edf2';
@@ -1175,6 +1178,7 @@ export class Renderer {
     this.beams = [];
     this.prisms = [];
     this.ko = null;
+    this.labels = null; // ボールの上に出す名札 [{ text, color }]
     this.flashA = 0;
     this.shake = 0;
     this.time = 0;
@@ -1190,10 +1194,11 @@ export class Renderer {
 
   // エンジンからのイベントを見た目の演出に変える
   addEvents(world, events) {
+    ARENA = world.size;
     for (const e of events) {
       if (e.type === 'hit') {
         const target = world.balls[e.target];
-        const color = world.balls[1 - e.target].def.color;
+        const color = (world.balls[e.src] || world.balls[(e.target + 1) % world.balls.length]).def.color;
         const dot = e.kind === 'poison' || e.kind === 'burn';
         if (!dot) {
           this.burst(e.x, e.y, 6 + Math.min(10, e.amount), color);
@@ -1257,8 +1262,16 @@ export class Renderer {
         this.rings.push({ x: e.x, y: e.y, r0: 4, r1: e.radius * 0.6, life: 0.14, age: 0, color: '#fff3b0', fill: true, strong: true });
         this.burst(e.x, e.y, 12, potion ? '#ff8fb0' : '#ffb03a', 1.3);
         this.shake = Math.min(12, this.shake + 4);
+      } else if (e.type === 'out' && world.balls.length > 2 && !world.over) {
+        // 3人以上: 途中で倒れた人
+        const ball = world.balls[e.target];
+        this.burst(ball.x, ball.y, 40, ball.def.color, 2.2);
+        this.rings.push({ x: ball.x, y: ball.y, r0: ball.r, r1: 180, life: 0.45, age: 0, color: ball.def.color, fill: true, strong: true });
+        this.texts.push({ x: ball.x, y: ball.y - 50, text: 'OUT', color: '#222', life: 1.2, age: 0, size: 34 });
+        this.shake = Math.min(18, this.shake + 10);
       } else if (e.type === 'end') {
-        const loser = world.balls[1 - e.winner];
+        const outs = world.outOrder || [];
+        const loser = world.balls.length === 2 ? world.balls[1 - e.winner] : world.balls[outs[outs.length - 1]];
         if (loser && loser.dead) {
           // K.O.!: 大きな文字・白いフラッシュ・強い揺れ・飛び散る破片
           this.burst(loser.x, loser.y, 60, loser.def.color, 2.6);
@@ -1339,6 +1352,7 @@ export class Renderer {
     const ctx = this.ctx;
     const t = this.time;
     const W = this.canvas.width;
+    ARENA = world.size;
     const s = W / ARENA;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#ffffff';
@@ -1475,6 +1489,23 @@ export class Renderer {
         main.font = `${hp >= 100 ? 34 : 40}px ${NUM_FONT}`;
         main.fillStyle = b.flash > 0 ? '#e8484d' : textColorFor(b.def.color);
         main.fillText(String(hp), b.x, b.y + 1);
+        // 3人以上などで「どれが誰か」を出す名札(P1 など)
+        const tag = this.labels && this.labels[b.id];
+        if (tag) {
+          main.font = `22px ${NUM_FONT}`;
+          const w = main.measureText(tag.text).width + 14;
+          const ty = b.y - b.r - 20;
+          main.fillStyle = tag.color;
+          main.strokeStyle = OUT;
+          main.lineWidth = 3;
+          main.beginPath();
+          if (main.roundRect) main.roundRect(b.x - w / 2, ty - 13, w, 26, 7);
+          else main.rect(b.x - w / 2, ty - 13, w, 26);
+          main.fill();
+          main.stroke();
+          main.fillStyle = '#ffffff';
+          main.fillText(tag.text, b.x, ty + 1);
+        }
       }
     }
     for (const tx of this.texts) {
@@ -1748,6 +1779,7 @@ export function drawIcon(canvas, def) {
     return;
   }
   const world = createBattle(def, def, 1);
+  ARENA = world.size;
   const b = world.balls[0];
   b.x = 300;
   b.y = 300;

@@ -50,161 +50,215 @@ function check(cond, msg) {
 }
 
 try {
-  // 1) 剣 vs 短剣 を4倍速で自動スタートし、決着まで見る
+  const st = () => page.evaluate(() => {
+    const s = window.__weaponBattle.state;
+    return { screen: s.screen, f: s.fighters.map((d) => d.id), over: !!(s.world && s.world.over), t: s.world ? s.world.t : 0, n: s.world ? s.world.balls.length : 0, size: s.world ? s.world.size : 0, slots: s.slots.map((x) => x.weapon.id) };
+  });
+  const waitOverlay = () => page.waitForSelector('#overlay:not([hidden])', { timeout: 150000 });
+
+  // 1) ホーム
+  await page.goto(base + '?speed=4');
+  const modes = await page.locator('[data-mode]').count();
+  check(modes === 6, `ホームの遊び方: ${modes}個`);
+  await page.screenshot({ path: join(outDir, '0-home.png') });
+
+  // 2) 共有URL(剣 vs 短剣)を4倍速で自動スタートし、決着まで見る
   await page.goto(base + '?a=sword&b=dagger&speed=4&autostart=1');
   await page.waitForTimeout(1500);
-  await page.screenshot({ path: join(outDir, '1-battle.png') });
-  const mid = await page.evaluate(() => {
-    const w = window.__weaponBattle.state.world;
-    return { t: w.t, hp: w.balls.map((b) => b.hp) };
-  });
-  check(mid.t > 1, `時間が進んでいる (t=${mid.t.toFixed(1)})`);
-  const title = await page.textContent('#title');
+  let s = await st();
+  check(s.screen === 'battle' && s.t > 1, `共有URLでバトル画面へ・時間が進む (t=${s.t.toFixed(1)})`);
+  const title = await page.textContent('#battleTitle');
   check(title.includes('剣') && title.includes('短剣'), `タイトル: ${title.replace(/\s+/g, ' ').trim()}`);
-  await page.waitForSelector('#overlay:not([hidden])', { timeout: 120000 });
+  await page.screenshot({ path: join(outDir, '1-battle.png') });
+  await waitOverlay();
   const result = await page.textContent('#resultText');
   check(/の勝ち！|引き分け/.test(result), `決着の表示: ${result}`);
-  const end = await page.evaluate(() => {
-    const w = window.__weaponBattle.state.world;
-    return { over: w.over, winner: w.winner, hp: w.balls.map((b) => b.hp), stats: document.querySelector('#statsA').textContent };
-  });
-  check(end.over && end.hp.some((h) => h === 0 || end.winner === -1), `HP: ${end.hp.map((h) => Math.ceil(h)).join(' / ')}`);
-  check(/ダメージ/.test(end.stats), `剣の能力表示: ${end.stats}`);
+  const hud = await page.textContent('#hud');
+  check(/ダメージ/.test(hud) && /HP|OUT/.test(hud), `能力とHPの表示: ${hud.replace(/\s+/g, ' ').slice(0, 60)}`);
   await page.screenshot({ path: join(outDir, '2-result.png') });
+  // 「戻る」で準備画面へ
+  await page.click('#battle [data-back]');
+  s = await st();
+  check(s.screen === 'setup' && s.slots[0] === 'sword' && s.slots[1] === 'dagger', `戻ると準備画面: ${s.screen} ${s.slots.slice(0, 2).join(' vs ')}`);
 
-  // 2) 武器選択ダイアログから右の武器を「盾」に変える
-  await page.click('#pickB');
+  // 3) 1対1の準備: 武器選び(検索)・片方だけランダム・入れ替え
+  await page.goto(base + '?speed=4');
+  await page.click('[data-mode="duel"]');
+  await page.click('#slots .slot:nth-child(2) .slot-pick');
   await page.waitForSelector('#picker[open]');
   const count = await page.locator('#pickerGrid button').count();
-  check(count >= 20, `選べる武器の数: ${count}`);
+  check(count >= 90, `選べる武器の数: ${count}`);
+  await page.fill('#pickerSearch', '盾');
+  const found = await page.locator('#pickerGrid button').count();
+  check(found >= 1 && found < 5, `検索「盾」: ${found}件`);
   await page.screenshot({ path: join(outDir, '3-picker.png') });
   await page.click('#pickerGrid button[data-id="shield"]');
-  const nameB = await page.textContent('#nameB');
-  check(nameB === '盾', `右の武器が盾になった: ${nameB}`);
-
-  // 2.5) 片方だけランダム: 左だけ変わり、右(盾)はそのまま
-  for (let i = 0; i < 5; i++) {
-    const before = await page.evaluate(() => [window.__weaponBattle.state.a.id, window.__weaponBattle.state.b.id]);
-    await page.click('#randomABtn');
-    const after = await page.evaluate(() => [window.__weaponBattle.state.a.id, window.__weaponBattle.state.b.id]);
-    check(after[1] === before[1] && after[0] !== before[0] && after[0] !== after[1], `左だけランダム: ${before.join(' vs ')} → ${after.join(' vs ')}`);
+  s = await st();
+  check(s.slots[1] === 'shield', `P2が盾になった: ${s.slots[1]}`);
+  for (let k = 0; k < 4; k++) {
+    const before = (await st()).slots;
+    await page.click('#slots .slot:nth-child(1) .slot-dice');
+    const after = (await st()).slots;
+    check(after[1] === before[1] && after[0] !== before[0] && after[0] !== after[1], `P1だけランダム: ${before.slice(0, 2).join(' vs ')} → ${after.slice(0, 2).join(' vs ')}`);
   }
   {
-    const before = await page.evaluate(() => [window.__weaponBattle.state.a.id, window.__weaponBattle.state.b.id]);
-    await page.click('#randomBBtn');
-    const after = await page.evaluate(() => [window.__weaponBattle.state.a.id, window.__weaponBattle.state.b.id]);
-    check(after[0] === before[0] && after[1] !== before[1], `右だけランダム: ${before.join(' vs ')} → ${after.join(' vs ')}`);
-    await page.click('#pickA');
-    await page.click('#pickerRandom');
-    const viaPicker = await page.evaluate(() => [window.__weaponBattle.state.a.id, window.__weaponBattle.state.b.id]);
-    check(viaPicker[1] === after[1] && viaPicker[0] !== after[0], `選択画面のおまかせ: ${after.join(' vs ')} → ${viaPicker.join(' vs ')}`);
-    await page.screenshot({ path: join(outDir, '3b-random-buttons.png') });
+    const before = (await st()).slots;
+    await page.click('#swapBtn');
+    const after = (await st()).slots;
+    check(after[0] === before[1] && after[1] === before[0], `入れ替え: ${after.slice(0, 2).join(' vs ')}`);
   }
+  await page.screenshot({ path: join(outDir, '3b-setup-duel.png') });
+  await page.click('#goBtn');
+  await page.waitForTimeout(600);
+  s = await st();
+  check(s.screen === 'battle' && s.n === 2 && s.t > 0, `1対1が始まる (${s.f.join(' vs ')})`);
 
-  // 2.7) トーナメント(8人)を4倍速で最後まで進める
+  // 4) バトルロイヤル: 4人が広いフィールドで同時に戦う
   await page.goto(base + '?speed=4');
-  await page.click('#tour8Btn');
-  await page.waitForSelector('.champion', { timeout: 300000 });
-  const champ = await page.textContent('.champion');
-  const done = await page.evaluate(() => document.querySelectorAll('#bracket .match').length);
-  check(/優勝/.test(champ) && done === 7, `トーナメント: ${champ.trim()}(試合枠 ${done})`);
-  await page.screenshot({ path: join(outDir, '3c-tournament.png'), fullPage: true });
+  await page.click('[data-mode="royale"]');
+  await page.click('#countSeg [data-count="4"]');
+  const slots = await page.locator('#slots .slot').count();
+  check(slots === 4, `バトルロイヤルの準備: ${slots}人`);
+  await page.click('#randomAll');
+  await page.click('#goBtn');
+  await page.waitForTimeout(2500);
+  s = await st();
+  check(s.n === 4 && s.size === 820 && s.t > 1, `4人同時バトル(広さ ${s.size}): ${s.f.join(', ')}`);
+  await page.screenshot({ path: join(outDir, '4-royale.png') });
+  await waitOverlay();
+  const r4 = await page.textContent('#resultText');
+  const outs = await page.evaluate(() => window.__weaponBattle.state.world.outOrder.length);
+  check(/の勝ち！|引き分け/.test(r4) && (outs === 3 || /引き分け/.test(r4)), `バトルロイヤル決着: ${r4}(倒れた順 ${outs}人)`);
+  check(await page.isVisible('#againBtn'), '「もう一度」ボタン');
+  await page.screenshot({ path: join(outDir, '4b-royale-result.png') });
+  await page.click('#nextBtn');
+  await page.waitForTimeout(500);
+  s = await st();
+  check(s.n === 4 && s.t > 0, `「別の武器で」4人で再戦: ${s.f.join(', ')}`);
 
-  // 2.8) ランキング(勝率順)の並び替え
-  await page.selectOption('#bookSort', 'rate');
-  const ranks = await page.evaluate(() => [...document.querySelectorAll('#bookGrid .rank')].map((r) => r.textContent));
-  check(ranks[0] === '1位' && ranks.length >= 2, `ランキング表示: ${ranks.slice(0, 3).join(', ')}`);
-
-  // 2.9) チャレンジ: 4倍速で1ステージ戦い、勝てば強化を選んで次へ / 負ければ終了
-  await page.goto(base + '?a=lightning&b=sword&speed=4');
-  await page.click('#chalBtn');
-  const info1 = await page.textContent('#chalInfo');
-  check(/ステージ 1/.test(info1.replace(/\s+/g, ' ')), `チャレンジ開始: ${info1.trim().slice(0, 40)}`);
-  await page.waitForSelector('#overlay:not([hidden])', { timeout: 120000 });
-  const upgradeShown = await page.isVisible('#upgrades .skill-card');
-  if (upgradeShown) {
-    await page.click('#upgrades .skill-card');
-    await page.waitForTimeout(500);
-    const info2 = await page.textContent('#chalInfo');
-    check(/ステージ 2/.test(info2.replace(/\s+/g, ' ')), `勝って強化を選び次のステージへ: ${info2.trim().slice(0, 60)}`);
-    const hp = await page.evaluate(() => window.__weaponBattle.state.world.balls[0].maxHp);
-    check(hp >= 80, `スキルを持って次のステージ(最大HP ${hp})`);
-  } else {
-    const res = await page.textContent('#resultText');
-    check(/敗退/.test(res), `負けてチャレンジ終了: ${res}`);
-  }
-  await page.screenshot({ path: join(outDir, '3d-challenge.png') });
-  await page.click('#chalStopBtn').catch(() => {});
-
-  // 2.97) ラウンズ: P1(人) vs P2(CPU)、3勝先取。負けた人がカードを選ぶ
+  // 5) ラウンズ: 3人同時(P1は人、P2・P3はCPU)、3勝先取。負けた人が全員カードを選ぶ
   await page.goto(base + '?speed=4');
-  await page.click('[data-count="2"]');
-  await page.selectOption('#roundsTarget', '3');
-  let who = await page.$$eval('#setupPlayers .who', (els) => els.map((e) => e.textContent));
-  check(who.length === 2 && /人/.test(who[0]) && /CPU/.test(who[1]), `ラウンズの準備: ${who.join(' / ')}`);
-  // 2人とも「人」にして、負けた側のカード選びを画面から行う
-  await page.click('#setupPlayers .player-row:nth-child(2) .who');
-  who = await page.$$eval('#setupPlayers .who', (els) => els.map((e) => e.textContent));
-  check(/人/.test(who[1]), `P2を人に切り替え: ${who.join(' / ')}`);
-  await page.click('#roundsBtn');
+  await page.click('[data-mode="rounds"]');
+  await page.click('#countSeg [data-count="3"]');
+  await page.click('#targetSeg [data-target="3"]');
+  const who = await page.$$eval('#slots .slot-who', (els) => els.map((e) => e.textContent));
+  check(who.length === 3 && /人/.test(who[0]) && /CPU/.test(who[1]) && /CPU/.test(who[2]), `ラウンズの準備: ${who.join(' / ')}`);
+  await page.click('#goBtn');
   let humanPicks = 0;
   let cpuPicks = 0;
-  for (let i = 0; i < 40; i++) {
+  let seq = 0;
+  for (let k = 0; k < 80; k++) {
     const res = await page.waitForFunction(
-      () => {
+      (seen) => {
         const t = document.querySelector('#resultText').textContent;
-        const cards = document.querySelector('#upgrades');
         if (/優勝/.test(t) && !document.querySelector('#overlay').hidden) return 'champion';
-        if (!cards.hidden && cards.querySelector('.skill-card')) return cards.querySelector('p').textContent;
+        const d = document.querySelector('#cardDialog');
+        const n = Number(d.dataset.seq || 0);
+        if (d.open && n > seen) return n + '|' + document.querySelector('#cardSub').textContent;
         return false;
       },
-      null,
-      { timeout: 200000 },
+      seq,
+      { timeout: 200000, polling: 100 },
     );
     const v = await res.jsonValue();
     if (v === 'champion') break;
+    seq = Number(v.split('|')[0]);
     if (/CPU/.test(v)) {
       cpuPicks++;
-      await page.waitForFunction(() => document.querySelector('#upgrades').hidden || !document.querySelector('#upgrades .skill-card'), null, { timeout: 20000 }).catch(() => {});
-      await page.waitForTimeout(800);
     } else {
       humanPicks++;
       const need = /2枚/.test(v) ? 2 : 1;
-      const cards = await page.$$('#upgrades .skill-card');
-      for (let k = 0; k < need; k++) await cards[k].click();
-      if (humanPicks === 1) await page.screenshot({ path: join(outDir, '3e-cards.png') });
-      await page.waitForTimeout(1200);
+      const cards = await page.$$('#cardGrid .skill-card');
+      if (humanPicks === 1) await page.screenshot({ path: join(outDir, '5-cards.png') });
+      for (let c = 0; c < need; c++) await cards[c].click();
     }
   }
   const champText = await page.textContent('#resultText');
-  const board = await page.$$eval('#roundsBoard .board-row', (rows) => rows.map((r) => r.textContent));
-  check(/優勝/.test(champText) && humanPicks >= 2, `ラウンズ: ${champText}(人の選択 ${humanPicks} / CPUの選択 ${cpuPicks})`);
-  check(board.length === 2, `ラウンズの勝ち数表: ${board.map((b) => b.replace(/\s+/g, ' ')).join(' | ')}`);
-  await page.screenshot({ path: join(outDir, '3f-rounds.png'), fullPage: false });
+  const board = await page.$$eval('#sideInfo .board-row', (rows) => rows.map((r) => r.textContent));
+  check(/P\d 優勝/.test(champText) && humanPicks + cpuPicks >= 2, `ラウンズ: ${champText}(人の選択 ${humanPicks} / CPUの選択 ${cpuPicks})`);
+  check(board.length === 3, `ラウンズのスコア表: ${board.map((b) => b.replace(/\s+/g, ' ')).join(' | ')}`);
+  await page.screenshot({ path: join(outDir, '5b-rounds.png') });
 
-  // 2.95) 共有ボタン(クリップボードが使えない環境ではURLを表示)
+  // 6) チャレンジ: 1ステージ戦い、勝てばカードを選んで次へ / 負ければ終了
+  await page.goto(base + '?speed=4');
+  await page.click('[data-mode="chal"]');
+  await page.click('#slots .slot-pick');
+  await page.click('#pickerGrid button[data-id="lightning"]');
+  await page.click('#goBtn');
+  const t1 = await page.textContent('#battleTitle');
+  check(/ステージ 1/.test(t1), `チャレンジ開始: ${t1}`);
+  const chal = await page.waitForFunction(
+    () => (document.querySelector('#cardDialog').open ? 'card' : /敗退/.test(document.querySelector('#resultText').textContent) && !document.querySelector('#overlay').hidden ? 'lose' : false),
+    null,
+    { timeout: 150000 },
+  );
+  if ((await chal.jsonValue()) === 'card') {
+    await page.click('#cardGrid .skill-card');
+    await page.waitForTimeout(800);
+    const t2 = await page.textContent('#battleTitle');
+    const sk = await page.evaluate(() => window.__weaponBattle.state.world.balls[0].skills.length);
+    check(/ステージ 2/.test(t2) && sk === 1, `勝ってカードを選び次のステージへ: ${t2}(スキル ${sk}枚)`);
+  } else {
+    check(/敗退/.test(await page.textContent('#resultText')), 'チャレンジ: 負けて終了');
+  }
+  await page.screenshot({ path: join(outDir, '6-challenge.png') });
+
+  // 7) トーナメント(8人)を4倍速で最後まで
+  await page.goto(base + '?speed=4');
+  await page.click('[data-mode="tour"]');
+  await page.click('#sizeSeg [data-size="8"]');
+  await page.click('#goBtn');
+  await page.waitForSelector('#bracket .champion', { timeout: 300000 });
+  const champ = await page.textContent('#bracket .champion');
+  const done = await page.evaluate(() => document.querySelectorAll('#bracket .match').length);
+  check(/優勝/.test(champ) && done === 7, `トーナメント: ${champ.trim()}(試合枠 ${done})`);
+  await page.screenshot({ path: join(outDir, '7-tournament.png'), fullPage: true });
+
+  // 8) ずかん: 勝率順(ランキング)と検索
+  await page.click('#battle [data-back]');
+  await page.click('#setup [data-back]');
+  s = await st();
+  check(s.screen === 'home', `戻る2回でホームへ: ${s.screen}`);
+  await page.click('#bookOpen');
+  await page.selectOption('#bookSort', 'rate');
+  const ranks = await page.evaluate(() => [...document.querySelectorAll('#bookGrid .rank')].map((r) => r.textContent));
+  check(ranks[0] === '1位' && ranks.length >= 2, `ランキング表示: ${ranks.slice(0, 3).join(', ')}`);
+  await page.screenshot({ path: join(outDir, '8-book.png') });
+  await page.fill('#bookSearch', '爆弾');
+  const hits = await page.locator('#bookGrid .card').count();
+  check(hits >= 2 && hits < 10, `ずかんの検索「爆弾」: ${hits}件`);
+  await page.click('#bookGrid .card[data-id="bomb"]');
+  s = await st();
+  check(s.screen === 'setup' && s.slots[0] === 'bomb', `ずかんから1対1の準備へ: ${s.slots[0]}`);
+
+  // 9) 連続観戦
+  await page.goto(base + '?speed=4');
+  await page.click('[data-mode="auto"]');
+  await page.waitForTimeout(800);
+  s = await st();
+  check(s.screen === 'battle' && s.n >= 2 && s.t > 0, `連続観戦: ${s.f.join(', ')}`);
+
+  // 10) 共有ボタン(クリップボードが使えない環境ではURLを表示)
   await page.goto(base + '?a=bomb&b=lightning');
   await page.click('#shareBtn');
   await page.waitForTimeout(300);
-  const toast = await page.textContent('#toast');
-  check(/a=bomb&b=lightning|コピー/.test(toast), `共有: ${toast}`);
+  const toastText = await page.textContent('#toast');
+  check(/a=bomb&b=lightning|コピー/.test(toastText), `共有: ${toastText}`);
 
-  // 3) 全武器を少しずつ動かして、描画でエラーが出ないか
-  const ids = await page.evaluate(() => [...document.querySelectorAll('#bookGrid .card')].map((c) => c.dataset.id));
-  check(ids.length >= 20, `ずかんの武器数: ${ids.length}`);
-  for (let i = 0; i < ids.length; i += 2) {
-    await page.goto(base + `?a=${ids[i]}&b=${ids[(i + 1) % ids.length]}&speed=4&autostart=1`);
-    await page.waitForTimeout(700);
+  // 11) 全武器を1対1と4人で少しずつ動かして、描画でエラーが出ないか
+  const all = await page.evaluate(async () => (await import('./src/weapons.js')).WEAPONS.map((w) => w.id));
+  check(all.length >= 90, `武器数: ${all.length}`);
+  for (let k = 0; k < all.length; k += 2) {
+    await page.goto(base + `?a=${all[k]}&b=${all[(k + 1) % all.length]}&speed=4&autostart=1`);
+    await page.waitForTimeout(600);
   }
-  await page.goto(base + '?a=flail&b=orb&speed=2&autostart=1');
-  await page.waitForTimeout(2500);
-  await page.screenshot({ path: join(outDir, '4-flail-orb.png') });
-  await page.goto(base + '?a=trident&b=orbital&speed=2&autostart=1');
-  await page.waitForTimeout(2500);
-  await page.screenshot({ path: join(outDir, '5-trident-orbital.png') });
-  await page.goto(base);
-  await page.evaluate(() => document.querySelector('.book').scrollIntoView());
-  await page.screenshot({ path: join(outDir, '6-book.png') });
+  for (let k = 0; k < all.length; k += 4) {
+    await page.goto(base + `?w=${[0, 1, 2, 3].map((d) => all[(k + d) % all.length]).join(',')}&speed=4&autostart=1`);
+    await page.waitForTimeout(900);
+  }
+  s = await st();
+  check(s.n === 4, `?w= で4人の共有URL: ${s.f.join(', ')}`);
+  await page.screenshot({ path: join(outDir, '9-royale-share.png') });
 
   check(errors.length === 0, `ブラウザのエラーなし ${errors.length ? JSON.stringify(errors.slice(0, 5)) : ''}`);
 } catch (e) {

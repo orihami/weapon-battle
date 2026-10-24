@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createBattle, runToEnd, step, segSegDist, landHit, MAX_HP, HARD_LIMIT, bladeSegment } from '../src/engine.js';
+import { createBattle, createMelee, runToEnd, step, segSegDist, landHit, MAX_HP, HARD_LIMIT, bladeSegment } from '../src/engine.js';
 import { WEAPONS, WEAPON_BY_ID, validateWeapon } from '../src/weapons.js';
 
 const W = WEAPON_BY_ID;
@@ -262,8 +262,8 @@ test('スキル: 根性・会心・追加の剣が効く', async () => {
   assert.equal(w2.balls[0].blades.length, 3, '追加の剣が2本ふえていない');
 });
 
-test('ラウンズ: 負けた人がカードを選び、3回目は大進化(2枚)。先に3勝で優勝', async () => {
-  const { createRounds, currentPair, reportRound, pickSkills, cpuPickPending, BIG_EVERY } = await import('../src/rounds.js');
+test('ラウンズ: 全員同時に戦い、負けた全員がカードを選ぶ。3回目は大進化(2枚)。先に3勝で優勝', async () => {
+  const { createRounds, fighters, reportRound, pickSkills, cpuPickPending, BIG_EVERY } = await import('../src/rounds.js');
   const r = createRounds(
     [
       { name: 'P1', weapon: W.sword, cpu: true },
@@ -272,27 +272,55 @@ test('ラウンズ: 負けた人がカードを選び、3回目は大進化(2枚
     ],
     3,
   );
-  assert.deepEqual(currentPair(r), [0, 1]);
-  reportRound(r, 0);
-  assert.equal(r.pending.player, 1);
+  assert.deepEqual(fighters(r), [0, 1, 2]);
+  reportRound(r, -1);
+  assert.equal(r.pending, null, '引き分けはカードなし');
+  reportRound(r, 0, Math.random, [2, 1]);
+  assert.equal(r.pending.player, 2, '先に倒れた人から選ぶ');
   assert.equal(r.pending.cards.length, 3);
   pickSkills(r, cpuPickPending(r));
-  assert.deepEqual(currentPair(r), [0, 2], '勝った人が残り、次の人が挑戦する');
+  assert.equal(r.pending.player, 1, '負けた人は全員選ぶ');
+  pickSkills(r, cpuPickPending(r));
+  assert.equal(r.pending, null);
   assert.equal(r.players[1].skills.length, 1);
+  assert.equal(r.players[2].skills.length, 1);
   let guard = 0;
   while (!r.champion && guard++ < 100) {
-    const [a, b] = currentPair(r);
-    const pa = r.players[a];
-    const pb = r.players[b];
-    const world = runToEnd(createBattle(pa.weapon, pb.weapon, guard, { a: { skills: pa.skills }, b: { skills: pb.skills } }));
-    reportRound(r, world.winner === 1 ? b : a);
-    if (r.pending) {
+    const ps = fighters(r).map((i) => r.players[i]);
+    const world = runToEnd(createMelee(ps.map((p) => p.weapon), guard, { boosts: ps.map((p) => ({ skills: p.skills })) }));
+    reportRound(r, world.winner, Math.random, world.outOrder);
+    while (r.pending) {
       const loser = r.players[r.pending.player];
       if (loser.picks % BIG_EVERY === 0) assert.equal(r.pending.choose, 2, '大進化で2枚選べない');
       pickSkills(r, cpuPickPending(r));
     }
   }
   assert.ok(r.champion && r.champion.wins === 3);
+});
+
+test('バトルロイヤル: 3〜4人が同時に戦い、1人だけ残る。倒れた順が記録される', () => {
+  const sets = [
+    [W.sword, W.bomb, W.dagger],
+    [W.lightning, W.spear, W.orbital, W.bow],
+    [W.bomb, W.bomb, W.bomb, W.bomb],
+    [W.copycat, W.sticky, W.scythe],
+  ];
+  sets.forEach((defs, k) => {
+    const world = runToEnd(createMelee(defs, 7 + k));
+    assert.ok(world.over, '決着しない');
+    assert.equal(world.size, 820, '3人以上は広いフィールド');
+    for (const b of world.balls) {
+      assert.ok(Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.hp), '数値が壊れた');
+      assert.ok(b.x >= 0 && b.x <= world.size && b.y >= 0 && b.y <= world.size, 'フィールドの外');
+    }
+    if (world.winner >= 0) {
+      assert.equal(world.outOrder.length, defs.length - 1);
+      assert.ok(!world.outOrder.includes(world.winner));
+      assert.ok(world.balls.filter((b) => !b.dead).length === 1);
+    }
+  });
+  // 1対1は今までどおり600の広さ
+  assert.equal(createBattle(W.sword, W.dagger, 1).size, 600);
 });
 
 test('不死鳥は1度だけよみがえる', () => {

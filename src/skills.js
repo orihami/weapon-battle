@@ -11,7 +11,7 @@
 //   lethal(world, me, st) → true なら倒れない
 //   contact(world, me, foe, st)              ボールどうしがぶつかったとき
 
-import { ARENA, dealDamage, heal, knockback, spawnProjectile } from './engine.js';
+import { ARENA, dealDamage, foeOf, heal, knockback, spawnProjectile } from './engine.js';
 
 export const RARITY = {
   common: { name: 'ふつう', color: '#9aa0a6', weight: 55 },
@@ -120,7 +120,7 @@ export const SKILLS = [
     desc: '試合開始の時点で4回分成長している',
     rarity: 'common',
     apply(world, me) {
-      const foe = world.balls[1 - me.id];
+      const foe = foeOf(world, me);
       if (!me.def.onHit) return;
       const saved = { poison: foe.poison, curse: foe.curse, stun: foe.stun, slow: foe.slow, freeze: foe.freeze, hp: foe.hp, maxHp: foe.maxHp };
       const mine = [me.hp, me.maxHp];
