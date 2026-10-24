@@ -116,6 +116,25 @@ function slimeBlob(world, me, x, y, angle, r, big) {
   });
 }
 
+// 鏡の光の矢: (x, y) から相手に向けて撃つ
+function mirrorBolt(world, me, foe, x, y) {
+  const a = Math.atan2(foe.y - y, foe.x - x);
+  spawnProjectile(world, me, {
+    x,
+    y,
+    vx: Math.cos(a) * 620,
+    vy: Math.sin(a) * 620,
+    angle: a,
+    kind: 'mirrorbolt',
+    r: 6,
+    blockGrace: 0.15,
+    life: 1.5,
+    damage: me.w.dmg,
+    blockable: true,
+    onTouch: hitOnce(),
+  });
+}
+
 // 一度だけ当たって消える弾
 function hitOnce(info = {}) {
   return (world, p, owner, foe) => {
@@ -2335,6 +2354,446 @@ export const WEAPONS = [
     },
     onHit(world, me) {
       me.w.pressure += 0.02;
+    },
+  },
+  {
+    ...melee('kusarigama', {
+      spin: 3.6,
+      state: { dmg: 2, len: 100, t: 0 },
+      blade: { rIn: 22, rOut: 100, w: 10, knock: 140 },
+      damage: (w, me) => me.w.dmg,
+    }),
+    name: '鎖鎌',
+    en: 'Kusarigama',
+    color: '#6b5b4a',
+    grow: '当たるたびに ダメージ +1・鎖が長くなる(伸び縮みしながら回る)',
+    stats: (b) => [
+      ['ダメージ', fmt(b.w.dmg)],
+      ['鎖', fmt(Math.round(shown(b, 'len')))],
+    ],
+    update(world, me, foe, dt) {
+      // 鎖が伸びたり縮んだりする
+      me.w.t += dt;
+      me.blades[0].rOut = 60 + (me.w.len - 30) * (0.55 + 0.45 * Math.sin(me.w.t * 2.6));
+    },
+    onHit(world, me) {
+      me.w.dmg += 1;
+      growStat(me, 'len', 6, 240, 0.4);
+    },
+  },
+  {
+    ...melee('mirror', {
+      spin: 2.6,
+      state: { dmg: 2, timer: 1 },
+      blade: { rIn: 40, rOut: 54, w: 34, knock: 200 },
+      damage: 1,
+    }),
+    name: '鏡',
+    en: 'Mirror',
+    color: '#9fc8d8',
+    grow: '飛び道具や刃を受け止めると 光の矢で撃ち返す。当たるたびに 光の矢のダメージ +1',
+    stats: (b) => [['光の矢', fmt(b.w.dmg)]],
+    update(world, me, foe, dt) {
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 2;
+      mirrorBolt(world, me, foe, me.x, me.y);
+    },
+    onBlock(world, me, foe, p) {
+      mirrorBolt(world, me, foe, p.x, p.y);
+    },
+    onParry(world, me, foe) {
+      mirrorBolt(world, me, foe, me.x, me.y);
+    },
+    onHit(world, me) {
+      me.w.dmg += 1;
+    },
+  },
+  {
+    id: 'sticky',
+    kind: 'ranged',
+    name: 'くっつき爆弾',
+    en: 'Sticky Bomb',
+    color: '#d97a2b',
+    grow: '2回当たるたびに 投げる数 +1(相手にくっついて少しあとに爆発する)',
+    init(b) {
+      b.w = { n: 1, timer: 0.6 };
+    },
+    stats: (b) => [['くっつき爆弾', fmt(Math.floor(shown(b, 'n')))]],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 1.6;
+      const n = Math.floor(me.w.n);
+      for (let i = 0; i < n; i++) {
+        shoot(world, me, me.angle + (i - (n - 1) / 2) * 0.25, 460, {
+          kind: 'sticky',
+          r: 7,
+          life: 2.5,
+          wall: 'die',
+          blockable: true,
+          stuck: false,
+          update(world, p, owner, foe) {
+            if (!p.stuck) return;
+            p.x = foe.x + p.ox;
+            p.y = foe.y + p.oy;
+            p.vx = p.vy = 0;
+          },
+          onTouch(world, p, owner, foe) {
+            if (p.stuck) return;
+            p.stuck = true;
+            p.blockable = false;
+            p.wall = 'stop';
+            const a = Math.atan2(p.y - foe.y, p.x - foe.x);
+            p.ox = Math.cos(a) * foe.r;
+            p.oy = Math.sin(a) * foe.r;
+            p.life = p.age + 1.3;
+          },
+          onExpire(world, p, owner, foe) {
+            if (!p.stuck) return;
+            world.events.push({ type: 'boom', x: p.x, y: p.y, radius: 45, kind: 'bomb' });
+            landHit(world, owner, foe, 3, { kind: 'sticky', x: p.x, y: p.y });
+          },
+        });
+      }
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 0.5, 10, 0.4);
+    },
+  },
+  {
+    id: 'web',
+    kind: 'ranged',
+    name: '蜘蛛の巣',
+    en: 'Spider Web',
+    color: '#c8c8d0',
+    grow: '捕まえるたびに 巣が大きくなる(巣の中はとても遅くなり、少しずつダメージ)',
+    init(b) {
+      b.w = { size: 60, timer: 0.6 };
+    },
+    stats: (b) => [['巣の大きさ', fmt(Math.round(shown(b, 'size')))]],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 1.8;
+      const size = me.w.size;
+      const dist = Math.hypot(foe.x - me.x, foe.y - me.y);
+      shoot(world, me, me.angle, 420, {
+        kind: 'webball',
+        r: 7,
+        life: Math.max(0.2, Math.min(1.2, dist / 420)),
+        wall: 'die',
+        blockable: true,
+        onTouch: (world, p) => (p.life = p.age),
+        onExpire(world, p, owner) {
+          spawnProjectile(world, owner, {
+            x: p.x,
+            y: p.y,
+            kind: 'web',
+            r: size,
+            life: 4,
+            wall: 'stop',
+            blockable: false,
+            tick: 0,
+            update(world, q, owner, foe, dt) {
+              q.tick -= dt;
+            },
+            onTouch(world, q, owner, foe) {
+              foe.slow = Math.max(foe.slow, 0.65);
+              foe.slowT = 0.3;
+              if (q.tick > 0) return;
+              q.tick = 0.3;
+              landHit(world, owner, foe, 1.2, { kind: 'web', x: foe.x, y: foe.y });
+            },
+          });
+        },
+      });
+    },
+    onHit(world, me) {
+      growStat(me, 'size', 1, 160, 0.4);
+    },
+  },
+  {
+    ...melee('clock', {
+      spin: 5,
+      state: { stop: 0.35, timer: 2 },
+      blade: { rIn: 20, rOut: 84, w: 9, cd: 0.25 },
+      damage: 3,
+      after(b) {
+        // 短い針をもう1本
+        b.blades.push({ ...b.blades[0], off: Math.PI * 0.6, rOut: 62, cdLeft: 0 });
+      },
+    }),
+    name: '時計',
+    en: 'Clock',
+    color: '#e0c36a',
+    grow: 'ときどき相手の時間を止める。当たるたびに 止める時間 +0.04秒',
+    stats: (b) => [['時間停止', fmt(Math.round(shown(b, 'stop') * 100) / 100) + '秒']],
+    update(world, me, foe, dt) {
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 2.2;
+      foe.freeze = Math.max(foe.freeze, me.w.stop);
+      foe.stun = Math.max(foe.stun, me.w.stop);
+      world.events.push({ type: 'timestop', x: foe.x, y: foe.y, target: foe.id });
+    },
+    onHit(world, me) {
+      growStat(me, 'stop', 0.04, 1.4, 0.4);
+    },
+  },
+  {
+    id: 'vine',
+    kind: 'ranged',
+    name: 'ツタ',
+    en: 'Thorn Vine',
+    color: '#4c9a3a',
+    grow: '当たるたびに 床から生えるツタが高くなる',
+    init(b) {
+      b.w = { h: 200, timer: 0.8 };
+    },
+    stats: (b) => [['高さ', fmt(Math.round(shown(b, 'h')))]],
+    update(world, me, foe, dt) {
+      me.angle = Math.PI / 2;
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 1.2;
+      const h = me.w.h;
+      spawnProjectile(world, me, {
+        x: Math.max(20, Math.min(ARENA - 20, foe.x + foe.vx * 0.35)),
+        y: ARENA - 2,
+        kind: 'vine',
+        r: 2,
+        height: 0,
+        maxH: h,
+        life: 1.9,
+        wall: 'stop',
+        blockable: false,
+        hitCd: 0,
+        update(world, p, owner, foe, dt) {
+          // 0.4秒で伸びて、しばらく残る
+          p.height = Math.min(p.maxH, p.height + p.maxH * dt / 0.4);
+          if (p.hitCd > 0) p.hitCd -= dt;
+          if (p.hitCd <= 0 && Math.abs(foe.x - p.x) < foe.r + 12 && foe.y + foe.r > ARENA - p.height) {
+            p.hitCd = 0.5;
+            landHit(world, owner, foe, 3, { kind: 'vine', x: p.x, y: foe.y });
+            foe.vy = Math.min(foe.vy, -500);
+          }
+        },
+      });
+    },
+    onHit(world, me) {
+      growStat(me, 'h', 12, 540, 0.5);
+    },
+  },
+  {
+    id: 'revolver',
+    kind: 'ranged',
+    name: 'リボルバー',
+    en: 'Revolver',
+    color: '#7b6650',
+    grow: '当たるたびに 1発のダメージ +0.3(6連射して弾を込め直す)',
+    init(b) {
+      b.w = { dmg: 1.8, ammo: 6, timer: 0.6 };
+    },
+    stats: (b) => [
+      ['ダメージ', fmt(b.w.dmg)],
+      ['弾', b.w.ammo + '/6'],
+    ],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      if (me.w.ammo <= 0) {
+        me.w.ammo = 6;
+        me.w.timer = 0.2;
+        return;
+      }
+      me.w.ammo--;
+      me.w.timer = me.w.ammo === 0 ? 2 : 0.32;
+      shoot(world, me, me.angle + (world.rng() - 0.5) * 0.1, 950, { kind: 'bullet', r: 4, life: 1.2, damage: me.w.dmg, onTouch: hitOnce() });
+    },
+    onHit(world, me) {
+      me.w.dmg += 0.3;
+    },
+  },
+  {
+    id: 'shark',
+    kind: 'ranged',
+    name: 'サメ',
+    en: 'Shark',
+    color: '#5c7ea8',
+    grow: '当たるたびに かみつきダメージ +1.5(床を泳いで飛びかかる)',
+    init(b) {
+      b.w = { bite: 5, timer: 0.3 };
+    },
+    stats: (b) => [['かみつき', fmt(b.w.bite)]],
+    update(world, me, foe, dt) {
+      me.angle += dt * 2;
+      if (world.projectiles.some((p) => p.owner === me.id && p.kind === 'shark')) return;
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 0.8;
+      spawnProjectile(world, me, {
+        x: me.x,
+        y: ARENA - 14,
+        vx: Math.sign(foe.x - me.x || 1) * 200,
+        vy: 0,
+        kind: 'shark',
+        r: 16,
+        life: 8,
+        gravity: 1,
+        wall: 'bounce',
+        blockable: false,
+        biteCd: 0,
+        update(world, p, owner, foe, dt) {
+          if (p.biteCd > 0) p.biteCd -= dt;
+          const onFloor = p.y >= ARENA - p.r - 2;
+          if (onFloor) {
+            p.vy = 0;
+            p.vx += Math.sign(foe.x - p.x) * 700 * dt;
+            p.vx = Math.max(-300, Math.min(300, p.vx));
+            if (Math.abs(foe.x - p.x) < 110 && foe.y > ARENA - 330 && p.biteCd <= 0) p.vy = -900;
+          }
+          p.angle = Math.atan2(p.vy, p.vx || 1);
+        },
+        onTouch(world, p, owner, foe) {
+          if (p.biteCd > 0) return;
+          p.biteCd = 1.2;
+          landHit(world, owner, foe, owner.w.bite, { kind: 'shark', x: p.x, y: p.y });
+          knockback(p, foe, 200);
+        },
+      });
+    },
+    onHit(world, me) {
+      me.w.bite += 1.5;
+    },
+  },
+  {
+    id: 'copycat',
+    kind: 'copy',
+    name: 'ものまね',
+    en: 'Copycat',
+    color: '#b9b9b9',
+    grow: '相手と同じ武器になって戦う(成長のしかたも相手と同じ)',
+    init(b, world) {
+      const foe = world.balls[1 - b.id];
+      let src = foe.def.id === 'copycat' ? WEAPON_BY_ID.sword : foe.def;
+      // 相手の武器の動きをそのまま使い、見た目の色だけ灰色にする
+      b.def = Object.assign(Object.create(src), { color: '#b9b9b9', copyOf: src.id });
+      src.init(b, world);
+      b.copySpin = b.spin;
+    },
+    stats: () => [['まね', '?']],
+  },
+  {
+    id: 'counter',
+    kind: 'body',
+    name: 'カウンター',
+    en: 'Counter',
+    color: '#d65a5a',
+    grow: '受けたダメージをためて衝撃波で返す(近くだけ)。当たるたびに 返す倍率 +0.05',
+    init(b) {
+      b.w = { rage: 0, mul: 0.7, timer: 2 };
+    },
+    stats: (b) => [
+      ['ため', fmt(Math.round(b.w.rage * 10) / 10)],
+      ['倍率', '×' + fmt(Math.round(b.w.mul * 10) / 10)],
+    ],
+    onTakeDamage(world, me, src, amount, opts) {
+      if (src && src !== me) me.w.rage += amount;
+      return amount;
+    },
+    onContact(world, me, foe) {
+      landHit(world, me, foe, 1, { kind: 'punch' });
+    },
+    update(world, me, foe, dt) {
+      me.angle += dt * 3;
+      me.w.timer -= dt;
+      if (me.w.timer > 0 || me.w.rage <= 0) return;
+      me.w.timer = 1.8;
+      const dmg = Math.max(2, me.w.rage * me.w.mul);
+      me.w.rage = 0;
+      spawnProjectile(world, me, {
+        kind: 'cwave',
+        r: 1,
+        life: 0.8,
+        wall: 'stop',
+        blockable: false,
+        hit: false,
+        ring: 0,
+        update(world, p, owner, foe) {
+          p.x = owner.x;
+          p.y = owner.y;
+          p.ring = p.age * 360;
+          if (p.ring > 220) p.dead = true;
+          if (p.hit) return;
+          const d = Math.hypot(foe.x - p.x, foe.y - p.y);
+          if (Math.abs(d - p.ring) < foe.r + 8) {
+            p.hit = true;
+            landHit(world, owner, foe, dmg, { kind: 'counter', x: foe.x, y: foe.y });
+            knockback(owner, foe, 320);
+          }
+        },
+      });
+    },
+    onHit(world, me) {
+      me.w.mul += 0.05;
+    },
+  },
+  {
+    id: 'gravity',
+    kind: 'ranged',
+    name: '重力反転',
+    en: 'Gravity Flip',
+    color: '#7a5fd1',
+    grow: '当たった相手の重力を逆にして天井にたたきつける。当たるたびに 逆さの時間と壁ドン威力アップ',
+    init(b) {
+      b.w = { dur: 1, slamMul: 0.8, timer: 0.8 };
+    },
+    stats: (b) => [['逆さ時間', fmt(Math.round(shown(b, 'dur') * 10) / 10) + '秒']],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 1.8;
+      shoot(world, me, me.angle, 420, {
+        kind: 'gorb',
+        r: 9,
+        life: 2.5,
+        damage: 1.5,
+        blockable: true,
+        update: (world, p, owner, foe, dt) => homing(p, foe, 1.8, dt),
+        onTouch(world, p, owner, foe) {
+          p.dead = true;
+          if (landHit(world, owner, foe, p.damage, { kind: 'gorb', x: p.x, y: p.y }) > 0) {
+            foe.gravFlip = Math.max(foe.gravFlip, owner.w.dur);
+            foe.slamT = owner.w.dur + 0.3;
+            foe.slamBy = owner.id;
+          }
+        },
+      });
+    },
+    onHit(world, me) {
+      growStat(me, 'dur', 0.05, 2.5, 0.4);
+      me.w.slamMul += 0.05;
+    },
+  },
+  {
+    ...melee('saber', {
+      spin: 4.6,
+      state: { dmg: 1.5 },
+      blade: { rIn: 26, rOut: 122, w: 7, knock: 90, parry: false },
+      damage: (w, me) => me.w.dmg,
+    }),
+    name: '光の剣',
+    en: 'Light Saber',
+    color: '#3fd0ff',
+    grow: '当たるたびに ダメージ +0.6(刃で防がれず、すり抜けて斬る)',
+    stats: (b) => [['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)]],
+    onHit(world, me) {
+      me.w.dmg += 0.6;
     },
   },
 ];

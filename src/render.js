@@ -131,6 +131,59 @@ const BLADE_SPRITES = {
     }
     ctx.restore();
   },
+  kusarigama(ctx, b) {
+    // 鎖(四角を並べる) + 先の鎌
+    for (let x = b.rIn; x < b.rOut - 16; x += 9) {
+      ctx.fillStyle = Math.floor(x / 9) % 2 ? '#555' : '#999';
+      ctx.fillRect(x, -3, 7, 6);
+    }
+    ctx.beginPath();
+    ctx.moveTo(b.rOut - 16, 0);
+    ctx.quadraticCurveTo(b.rOut, -4, b.rOut - 4, -26);
+    ctx.quadraticCurveTo(b.rOut - 8, -10, b.rOut - 20, -4);
+    ctx.closePath();
+    ctx.fillStyle = STEEL;
+    ctx.fill();
+    ctx.stroke();
+    rect(ctx, b.rOut - 22, -4, 8, 8, '#5b3418');
+  },
+  mirror(ctx, b) {
+    const cx = (b.rIn + b.rOut) / 2;
+    ctx.beginPath();
+    ctx.ellipse(cx, 0, 9, b.w / 2, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#c9ecf7';
+    ctx.fill();
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = '#c9a227';
+    ctx.stroke();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = OUT;
+    ctx.stroke();
+    ctx.strokeStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(cx - 3, -b.w / 4);
+    ctx.lineTo(cx + 2, -b.w / 8);
+    ctx.stroke();
+    ctx.strokeStyle = OUT;
+  },
+  clock(ctx, b) {
+    shaft(ctx, b.rIn, b.rOut - 12, '#3a3a3a', 6);
+    poly(ctx, [[b.rOut - 14, -8], [b.rOut, 0], [b.rOut - 14, 8]], '#e0c36a');
+  },
+  saber(ctx, b) {
+    rect(ctx, b.rIn - 4, -5, 22, 10, '#4a4a4a');
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (const [w, c] of [[16, 'rgba(63,208,255,0.35)'], [8, '#3fd0ff'], [3, '#ffffff']]) {
+      ctx.lineWidth = w;
+      ctx.strokeStyle = c;
+      ctx.beginPath();
+      ctx.moveTo(b.rIn + 20, 0);
+      ctx.lineTo(b.rOut, 0);
+      ctx.stroke();
+    }
+    ctx.restore();
+  },
   dual(ctx, b) {
     swordShape(ctx, b.rIn, b.rOut, 6, { guard: '#d94f8a' });
   },
@@ -237,6 +290,53 @@ const BLADE_SPRITES = {
 
 // 遠距離武器などの「手に持っている物」
 const HELD = {
+  sticky(ctx) {
+    circle(ctx, 0, 0, 9, '#d97a2b');
+    circle(ctx, 3, -3, 3, '#ffe0b0', false);
+  },
+  web(ctx) {
+    ctx.save();
+    ctx.strokeStyle = '#8a8a96';
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo(-12 * Math.cos(i * 0.785), -12 * Math.sin(i * 0.785));
+      ctx.lineTo(12 * Math.cos(i * 0.785), 12 * Math.sin(i * 0.785));
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(0, 0, 7, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  },
+  vine(ctx) {
+    poly(ctx, [[-4, 10], [-6, -4], [0, -12], [6, -4], [4, 10]], '#4c9a3a');
+  },
+  revolver(ctx) {
+    rect(ctx, -8, -4, 26, 8, '#555');
+    rect(ctx, -12, -2, 8, 14, '#7b4a26');
+    circle(ctx, 0, 0, 5, '#888');
+  },
+  shark(ctx) {
+    poly(ctx, [[-8, 8], [4, -12], [10, 8]], '#5c7ea8');
+  },
+  counter(ctx, ball) {
+    const k = Math.min(1, ball.w.rage / 20);
+    circle(ctx, 0, 0, 7 + k * 6, `rgba(214,90,90,${0.4 + 0.6 * k})`);
+  },
+  gravity(ctx, ball, t) {
+    circle(ctx, 0, 0, 9, '#7a5fd1');
+    ctx.save();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    const y = Math.sin(t * 6) * 2;
+    ctx.beginPath();
+    ctx.moveTo(-4, 3 + y);
+    ctx.lineTo(0, -4 + y);
+    ctx.lineTo(4, 3 + y);
+    ctx.stroke();
+    ctx.restore();
+  },
   clone(ctx, ball) {
     ctx.save();
     ctx.globalAlpha = 0.6;
@@ -457,6 +557,88 @@ const HELD = {
 };
 
 const PROJ = {
+  mirrorbolt(ctx, p) {
+    ctx.rotate(p.angle);
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    rect(ctx, -18, -3, 14, 6, '#c9ecf7');
+    ctx.restore();
+    poly(ctx, [[-6, -5], [10, 0], [-6, 5]], '#ffffff');
+  },
+  sticky(ctx, p) {
+    const blink = p.stuck && Math.floor(p.age * 10) % 2 === 0;
+    circle(ctx, 0, 0, p.r, blink ? '#ff4040' : '#d97a2b');
+  },
+  webball(ctx, p) {
+    circle(ctx, 0, 0, p.r, '#e8e8f0');
+  },
+  web(ctx, p) {
+    const k = Math.min(1, p.age / 0.2) * Math.min(1, (p.life - p.age) / 0.4);
+    ctx.save();
+    ctx.globalAlpha = 0.8 * k;
+    ctx.strokeStyle = '#9a9aa8';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a) * p.r, Math.sin(a) * p.r);
+      ctx.stroke();
+    }
+    for (let r = p.r * 0.3; r <= p.r; r += p.r * 0.23) {
+      ctx.beginPath();
+      for (let i = 0; i <= 8; i++) {
+        const a = (i * Math.PI) / 4;
+        const x = Math.cos(a) * r;
+        const y = Math.sin(a) * r;
+        if (i) ctx.lineTo(x, y);
+        else ctx.moveTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  },
+  vine(ctx, p) {
+    // 床から上へ伸びるトゲのツタ
+    const h = p.height;
+    ctx.save();
+    ctx.lineWidth = 3;
+    ctx.fillStyle = '#4c9a3a';
+    ctx.fillRect(-7, -h, 14, h);
+    ctx.strokeRect(-7, -h, 14, h);
+    ctx.fillStyle = '#d8e8a0';
+    for (let y = 20; y < h; y += 24) {
+      const s = (y / 24) % 2 ? 1 : -1;
+      poly(ctx, [[s * 7, -y], [s * 16, -y - 6], [s * 7, -y - 10]], '#d8e8a0');
+    }
+    poly(ctx, [[-9, -h], [0, -h - 14], [9, -h]], '#3a7a2c');
+    ctx.restore();
+  },
+  shark(ctx, p) {
+    const dir = Math.sign(p.vx) || 1;
+    ctx.scale(dir, 1);
+    poly(ctx, [[-20, 0], [-8, -10], [14, -8], [22, 0], [14, 8], [-8, 8]], '#5c7ea8');
+    poly(ctx, [[-4, -9], [2, -22], [8, -8]], '#4a6890');
+    poly(ctx, [[-20, 0], [-28, -9], [-26, 0], [-28, 9]], '#4a6890');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(10, 1, 9, 3);
+    ctx.fillStyle = OUT;
+    ctx.fillRect(12, -5, 3, 3);
+  },
+  cwave(ctx, p) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1 - p.ring / 220);
+    ctx.strokeStyle = '#d65a5a';
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.arc(0, 0, p.ring, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  },
+  gorb(ctx, p) {
+    circle(ctx, 0, 0, p.r + 3, '#7a5fd1');
+    circle(ctx, 0, 0, p.r - 3, '#d9ccff', false);
+  },
   clone(ctx, p) {
     ctx.save();
     ctx.globalAlpha = 0.6;
@@ -834,6 +1016,10 @@ export class Renderer {
         const big = e.value >= e.max * 0.8;
         this.texts.push({ x: e.x, y: e.y - 30, text: '🎲' + e.value, color: big ? '#e8484d' : '#333333', life: 0.9, age: 0, size: big ? 30 : 20 });
         if (big) this.shake = Math.min(12, this.shake + 5);
+      } else if (e.type === 'timestop') {
+        const ball = world.balls[e.target];
+        this.texts.push({ x: ball.x, y: ball.y - 50, text: '時間停止！', color: '#c9a227', life: 0.9, age: 0, size: 24, jp: true });
+        this.rings.push({ x: ball.x, y: ball.y, r0: 80, r1: ball.r, life: 0.3, age: 0, color: '#e0c36a' });
       } else if (e.type === 'slam') {
         const ball = world.balls[e.target];
         this.texts.push({ x: ball.x, y: ball.y - 50, text: '壁ドン！', color: '#ff4f9a', life: 0.9, age: 0, size: 26, jp: true });
@@ -1150,6 +1336,30 @@ export class Renderer {
       ctx.fillStyle = 'rgba(255,120,30,0.6)';
       ctx.fillRect(b.x - 4 + Math.sin(this.time * 30) * 10, b.y - b.r - 10, 8, 8);
     }
+    if (b.freeze > 0) {
+      // 時間停止中: 灰色の膜と時計の針
+      ctx.save();
+      ctx.fillStyle = 'rgba(120,120,120,0.45)';
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r + 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    if (b.gravFlip > 0) {
+      // 重力反転中: 上向きの矢印
+      ctx.save();
+      ctx.strokeStyle = '#7a5fd1';
+      ctx.lineWidth = 4;
+      for (const dx of [-14, 14]) {
+        const y = b.y + b.r + 12;
+        ctx.beginPath();
+        ctx.moveTo(b.x + dx - 6, y);
+        ctx.lineTo(b.x + dx, y - 8);
+        ctx.lineTo(b.x + dx + 6, y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
     if (b.curse > 0) {
       // 呪い: 紫の点線の輪(呪いが多いほど太い)
       ctx.save();
@@ -1181,6 +1391,23 @@ export class Renderer {
 
 // 武器選択画面用のアイコン(その武器を持ったボールを1つ描く)
 export function drawIcon(canvas, def) {
+  if (def.id === 'copycat') {
+    // ものまね: 灰色のボールに「?」
+    const ctx = canvas.getContext('2d');
+    const size = canvas.width;
+    ctx.clearRect(0, 0, size, size);
+    ctx.lineWidth = size / 30;
+    ctx.strokeStyle = OUT;
+    circle(ctx, size * 0.42, size * 0.58, size * 0.22, '#b9b9b9');
+    ctx.fillStyle = OUT;
+    ctx.font = `bold ${size * 0.26}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('?', size * 0.42, size * 0.59);
+    ctx.font = `${size * 0.3}px sans-serif`;
+    ctx.fillText('🪞', size * 0.76, size * 0.26);
+    return;
+  }
   const world = createBattle(def, def, 1);
   const b = world.balls[0];
   b.x = 300;

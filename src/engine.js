@@ -98,6 +98,8 @@ function makeBall(def, id, x, y, angle) {
     power: 1,
     curse: 0,
     slamT: 0,
+    gravFlip: 0,
+    freeze: 0,
     slamBy: -1,
     blades: [],
     w: {},
@@ -234,6 +236,7 @@ export function spawnProjectile(world, owner, p) {
 
 function stepStatus(world, b, dt) {
   if (b.stun > 0) b.stun = Math.max(0, b.stun - dt);
+  if (b.gravFlip > 0) b.gravFlip -= dt;
   if (b.slowT > 0) {
     b.slowT -= dt;
     if (b.slowT <= 0) b.slow = 0;
@@ -263,7 +266,8 @@ function moveBall(b, dt) {
   const pe = GRAVITY * (floorY - b.y);
   const ke = 0.5 * (b.vx * b.vx + b.vy * b.vy);
   const wantKe = targetEnergy(b) - pe;
-  if (wantKe > 1 && ke > 1) {
+  // 重力が逆になっている間は元気さの調整をしない(天井へ落ちていく)
+  if (b.gravFlip <= 0 && wantKe > 1 && ke > 1) {
     const k = Math.sqrt(wantKe / ke);
     const blend = 1 + (k - 1) * Math.min(1, dt * 1.2);
     b.vx *= blend;
@@ -272,7 +276,7 @@ function moveBall(b, dt) {
   // 横に全く動かなくなると単調になるので、最低限の横速度を保つ
   const minVx = 90 * b.speedMul;
   if (Math.abs(b.vx) < minVx) b.vx += Math.sign(b.vx || 1) * Math.min(minVx - Math.abs(b.vx), 200 * dt);
-  b.vy += GRAVITY * f;
+  b.vy += GRAVITY * f * (b.gravFlip > 0 ? -1 : 1);
   b.x += b.vx * f;
   b.y += b.vy * f;
   // 壁にぶつかった勢い(壁ドンの判定に使う)
@@ -419,7 +423,8 @@ function projectileStep(world, dt) {
       }
     }
     // 相手の刃に当たると防がれる
-    if (p.blockable) {
+    // blockGrace: 撃ち返された直後の弾がすぐまた防がれて、無限に跳ね返り合わないようにする
+    if (p.blockable && p.age > (p.blockGrace ?? 0)) {
       let blocked = false;
       for (const bl of foe.blades) {
         const s = bladeSegment(foe, bl);
@@ -456,7 +461,9 @@ export function step(world, dt = DT) {
       ball.angle += ball.spin * SPIN_SCALE * (1 - ball.slow) * dt;
       if (ball.def.update) ball.def.update(world, ball, foe, dt);
     }
-    wallSlam(world, ball, moveBall(ball, dt), dt);
+    // 時間停止中はその場で止まる
+    if (ball.freeze > 0) ball.freeze -= dt;
+    else wallSlam(world, ball, moveBall(ball, dt), dt);
   }
   collideBalls(world, a, b);
   parryStep(world, a, b);

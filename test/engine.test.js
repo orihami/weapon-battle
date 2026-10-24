@@ -189,3 +189,31 @@ test('逆境ブースト: HPで負けている側は当てたときに多く成�
   assert.equal(even, 11, 'HPが同じなら1回につき+1');
   assert.ok(behind > even + 10, `負けている側の成長が大きくない: ${behind}`);
 });
+
+test('トーナメント: 8人で7試合行い、優勝が1人決まる', async () => {
+  const { createTournament, nextMatch, reportWinner, pickEntries, roundName } = await import('../src/tournament.js');
+  const entries = pickEntries(WEAPONS, 8, () => 0.3);
+  assert.equal(new Set(entries).size, 8);
+  const t = createTournament(entries);
+  assert.equal(roundName(t, 0), '準々決勝');
+  assert.equal(roundName(t, 2), '決勝');
+  let games = 0;
+  for (let m = nextMatch(t); m; m = nextMatch(t)) {
+    // 実際に戦わせて勝者を進める
+    const world = runToEnd(createBattle(m.match.a, m.match.b, 100 + games));
+    reportWinner(t, world.winner === 1 ? m.match.b : m.match.a);
+    games++;
+  }
+  assert.equal(games, 7);
+  assert.ok(entries.includes(t.champion));
+});
+
+test('ものまね: 相手と同じ武器の動きになる', () => {
+  const world = createBattle(W.copycat, W.orbital, 3);
+  const me = world.balls[0];
+  assert.equal(me.def.id, 'orbital');
+  assert.equal(me.def.copyOf, 'orbital');
+  assert.ok(me.w.n >= 1, '周回玉の状態を持っていない');
+  runToEnd(world);
+  assert.ok(world.over);
+});

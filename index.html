@@ -58,9 +58,31 @@
       <button type="button" id="randomBBtn">🎲 右だけ</button>
     </div>
 
+    <section class="tour" id="tour">
+      <div class="tour-head">
+        <h2>🏆 トーナメント</h2>
+        <div class="tour-buttons">
+          <button type="button" id="tour8Btn">8人で開始</button>
+          <button type="button" id="tour16Btn">16人で開始</button>
+          <button type="button" id="tourStopBtn" hidden>やめる</button>
+        </div>
+      </div>
+      <p class="hint" id="tourHint">ランダムに選ばれた武器で勝ち抜き戦をします。試合は自動で次々に進みます。</p>
+      <div class="bracket" id="bracket"></div>
+    </section>
+
     <section class="book">
-      <h2>武器ずかん <small id="bookCount"></small></h2>
-      <p class="hint">武器をタップすると、左（または右）の武器に選べます。数字は今までの勝敗です。</p>
+      <div class="book-head">
+        <h2>武器ずかん <small id="bookCount"></small></h2>
+        <label class="sort">並び:
+          <select id="bookSort">
+            <option value="no">番号順</option>
+            <option value="rate">勝率順(ランキング)</option>
+            <option value="games">試合数順</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint">武器をタップすると、左（または右）の武器に選べます。数字は今までの勝敗で、このブラウザにだけ保存されます。</p>
       <div class="book-grid" id="bookGrid"></div>
     </section>
     <p class="version">版: <span id="version">dev</span></p>

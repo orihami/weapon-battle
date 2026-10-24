@@ -101,6 +101,20 @@ try {
     await page.screenshot({ path: join(outDir, '3b-random-buttons.png') });
   }
 
+  // 2.7) トーナメント(8人)を4倍速で最後まで進める
+  await page.goto(base + '?speed=4');
+  await page.click('#tour8Btn');
+  await page.waitForSelector('.champion', { timeout: 300000 });
+  const champ = await page.textContent('.champion');
+  const done = await page.evaluate(() => document.querySelectorAll('#bracket .match').length);
+  check(/優勝/.test(champ) && done === 7, `トーナメント: ${champ.trim()}(試合枠 ${done})`);
+  await page.screenshot({ path: join(outDir, '3c-tournament.png'), fullPage: true });
+
+  // 2.8) ランキング(勝率順)の並び替え
+  await page.selectOption('#bookSort', 'rate');
+  const ranks = await page.evaluate(() => [...document.querySelectorAll('#bookGrid .rank')].map((r) => r.textContent));
+  check(ranks[0] === '1位' && ranks.length >= 2, `ランキング表示: ${ranks.slice(0, 3).join(', ')}`);
+
   // 3) 全武器を少しずつ動かして、描画でエラーが出ないか
   const ids = await page.evaluate(() => [...document.querySelectorAll('#bookGrid .card')].map((c) => c.dataset.id));
   check(ids.length >= 20, `ずかんの武器数: ${ids.length}`);

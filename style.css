@@ -262,3 +262,45 @@ button.primary { background: var(--accent); color: #fff; -webkit-text-stroke: 0;
 .random-row button { flex: 1; padding: 8px 6px; font-size: 15px; white-space: nowrap; }
 
 .picker-random { width: 100%; margin-bottom: 10px; }
+
+.tour { margin-top: 18px; border: 3px solid var(--line); border-radius: 12px; padding: 10px 12px; background: #fffaf0; }
+
+.tour-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.tour-head h2 { font-size: 20px; margin: 0; }
+
+.tour-buttons { display: flex; gap: 6px; }
+
+.tour-buttons button { min-height: 40px; padding: 6px 10px; font-size: 14px; }
+
+.tour .hint { margin: 6px 0; }
+
+.bracket { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+
+.bracket:empty { display: none; }
+
+.round { flex: 1 0 104px; display: flex; flex-direction: column; justify-content: space-around; gap: 6px; }
+
+.round h3 { font-size: 13px; margin: 0 0 2px; color: var(--muted); text-align: center; }
+
+.match { border: 2px solid var(--line); border-radius: 8px; background: #fff; font-size: 13px; overflow: hidden; }
+
+.match.now { outline: 3px solid var(--accent); }
+
+.match div { padding: 3px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.match div + div { border-top: 1px dashed #ccc; }
+
+.match .win { font-weight: bold; background: #fff3c4; }
+
+.match .lose { color: #aaa; text-decoration: line-through; }
+
+.champion { text-align: center; font-size: 22px; margin: 8px 0 2px; }
+
+.book-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+
+.sort { font-size: 13px; color: var(--muted); }
+
+.sort select { font: inherit; font-size: 14px; padding: 4px; border: 2px solid var(--line); border-radius: 6px; background: #fff; }
+
+.card .rank { font-family: var(--num); color: var(--accent); margin-right: 4px; }

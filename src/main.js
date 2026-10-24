@@ -2,6 +2,7 @@ import { createBattle, step, DT } from './engine.js';
 import { WEAPONS, WEAPON_BY_ID } from './weapons.js';
 import { Renderer, drawIcon } from './render.js';
 import { Sound } from './sound.js';
+import { createTournament, nextMatch, reportWinner, pickEntries, roundName } from './tournament.js';
 
 const $ = (id) => document.getElementById(id);
 const SPEEDS = [1, 2, 4];
@@ -19,6 +20,8 @@ const state = {
   speed: SPEEDS.includes(Number(params.get('speed'))) ? Number(params.get('speed')) : 1,
   picking: 0,
   records: loadRecords(),
+  tour: null, // トーナメント中なら進行状況
+  bookSort: 'no',
 };
 
 function loadRecords() {
@@ -131,9 +134,11 @@ function finish() {
   if (w.winner === -1) {
     text.textContent = '引き分け！';
     text.style.color = '#ffffff';
+    if (state.tour) setTimeout(() => state.world === w && playTourMatch(), 1500); // 引き分けは同じ組み合わせでやり直し
   } else {
-    const win = w.balls[w.winner].def;
-    const lose = w.balls[1 - w.winner].def;
+    // ボールの def は「ものまね」だと相手の武器になっているので、選んだ武器(state.a/b)で記録する
+    const win = w.winner === 0 ? state.a : state.b;
+    const lose = w.winner === 0 ? state.b : state.a;
     text.textContent = `${win.name}の勝ち！`;
     text.style.color = win.color;
     const rec = state.records;
@@ -143,10 +148,82 @@ function finish() {
     rec[lose.id].l++;
     saveRecords();
     renderBook();
+    if (state.tour) {
+      reportWinner(state.tour, win);
+      renderBracket();
+      if (state.tour.champion) {
+        text.textContent = `🏆 ${win.name}が優勝！`;
+      } else {
+        // 少し結果を見せてから次の試合へ
+        setTimeout(() => state.world === w && state.tour && playTourMatch(), 1800);
+      }
+    }
   }
   setTimeout(() => {
     if (state.world === w) $('overlay').hidden = false;
   }, 700);
+}
+
+function startTournament(n) {
+  sound.unlock();
+  state.tour = createTournament(pickEntries(WEAPONS, n));
+  $('tourStopBtn').hidden = false;
+  playTourMatch();
+}
+
+function stopTournament() {
+  if (!state.tour) return;
+  state.tour = null;
+  $('tourStopBtn').hidden = true;
+  renderBracket();
+}
+
+function playTourMatch() {
+  const next = state.tour && nextMatch(state.tour);
+  if (!next) return;
+  state.a = next.match.a;
+  state.b = next.match.b;
+  newBattle();
+  renderBracket();
+  start();
+  $('arenaWrap').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function renderBracket() {
+  const box = $('bracket');
+  box.replaceChildren();
+  const t = state.tour;
+  $('tourHint').hidden = !!t;
+  if (!t) return;
+  const now = nextMatch(t);
+  t.rounds.forEach((round, r) => {
+    const col = document.createElement('div');
+    col.className = 'round';
+    col.append(Object.assign(document.createElement('h3'), { textContent: roundName(t, r) }));
+    round.forEach((m, i) => {
+      const el = document.createElement('div');
+      el.className = 'match' + (now && now.round === r && now.index === i && !t.champion ? ' now' : '');
+      for (const side of [m.a, m.b]) {
+        const row = document.createElement('div');
+        row.textContent = side ? side.name : '？';
+        if (side) row.style.color = side.color;
+        if (m.winner) row.className = m.winner === side ? 'win' : 'lose';
+        el.append(row);
+      }
+      col.append(el);
+    });
+    box.append(col);
+  });
+  if (t.champion) {
+    const c = document.createElement('p');
+    c.className = 'champion';
+    c.innerHTML = `🏆 優勝: <b style="color:${t.champion.color}">${t.champion.name}</b>`;
+    box.after(c);
+    const old = box.parentElement.querySelectorAll('.champion');
+    old.forEach((x, i) => i < old.length - 1 && x.remove());
+  } else {
+    box.parentElement.querySelectorAll('.champion').forEach((x) => x.remove());
+  }
 }
 
 let last = performance.now();
@@ -204,6 +281,7 @@ function openPicker(side) {
 }
 
 function choose(side, def) {
+  stopTournament();
   if (side === 0) state.a = def;
   else state.b = def;
   newBattle();
@@ -213,8 +291,13 @@ function renderBook() {
   const grid = $('bookGrid');
   grid.replaceChildren();
   $('bookCount').textContent = `全${WEAPONS.length}種`;
-  for (const def of WEAPONS) {
-    const rec = state.records[def.id] || { w: 0, l: 0 };
+  const recOf = (def) => state.records[def.id] || { w: 0, l: 0 };
+  const rate = (r) => (r.w + r.l ? r.w / (r.w + r.l) : -1);
+  const list = WEAPONS.slice();
+  if (state.bookSort === 'rate') list.sort((x, y) => rate(recOf(y)) - rate(recOf(x)) || recOf(y).w - recOf(x).w);
+  if (state.bookSort === 'games') list.sort((x, y) => recOf(y).w + recOf(y).l - (recOf(x).w + recOf(x).l));
+  list.forEach((def, idx) => {
+    const rec = recOf(def);
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'card';
@@ -225,7 +308,11 @@ function renderBook() {
     name.innerHTML = `<span style="-webkit-text-stroke:1px #161616;paint-order:stroke fill">${def.name}</span><small>${def.en}</small>`;
     const recEl = document.createElement('div');
     recEl.className = 'rec';
-    recEl.textContent = `${rec.w}勝 ${rec.l}敗`;
+    const games = rec.w + rec.l;
+    recEl.textContent = `${rec.w}勝 ${rec.l}敗` + (games ? `(${Math.round((rec.w / games) * 100)}%)` : '');
+    if (state.bookSort === 'rate' && games) {
+      recEl.prepend(Object.assign(document.createElement('span'), { className: 'rank', textContent: `${idx + 1}位` }));
+    }
     const grow = document.createElement('div');
     grow.className = 'grow';
     grow.textContent = def.grow;
@@ -238,7 +325,7 @@ function renderBook() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
     grid.append(card);
-  }
+  });
   if (state.a) updateHeader();
 }
 
@@ -250,15 +337,18 @@ function init() {
   }
   $('startBtn').addEventListener('click', start);
   $('againBtn').addEventListener('click', () => {
+    stopTournament();
     newBattle();
     start();
   });
   $('nextBtn').addEventListener('click', () => {
+    stopTournament();
     [state.a, state.b] = randomPair();
     newBattle();
     start();
   });
   $('randomBtn').addEventListener('click', () => {
+    stopTournament();
     [state.a, state.b] = randomPair();
     newBattle();
   });
@@ -269,6 +359,7 @@ function init() {
     $('picker').close();
   });
   $('swapBtn').addEventListener('click', () => {
+    stopTournament();
     [state.a, state.b] = [state.b, state.a];
     newBattle();
   });
@@ -283,6 +374,13 @@ function init() {
     sound.unlock();
     sound.enabled = !sound.enabled;
     $('soundBtn').textContent = sound.enabled ? '🔊' : '🔇';
+  });
+  $('tour8Btn').addEventListener('click', () => startTournament(8));
+  $('tour16Btn').addEventListener('click', () => startTournament(16));
+  $('tourStopBtn').addEventListener('click', stopTournament);
+  $('bookSort').addEventListener('change', (e) => {
+    state.bookSort = e.target.value;
+    renderBook();
   });
   window.addEventListener('resize', resize);
   resize();
