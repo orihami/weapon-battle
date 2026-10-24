@@ -396,9 +396,14 @@ export const SKILLS = [
     id: 'split',
     icon: '🔱',
     name: '分裂弾',
-    desc: '1.8秒ごとに3方向へ弾を撃つ(各2ダメージ)',
-    rarity: 'epic',
+    desc: '飛び道具の武器なら、撃つたびに弾が2発ふえる。それ以外の武器(置くタイプの飛び道具も)は1.8秒ごとに3方向へ弾(各2ダメージ)',
+    rarity: 'legend',
+    apply(world, me) {
+      if (me.def.kind === 'ranged') me.extraShots = (me.extraShots || 0) + 2;
+    },
     update(world, me, foe, dt, st) {
+      // 弾がふえる武器はそれで十分。地雷や雷のように動く弾を撃たない武器は、3秒たってもふえなければ3方向弾にする
+      if (me.cloneUsed || (me.def.kind === 'ranged' && world.t < 3)) return;
       st.t = (st.t ?? 0.8) - dt;
       if (st.t > 0) return;
       st.t = 1.8;

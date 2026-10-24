@@ -296,7 +296,7 @@ export function knockback(from, target, power) {
 }
 
 export function spawnProjectile(world, owner, p) {
-  world.projectiles.push({
+  const proj = {
     owner: owner.id,
     x: owner.x,
     y: owner.y,
@@ -311,7 +311,26 @@ export function spawnProjectile(world, owner, p) {
     wall: 'die',
     dead: false,
     ...p,
-  });
+  };
+  world.projectiles.push(proj);
+  // スキル「分裂弾」: 武器が1回撃つごとに、最初の動く弾の左右に同じ弾を extraShots 発ふやす
+  // (武器の update の中で撃った弾だけ。弾から生まれた子弾や、置いて止まっている物はふやさない)
+  if (world.shooter === owner && owner.extraShots > 0 && !world.shotCloned && (proj.vx || proj.vy)) {
+    world.shotCloned = true;
+    owner.cloneUsed = true;
+    for (let i = 0; i < owner.extraShots; i++) {
+      const side = i % 2 ? -1 : 1;
+      const a = side * 0.22 * (1 + Math.floor(i / 2));
+      const c = Math.cos(a);
+      const sn = Math.sin(a);
+      const copy = { ...proj, vx: proj.vx * c - proj.vy * sn, vy: proj.vx * sn + proj.vy * c, angle: proj.angle + a };
+      for (const k in copy) {
+        if (Array.isArray(copy[k])) copy[k] = copy[k].slice();
+        else if (copy[k] instanceof Set) copy[k] = new Set(copy[k]);
+      }
+      world.projectiles.push(copy);
+    }
+  }
 }
 
 function stepStatus(world, b, dt) {
@@ -559,7 +578,12 @@ export function step(world, dt = DT) {
       // haste: 攻撃速度(スキル)。回転も武器の発射間隔も速くなる
       ball.angle += ball.spin * SPIN_SCALE * (1 - ball.slow) * ball.haste * dt;
       for (const bl of ball.blades) if (bl.free) bl.rot += Math.sign(ball.spin || 1) * 4 * SPIN_SCALE * (1 - ball.slow) * ball.haste * dt;
-      if (ball.def.update) ball.def.update(world, ball, foe, dt * ball.haste);
+      if (ball.def.update) {
+        world.shooter = ball;
+        world.shotCloned = false;
+        ball.def.update(world, ball, foe, dt * ball.haste);
+        world.shooter = null;
+      }
     }
     for (const sk of ball.skills) if (sk.def.update) sk.def.update(world, ball, foe, dt, sk.st);
     // 時間停止中はその場で止まる

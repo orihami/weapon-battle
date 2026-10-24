@@ -38,7 +38,7 @@ test('剣が当たると相手のHPが減り、剣のダメージが+1される'
   const before = foe.hp;
   step(world);
   assert.ok(foe.hp < before, 'HPが減っていない');
-  assert.equal(sword.w.dmg, 2);
+  assert.equal(sword.w.dmg, 3);
   assert.equal(sword.hits, 1);
 });
 
@@ -186,7 +186,7 @@ test('逆境ブースト: HPで負けている側は当てたときに多く成�
   };
   const even = grow(100);
   const behind = grow(30);
-  assert.equal(even, 11, 'HPが同じなら1回につき+1');
+  assert.equal(even, 12, 'HPが同じなら1回につき+1');
   assert.ok(behind > even + 10, `負けている側の成長が大きくない: ${behind}`);
 });
 
@@ -226,7 +226,7 @@ test('チャレンジ: スキルが試合に反映され、5ステージごと�
   assert.equal(ch.stage, 2);
   const world = createBattle(W.sword, W.bomb, 7, { a: { skills: ch.skills }, b: enemyBoost(2, () => 0.1) });
   assert.equal(world.balls[0].maxHp, 120);
-  assert.equal(world.balls[0].w.dmg, 1 + 4, '先取り成長4回で剣のダメージが5');
+  assert.equal(world.balls[0].w.dmg, 2 + 4, '先取り成長4回で剣のダメージが6');
   assert.equal(world.balls[1].poison, 0);
   assert.ok(isBoss(5) && !isBoss(4));
   const boss = enemyBoost(5, () => 0.5);
@@ -299,6 +299,32 @@ test('スキル: 根性・会心・追加の剣が効く', async () => {
   assert.ok(!w1.balls[0].dead && w1.balls[0].hp === 12, '根性で耐えていない');
   const w2 = createBattle(W.sword, W.sword, 1, { a: { skills: [SKILL_BY_ID.extraBlade, SKILL_BY_ID.extraBlade] } });
   assert.equal(w2.balls[0].blades.length, 3, '追加の剣が2本ふえていない');
+});
+
+test('分裂弾: 飛び道具の武器は撃つたびに弾が2発ふえる。置くタイプや近接は3方向弾', async () => {
+  const { SKILL_BY_ID } = await import('../src/skills.js');
+  assert.equal(SKILL_BY_ID.split.rarity, 'legend');
+  const shots = (def, skills) => {
+    const w = createBattle(def, W.dagger, 3, { a: { skills } });
+    let n = 0;
+    for (let i = 0; i < 120 * 3; i++) {
+      const before = new Set(w.projectiles);
+      step(w);
+      n += w.projectiles.filter((p) => !before.has(p) && p.owner === 0 && p.kind === 'bolt').length;
+    }
+    return n;
+  };
+  const base = shots(W.crossbow, []);
+  assert.ok(base >= 2);
+  assert.equal(shots(W.crossbow, [SKILL_BY_ID.split]), base * 3, 'クロスボウの矢が1回につき+2本になっていない');
+  // 地雷は動く弾を撃たないので、代わりに3方向弾が出る
+  const w = createBattle(W.mine, W.dagger, 3, { a: { skills: [SKILL_BY_ID.split] } });
+  let bolts = 0;
+  for (let i = 0; i < 120 * 6; i++) {
+    step(w);
+    bolts = Math.max(bolts, w.projectiles.filter((p) => p.kind === 'skillbolt').length);
+  }
+  assert.ok(bolts >= 3, '地雷で3方向弾が出ない');
 });
 
 test('スキルの追加の剣は武器と別に回るので、遠距離武器でも当たる', async () => {

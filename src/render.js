@@ -811,6 +811,13 @@ const PROJ = {
     circle(ctx, -2.5, -8, 1.8, '#222', false);
     circle(ctx, 2.5, -8, 1.8, '#222', false);
   },
+  bundle(ctx, p) {
+    // 爆竹の束(くるくる回りながら飛ぶ)
+    ctx.rotate(p.age * 9);
+    for (const dx of [-6, 0, 6]) rect(ctx, dx - 3, -8, 6, 16, '#e5383b');
+    rect(ctx, -9, -2, 18, 4, '#f2c230');
+    circle(ctx, 0, -11, 2 + Math.random() * 2, '#ffcc33', false);
+  },
   cracker(ctx, p) {
     rect(ctx, -3, -6, 6, 12, '#e5383b');
     circle(ctx, 0, -9, 2 + Math.random() * 2, '#ffcc33', false);
