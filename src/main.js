@@ -6,7 +6,7 @@ import { Sound } from './sound.js';
 import { createTournament, nextMatch, reportWinner, pickEntries, roundName } from './tournament.js';
 import { newChallenge, enemyBoost, offerCards, takeCards, takeAwaken, isBoss } from './challenge.js';
 import { RARITY, SKILLS, SKILL_BY_ID, cpuPick, awakenSuffix, fusionsReady, fusionsNear } from './skills.js';
-import { createRounds, fighters, reportRound, pickSkills, pickAwaken } from './rounds.js';
+import { createRounds, fighters, reportRound, pickSkills } from './rounds.js';
 
 const $ = (id) => document.getElementById(id);
 const SPEEDS = [1, 2, 4];
@@ -596,22 +596,6 @@ function nextPick(r) {
     return;
   }
   const p = r.players[pend.player];
-  if (pend.awaken) {
-    showCards({
-      who: `${p.name}${p.cpu ? '(CPU)' : ''} の武器進化`,
-      color: p.color,
-      sub: `${p.weapon.name} の進化先を1つ選ぶ`,
-      cards: pend.awaken,
-      choose: 1,
-      cpu: p.cpu,
-      mine: p.skills,
-      onDone([card]) {
-        pickAwaken(r, card);
-        nextPick(r);
-      },
-    });
-    return;
-  }
   showCards({
     who: `${p.name}${p.cpu ? '(CPU)' : ''} のカード選び`,
     color: p.color,

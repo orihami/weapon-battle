@@ -318,7 +318,7 @@ test('スキルの追加の剣は武器と別に回るので、遠距離武器�
 });
 
 test('ラウンズ: 全員同時に戦い、負けた全員がカードを選ぶ。3回目は大進化(2枚)。先に3勝で優勝', async () => {
-  const { createRounds, fighters, reportRound, pickSkills, pickAwaken, cpuPickPending, BIG_EVERY } = await import('../src/rounds.js');
+  const { createRounds, fighters, reportRound, pickSkills, cpuPickPending, BIG_EVERY } = await import('../src/rounds.js');
   const r = createRounds(
     [
       { name: 'P1', weapon: W.sword, cpu: true },
@@ -348,8 +348,8 @@ test('ラウンズ: 全員同時に戦い、負けた全員がカードを選ぶ
       const loser = r.players[r.pending.player];
       if (loser.picks % BIG_EVERY === 0) {
         assert.equal(r.pending.choose, 2, '大進化で2枚選べない');
-        assert.equal(r.pending.awaken.length, 3, '大進化の前に武器進化を選べない');
-        pickAwaken(r, cpuPickPending(r)[0]);
+        // ラウンズの大進化は強くなりすぎないように: 武器進化なし・ふつう〜レジェンドのカードだけ
+        assert.ok(!r.pending.awaken && r.pending.cards.every((c) => c.rarity !== 'awaken'), 'ラウンズの大進化に武器進化が出た');
       }
       pickSkills(r, cpuPickPending(r));
     }
