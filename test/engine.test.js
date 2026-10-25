@@ -226,7 +226,7 @@ test('チャレンジ: スキルが試合に反映され、5ステージごと�
   assert.equal(ch.stage, 2);
   const world = createBattle(W.sword, W.bomb, 7, { a: { skills: ch.skills }, b: enemyBoost(2, () => 0.1) });
   assert.equal(world.balls[0].maxHp, 120);
-  assert.equal(world.balls[0].w.dmg, 2 + 4, '先取り成長4回で剣のダメージが6');
+  assert.equal(world.balls[0].w.dmg, 2 + 3, '先取り成長3回で剣のダメージが5');
   assert.equal(world.balls[1].poison, 0);
   assert.ok(isBoss(5) && !isBoss(4));
   const boss = enemyBoost(5, () => 0.5);

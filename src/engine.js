@@ -220,6 +220,9 @@ export function aliveOthers(world, ball) {
 export function dealDamage(world, src, target, amount, opts = {}) {
   if (target.dead || world.over || !(amount > 0)) return 0;
   amount *= world.dmgMul * (src && src !== target ? src.power : 1);
+  // 武器ごとのバランス調整の倍率(weapons.js の TUNE。スキルのダメージには掛けない)
+  // 3人以上の試合では、全員を巻き込める武器が強く、1人しかねらえない武器が弱くなるので別の倍率(TUNE_FFA)も掛ける
+  if (src && src !== target && opts.kind !== 'skill') amount *= (src.def.tune ?? 1) * (world.balls.length > 2 ? (src.def.tuneFfa ?? 1) : 1);
   // 呪い: 重ねがけされた分だけ、どこから受けるダメージも増える
   amount *= 1 + target.curse * CURSE_PER_STACK;
   // スキル: 与えるダメージ・受けるダメージの補正
@@ -539,6 +542,7 @@ function projectileStep(world, dt) {
       for (const o of world.balls) {
         if (o === owner || o.dead) continue;
         for (const bl of o.blades) {
+          if (bl.block === false) continue; // スキルの追加の剣などは弾を防がない
           const s = bladeSegment(o, bl);
           if (segPointDist(s[0], s[1], s[2], s[3], p.x, p.y) < p.r + bl.w / 2) {
             blocker = o;
@@ -582,7 +586,7 @@ export function step(world, dt = DT) {
     if (ball.stun <= 0) {
       // haste: 攻撃速度(スキル)。回転も武器の発射間隔も速くなる
       ball.angle += ball.spin * SPIN_SCALE * (1 - ball.slow) * ball.haste * dt;
-      for (const bl of ball.blades) if (bl.free) bl.rot += Math.sign(ball.spin || 1) * 4 * SPIN_SCALE * (1 - ball.slow) * ball.haste * dt;
+      for (const bl of ball.blades) if (bl.free) bl.rot += Math.sign(ball.spin || 1) * 3 * SPIN_SCALE * (1 - ball.slow) * ball.haste * dt;
       if (ball.def.update) {
         world.shooter = ball;
         world.shotCloned = false;

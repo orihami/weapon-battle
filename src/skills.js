@@ -77,9 +77,10 @@ function zap(world, me, foe, dmg) {
   foe.stun = Math.max(foe.stun, 0.12);
 }
 
-// 追加の刃(剣)をボールのまわりに足す。武器の向きとは関係なく、いつも自分で回り続ける
+// 追加の刃(剣)をボールのまわりに足す。武器の向きとは関係なく、いつも自分で回り続ける。
+// 攻撃だけの剣で、弾を防いだり相手の刃をはじいたりはしない(守りにも効くと強すぎた)
 function addBlade(me, dmg) {
-  const blade = { off: 0, rIn: me.r - 8, rOut: me.r + 54, w: 8, cd: 0.3, cdLeft: 0, knock: 100, parry: true, sprite: 'sword', damage: dmg, extra: true, free: true, rot: me.angle };
+  const blade = { off: 0, rIn: me.r - 8, rOut: me.r + 54, w: 8, cd: 0.45, cdLeft: 0, knock: 100, parry: false, block: false, sprite: 'sword', damage: dmg, extra: true, free: true, rot: me.angle };
   me.blades.push(blade);
   const extras = me.blades.filter((b) => b.extra);
   // 追加の剣どうしは等間隔に並べて、いっしょに回す
@@ -163,7 +164,7 @@ function breath(world, me, foe, n, dmg) {
 export const SKILLS = [
   // ---- ふつう ----
   { id: 'hp', icon: '❤️', name: '体力アップ', desc: '最大HP +20', rarity: 'common', apply: (w, me) => ((me.maxHp += 20), (me.hp += 20)) },
-  { id: 'power', icon: '💪', name: '威力アップ', desc: '与えるダメージ +15%', rarity: 'common', apply: (w, me) => (me.power *= 1.15) },
+  { id: 'power', icon: '💪', name: '威力アップ', desc: '与えるダメージ +20%', rarity: 'common', apply: (w, me) => (me.power *= 1.2) },
   {
     id: 'speed',
     icon: '👟',
@@ -182,13 +183,13 @@ export const SKILLS = [
     id: 'regen',
     icon: '🌿',
     name: '再生',
-    desc: '毎秒HPが1.2回復する',
+    desc: '毎秒HPが1回復する',
     rarity: 'common',
     update(world, me, foe, dt, st) {
       st.t = (st.t || 0) + dt;
       if (st.t >= 1) {
         st.t -= 1;
-        heal(world, me, 1.2);
+        heal(world, me, 1);
       }
     },
   },
@@ -196,9 +197,9 @@ export const SKILLS = [
     id: 'pregrow',
     icon: '🌱',
     name: '先取り成長',
-    desc: '試合開始の時点で4回分成長している',
+    desc: '試合開始の時点で3回分成長している',
     rarity: 'common',
-    apply: (world, me) => preGrow(world, me, 4),
+    apply: (world, me) => preGrow(world, me, 3),
   },
   {
     id: 'thorns',
@@ -229,11 +230,11 @@ export const SKILLS = [
     id: 'poisonEdge',
     icon: '☠️',
     name: '毒の攻撃',
-    desc: '攻撃が当たると毒 +1(1秒に1回まで。毒はずっと残る)',
+    desc: '攻撃が当たると毒 +1(1.8秒に1回まで。毒はずっと残る)',
     rarity: 'epic',
     onHit(world, me, foe, info, st) {
       if ((st.cd || 0) > world.t) return;
-      st.cd = world.t + 1;
+      st.cd = world.t + 1.8;
       foe.poison += 1;
       foe.poisonSrc = me.id;
     },
@@ -292,18 +293,18 @@ export const SKILLS = [
       return amount - block;
     },
   },
-  { id: 'extraBlade', icon: '🗡️', name: '追加の剣', desc: 'まわりを回る剣が1本ふえる(1.5ダメージ)', rarity: 'rare', apply: (w, me) => addBlade(me, 1.5) },
+  { id: 'extraBlade', icon: '🗡️', name: '追加の剣', desc: 'まわりを回る剣が1本ふえる(1.2ダメージ)', rarity: 'rare', apply: (w, me) => addBlade(me, 1.2) },
   {
     id: 'missiles',
     icon: '🚀',
     name: '追尾ミサイル',
-    desc: '2.2秒ごとに追尾ミサイル(5ダメージ)',
+    desc: '2秒ごとに追尾ミサイル(6ダメージ)',
     rarity: 'rare',
     update(world, me, foe, dt, st) {
       st.t = (st.t ?? 1) - dt;
       if (st.t > 0) return;
-      st.t = 2.2;
-      skillShot(world, me, foe, Math.atan2(foe.y - me.y, foe.x - me.x) + Math.PI, 260, 5, 'missile', {
+      st.t = 2;
+      skillShot(world, me, foe, Math.atan2(foe.y - me.y, foe.x - me.x) + Math.PI, 260, 6, 'missile', {
         life: 3.5,
         update: (world, p, owner, foe, dt) => homingStep(p, foe, 3.2, dt, 420),
       });
@@ -442,12 +443,12 @@ export const SKILLS = [
     id: 'twin',
     icon: '⚔️',
     name: '双剣',
-    desc: '追加の剣が2本ふえ、攻撃速度 +15%',
+    desc: '追加の剣が2本ふえ(各1.3ダメージ)、攻撃速度 +10%',
     rarity: 'legend',
     apply(world, me) {
-      addBlade(me, 2.5);
-      addBlade(me, 2.5);
-      me.haste *= 1.15;
+      addBlade(me, 1.3);
+      addBlade(me, 1.3);
+      me.haste *= 1.1;
     },
   },
   {
@@ -519,7 +520,7 @@ export const SKILLS = [
     },
   },
   // ---- 追加のふつう ----
-  { id: 'feast', icon: '🍖', name: '満腹', desc: '最大HP +30・素早さ -5%', rarity: 'common', apply: (w, me) => ((me.maxHp += 30), (me.hp += 30), (me.speedMul *= 0.95)) },
+  { id: 'feast', icon: '🍖', name: '満腹', desc: '最大HP +25・素早さ -5%', rarity: 'common', apply: (w, me) => ((me.maxHp += 25), (me.hp += 25), (me.speedMul *= 0.95)) },
   {
     id: 'sharp',
     icon: '🔪',
@@ -532,21 +533,25 @@ export const SKILLS = [
     id: 'firstAid',
     icon: '🩹',
     name: '応急手当',
-    desc: '1度だけ、HPが30%を切ったら15回復',
+    desc: '1度だけ、HPが30%を切ったら10回復',
     rarity: 'common',
     update(world, me, foe, dt, st) {
       if (st.used || me.hp >= me.maxHp * 0.3) return;
       st.used = true;
-      heal(world, me, 15);
+      heal(world, me, 10);
     },
   },
   {
     id: 'sniper',
     icon: '🔭',
     name: '狙い撃ち',
-    desc: '離れた相手(220以上)へのダメージ +30%',
+    desc: '飛び道具: 離れた相手(220以上)へのダメージ +40% / 近接: ダメージ +12%',
+    kinds: { far: '離れた相手(220以上)へのダメージ +40%', near: 'ダメージ +12%' },
     rarity: 'common',
-    outgoing: (world, me, target, amount) => (Math.hypot(target.x - me.x, target.y - me.y) > 220 ? amount * 1.3 : amount),
+    outgoing(world, me, target, amount) {
+      if (me.def.kind !== 'ranged') return amount * 1.12;
+      return Math.hypot(target.x - me.x, target.y - me.y) > 220 ? amount * 1.4 : amount;
+    },
   },
   { id: 'jump', icon: '🦘', name: '跳躍', desc: '動きが15%速くなり、8%で攻撃をよける', rarity: 'common', apply: (w, me) => (me.speedMul *= 1.15), incoming: dodge(0.08) },
 
@@ -555,15 +560,15 @@ export const SKILLS = [
     id: 'cyclone',
     icon: '🌀',
     name: 'つむじ風',
-    desc: '3.5秒ごとに近くの相手を吹き飛ばしてしびれさせる(4ダメージ)',
+    desc: '3秒ごとに近くの相手を吹き飛ばしてしびれさせる(5ダメージ)',
     rarity: 'rare',
     update(world, me, foe, dt, st) {
       st.t = (st.t ?? 2) - dt;
       if (st.t > 0) return;
-      st.t = 3.5;
+      st.t = 3;
       world.events.push({ type: 'shock', x: me.x, y: me.y, r: 170, color: '#9ad7ff' });
       for (const o of enemiesNear(world, me, 170)) {
-        skillDamage(world, me, o, 4);
+        skillDamage(world, me, o, 5);
         o.stun = Math.max(o.stun, 0.3);
         knockback(me, o, 520);
       }
@@ -688,9 +693,9 @@ export const SKILLS = [
     id: 'execute',
     icon: '🪓',
     name: '処刑',
-    desc: 'HP25%以下の相手へのダメージ2倍',
+    desc: 'HP30%以下の相手へのダメージ2.2倍',
     rarity: 'epic',
-    outgoing: (world, me, target, amount) => (target.hp < target.maxHp * 0.25 ? amount * 2 : amount),
+    outgoing: (world, me, target, amount) => (target.hp < target.maxHp * 0.3 ? amount * 2.2 : amount),
   },
 
   // ---- 追加のレジェンド ----
@@ -735,13 +740,13 @@ export const SKILLS = [
     id: 'allMight',
     icon: '🌈',
     name: '全能',
-    desc: '威力+20%・攻撃速度+20%・最大HP+40・毎秒1回復',
+    desc: '威力+20%・攻撃速度+20%・最大HP+25・毎秒1回復',
     rarity: 'legend',
     apply(world, me) {
       me.power *= 1.2;
       me.haste *= 1.2;
-      me.maxHp += 40;
-      me.hp += 40;
+      me.maxHp += 25;
+      me.hp += 25;
     },
     update: regen(1),
   },
@@ -806,29 +811,29 @@ export const SKILLS = [
     id: 'thunderEmperor',
     icon: '⚜️',
     name: '雷帝',
-    desc: '1.6秒ごとに相手全員へ雷(6ダメージ)。当てると35%でさらに雷',
+    desc: '2秒ごとに相手全員へ雷(4ダメージ)。当てると20%でさらに雷',
     rarity: 'fusion',
     needs: ['chainZap', 'thunderGod'],
     update(world, me, foe, dt, st) {
       st.t = (st.t ?? 1) - dt;
       if (st.t > 0) return;
-      st.t = 1.6;
-      for (const o of enemiesNear(world, me, 9999)) zap(world, me, o, 6);
+      st.t = 2;
+      for (const o of enemiesNear(world, me, 9999)) zap(world, me, o, 4);
     },
     onHit(world, me, foe) {
-      if (world.rng() < 0.35) zap(world, me, foe, 5);
+      if (world.rng() < 0.2) zap(world, me, foe, 4);
     },
   },
   {
     id: 'bladeDance',
     icon: '🎡',
     name: '剣の輪舞',
-    desc: 'まわりを回る剣が5本・攻撃速度 +15%',
+    desc: 'まわりを回る剣が4本(各1.1ダメージ)・攻撃速度 +5%',
     rarity: 'fusion',
     needs: ['extraBlade', 'twin'],
     apply(world, me) {
-      for (let i = 0; i < 5; i++) addBlade(me, 2.5);
-      me.haste *= 1.15;
+      for (let i = 0; i < 4; i++) addBlade(me, 1.1);
+      me.haste *= 1.05;
     },
   },
   {
@@ -855,13 +860,13 @@ export const SKILLS = [
     id: 'immortal',
     icon: '👼',
     name: '不滅',
-    desc: '2度までよみがえる(HP70% → HP40%)',
+    desc: '2度までよみがえる(HP60% → HP30%)',
     rarity: 'fusion',
     needs: ['guts', 'undying'],
     lethal(world, me, st) {
       st.n = st.n || 0;
       if (st.n >= 2) return false;
-      me.hp = me.maxHp * (st.n === 0 ? 0.7 : 0.4);
+      me.hp = me.maxHp * (st.n === 0 ? 0.6 : 0.3);
       st.n++;
       me.poison = 0;
       me.burnT = 0;
@@ -887,19 +892,19 @@ export const SKILLS = [
     id: 'fortress',
     icon: '🏰',
     name: '要塞',
-    desc: '受けるダメージ -25%・8秒ごとに25ダメージを防ぐバリアを張り直す',
+    desc: '受けるダメージ -10%・15秒ごとに10ダメージを防ぐバリアを張り直す',
     rarity: 'fusion',
     needs: ['armor', 'barrier'],
-    apply: (w, me, st) => ((st.left = 25), (me.barrier = (me.barrier || 0) + 25)),
+    apply: (w, me, st) => ((st.left = 10), (me.barrier = (me.barrier || 0) + 10)),
     update(world, me, foe, dt, st) {
       st.t = (st.t || 0) + dt;
-      if (st.t < 8) return;
+      if (st.t < 15) return;
       st.t = 0;
-      me.barrier = (me.barrier || 0) + (25 - st.left);
-      st.left = 25;
+      me.barrier = (me.barrier || 0) + (10 - st.left);
+      st.left = 10;
     },
     incoming(world, me, src, amount, opts, st) {
-      amount *= 0.75;
+      amount *= 0.9;
       if (st.left <= 0) return amount;
       const block = Math.min(st.left, amount);
       st.left -= block;
@@ -937,12 +942,12 @@ export const SKILLS = [
     id: 'demon',
     icon: '👹',
     name: '鬼神',
-    desc: '減ったHPが多いほど威力が大きく上がる(HP1%ごとに+2%)・受けたダメージの40%を返す',
+    desc: '減ったHPが多いほど威力が大きく上がる(HP1%ごとに+1.5%)・受けたダメージの30%を返す',
     rarity: 'fusion',
     needs: ['rage', 'reflect'],
-    outgoing: (world, me, target, amount) => amount * (1 + 2 * Math.max(0, 1 - me.hp / me.maxHp)),
+    outgoing: (world, me, target, amount) => amount * (1 + 1.5 * Math.max(0, 1 - me.hp / me.maxHp)),
     incoming(world, me, src, amount, opts) {
-      if (src && src !== me && opts.kind !== 'reflect' && opts.kind !== 'skill') dealDamage(world, me, src, amount * 0.4, { kind: 'reflect' });
+      if (src && src !== me && opts.kind !== 'reflect' && opts.kind !== 'skill') dealDamage(world, me, src, amount * 0.3, { kind: 'reflect' });
       return amount;
     },
   },
@@ -978,7 +983,7 @@ export const SKILLS = [
     id: 'ninja',
     icon: '🥷',
     name: '忍',
-    desc: '大きさ -30%・素早さ +25%・攻撃速度 +15%・30%でよける',
+    desc: '大きさ -30%・素早さ +25%・攻撃速度 +15%・22%でよける',
     rarity: 'fusion',
     needs: ['small', 'haste'],
     apply(world, me) {
@@ -986,7 +991,7 @@ export const SKILLS = [
       me.speedMul *= 1.25;
       me.haste *= 1.15;
     },
-    incoming: dodge(0.3),
+    incoming: dodge(0.22),
   },
   {
     id: 'timeKing',
@@ -1025,7 +1030,7 @@ export const SKILLS = [
     id: 'sunGod',
     icon: '🔆',
     name: '太陽神',
-    desc: '広い範囲の相手が毎秒5ダメージを受けて激しく燃える',
+    desc: '広い範囲の相手が毎秒4ダメージを受けて激しく燃える',
     rarity: 'fusion',
     needs: ['sun', 'burnEdge'],
     update(world, me, foe, dt, st) {
@@ -1033,7 +1038,7 @@ export const SKILLS = [
       if (st.t < 0.5) return;
       st.t -= 0.5;
       for (const o of enemiesNear(world, me, 170)) {
-        skillDamage(world, me, o, 2.5);
+        skillDamage(world, me, o, 2);
         o.burnT = Math.max(o.burnT, 1.5);
         o.burnDps = Math.max(o.burnDps, 2);
         o.burnSrc = me.id;
@@ -1080,39 +1085,39 @@ export const SKILLS = [
     id: 'dragonKing',
     icon: '🐲',
     name: '竜王',
-    desc: '1.8秒ごとに火の玉を7発(各3.5ダメージ+やけど)・威力 +15%',
+    desc: '2.2秒ごとに火の玉を5発(各3ダメージ+やけど)・威力 +15%',
     rarity: 'fusion',
     needs: ['dragon', 'power'],
     apply: (w, me) => (me.power *= 1.15),
     update(world, me, foe, dt, st) {
       st.t = (st.t ?? 1) - dt;
       if (st.t > 0) return;
-      st.t = 1.8;
-      breath(world, me, foe, 7, 3.5);
+      st.t = 2.2;
+      breath(world, me, foe, 5, 3);
     },
   },
   {
     id: 'miracle',
     icon: '🌠',
     name: '奇跡',
-    desc: '20%でよける・25%でダメージ2.5倍・7秒ごとに1.5秒無敵',
+    desc: '15%でよける・25%でダメージ2倍・8秒ごとに1.2秒無敵',
     rarity: 'fusion',
     needs: ['lucky', 'starGuard'],
     update(world, me, foe, dt, st) {
       st.t = (st.t ?? 2) - dt;
       if (st.t > 0) return;
-      st.t = 7;
-      st.until = world.t + 1.5;
+      st.t = 8;
+      st.until = world.t + 1.2;
       world.events.push({ type: 'block', x: me.x, y: me.y });
     },
     outgoing(world, me, target, amount, opts) {
       if (!isWeaponHit(opts) || world.rng() >= 0.25) return amount;
       world.events.push({ type: 'crit', x: target.x, y: target.y });
-      return amount * 2.5;
+      return amount * 2;
     },
     incoming(world, me, src, amount, opts, st) {
       if ((st.until || 0) > world.t) return 0;
-      return dodge(0.2)(world, me, src, amount, opts);
+      return dodge(0.15)(world, me, src, amount, opts);
     },
   },
 
@@ -1122,9 +1127,9 @@ export const SKILLS = [
     id: 'fastStart',
     icon: '🏁',
     name: '先手必勝',
-    desc: '試合の最初の15秒、与えるダメージ +90%',
+    desc: '試合の最初の20秒、与えるダメージ +100%',
     rarity: 'common',
-    outgoing: (world, me, target, amount) => (world.t < 15 ? amount * 1.9 : amount),
+    outgoing: (world, me, target, amount) => (world.t < 20 ? amount * 2 : amount),
   },
   {
     id: 'cleanse',
@@ -1223,7 +1228,7 @@ export const SKILLS = [
     id: 'combo',
     icon: '🥊',
     name: '連撃',
-    desc: '1.4秒以内に続けて当てるとコンボ。1コンボごとにダメージ +10%(最大+100%)。攻撃を受けるとリセット。攻撃速度 +10%',
+    desc: '1.4秒以内に続けて当てるとコンボ。1コンボごとにダメージ +12%(最大+120%)。攻撃速度 +10%',
     rarity: 'rare',
     apply: (w, me) => (me.haste *= 1.1),
     onHit(world, me, foe, info, st) {
@@ -1233,22 +1238,19 @@ export const SKILLS = [
     },
     outgoing(world, me, target, amount, opts, st) {
       if (!isWeaponHit(opts) || world.t - (st.last ?? -9) >= 1.4) return amount;
-      return amount * (1 + 0.1 * (st.n || 0));
+      return amount * (1 + 0.12 * (st.n || 0));
     },
-    incoming(world, me, src, amount, opts, st) {
-      if (isWeaponHit(opts)) st.n = 0;
-      return amount;
-    },
+
   },
   {
     id: 'mastery',
     icon: '🎓',
     name: '武器の名人',
-    desc: '近接武器: 刃が20%長く・30%太くなる / 飛び道具: 弾の当たり判定が50%大きくなる。どちらも威力 +8%',
+    desc: '近接武器: 刃が20%長く・30%太くなる / 飛び道具: 弾の当たり判定が50%大きくなる。どちらも威力 +12%',
     rarity: 'rare',
     kinds: { far: '弾の当たり判定が50%大きくなる', near: '刃が20%長く・30%太くなる' },
     apply(world, me) {
-      me.power *= 1.08;
+      me.power *= 1.12;
       if (me.def.kind === 'ranged') {
         me.shotScale = (me.shotScale || 1) * 1.5;
         return;
@@ -1264,15 +1266,15 @@ export const SKILLS = [
     id: 'landing',
     icon: '💢',
     name: '着地の衝撃',
-    desc: '勢いよく床に着地すると、まわりの相手に衝撃(3ダメージ・1秒に1回まで)',
+    desc: '勢いよく床に着地すると、まわりの相手に衝撃(7ダメージ・1秒に1回まで)',
     rarity: 'rare',
     update(world, me, foe, dt, st) {
       const onFloor = me.y >= ARENA - me.r - 3;
-      if (onFloor && (st.vy || 0) > 350 && (st.cd || 0) <= world.t) {
+      if (onFloor && (st.vy || 0) > 250 && (st.cd || 0) <= world.t) {
         st.cd = world.t + 1;
-        world.events.push({ type: 'shock', x: me.x, y: ARENA - 6, r: 140, color: '#a07a50' });
-        for (const o of enemiesNear(world, me, 140)) {
-          skillDamage(world, me, o, 3);
+        world.events.push({ type: 'shock', x: me.x, y: ARENA - 6, r: 160, color: '#a07a50' });
+        for (const o of enemiesNear(world, me, 160)) {
+          skillDamage(world, me, o, 7);
           o.vy -= 300 * (o.knockMul ?? 1);
         }
       }
@@ -1283,8 +1285,9 @@ export const SKILLS = [
     id: 'underdog',
     icon: '🐺',
     name: '下剋上',
-    desc: 'HPの割合で相手に負けているとき、当てるともう1回成長する',
+    desc: 'HPの割合で相手に負けているとき、当てるともう1回成長し、ダメージ +15%',
     rarity: 'rare',
+    outgoing: (world, me, target, amount) => (me.hp / me.maxHp < target.hp / target.maxHp ? amount * 1.15 : amount),
     onHit(world, me, foe, info) {
       if (me.def.onHit && me.hp / me.maxHp < foe.hp / foe.maxHp) me.def.onHit(world, me, foe, info);
     },
@@ -1293,9 +1296,9 @@ export const SKILLS = [
     id: 'scout',
     icon: '🔍',
     name: '目利き',
-    desc: 'これから先のカード選びで、出てくるカードが1枚ふえる(重ねがけは2枚まで)・威力 +15%',
+    desc: 'これから先のカード選びで、出てくるカードが1枚ふえる(重ねがけは2枚まで)・威力 +20%',
     rarity: 'rare',
-    apply: (w, me) => (me.power *= 1.15),
+    apply: (w, me) => (me.power *= 1.2),
   },
 
   // ---- エピック ----
@@ -1303,28 +1306,28 @@ export const SKILLS = [
     id: 'focus',
     icon: '🧘',
     name: '集中',
-    desc: '2秒間攻撃を受けなかったら、次に当てた攻撃が4.5倍',
+    desc: '2秒間攻撃を受けなかったら、次に当てた攻撃が5倍・受けるダメージ -10%',
     rarity: 'epic',
     incoming(world, me, src, amount, opts, st) {
       if (isWeaponHit(opts) && amount > 0) st.calm = world.t;
-      return amount;
+      return amount * 0.9;
     },
     outgoing(world, me, target, amount, opts, st) {
       if (!isWeaponHit(opts) || world.t - Math.max(st.calm ?? 0, st.used ?? 0) < 2) return amount;
       st.used = world.t;
       world.events.push({ type: 'crit', x: target.x, y: target.y });
-      return amount * 4.5;
+      return amount * 5;
     },
   },
   {
     id: 'pierce',
     icon: '🏹',
     name: '貫通',
-    desc: '飛び道具: 弾が相手の刃で防がれない / 近接: 刃がはじかれない。どちらも威力 +25%',
+    desc: '飛び道具: 弾が相手の刃で防がれない / 近接: 刃がはじかれない。どちらも威力 +30%',
     rarity: 'rare',
     kinds: { far: '弾が相手の刃で防がれない', near: '刃がはじかれない' },
     apply(world, me) {
-      me.power *= 1.25;
+      me.power *= 1.3;
       if (me.def.kind === 'ranged') me.pierce = true;
       else for (const bl of me.blades) bl.parry = false;
     },
@@ -1333,10 +1336,10 @@ export const SKILLS = [
     id: 'mirrorShield',
     icon: '🔰',
     name: '鏡の盾',
-    desc: '飛んできた弾を30%ではね返す(自分はダメージを受けない)・受けるダメージ -10%',
+    desc: '飛んできた弾を35%ではね返す(自分はダメージを受けない)・受けるダメージ -15%',
     rarity: 'epic',
     incoming(world, me, src, amount, opts) {
-      if (!opts.projectile || !src || src === me || world.rng() >= 0.3) return amount * 0.9;
+      if (!opts.projectile || !src || src === me || world.rng() >= 0.35) return amount * 0.85;
       world.events.push({ type: 'block', x: me.x, y: me.y });
       const a = Math.atan2(src.y - me.y, src.x - me.x);
       skillShot(world, me, src, a, 560, Math.min(8, amount), 'skillbolt', {
@@ -1363,9 +1366,9 @@ export const SKILLS = [
     id: 'luckyDraw',
     icon: '🎴',
     name: '天運',
-    desc: 'これから先のカード選びで、エピック・レジェンドが出やすくなる・攻撃速度 +15%',
+    desc: 'これから先のカード選びで、エピック・レジェンドが出やすくなる・攻撃速度 +22%',
     rarity: 'epic',
-    apply: (w, me) => (me.haste *= 1.15),
+    apply: (w, me) => (me.haste *= 1.22),
   },
 
   // ---- レジェンド ----
@@ -1419,7 +1422,7 @@ export const SKILLS = [
     id: 'ranbu',
     icon: '💫',
     name: '乱舞',
-    desc: 'コンボ1つごとにダメージ +12%(最大+150%)・武器の攻撃が35%でもう1回当たる',
+    desc: 'コンボ1つごとにダメージ +18%(最大+234%)・武器の攻撃が45%でもう1回当たる',
     rarity: 'fusion',
     needs: ['combo', 'double'],
     onHit(world, me, foe, info, st) {
@@ -1429,10 +1432,10 @@ export const SKILLS = [
     },
     outgoing(world, me, target, amount, opts, st) {
       if (!isWeaponHit(opts) || world.t - (st.last ?? -9) >= 1.4) return amount;
-      return amount * (1 + 0.12 * (st.n || 0));
+      return amount * (1 + 0.18 * (st.n || 0));
     },
     afterDeal(world, me, target, amount, opts, st) {
-      if (!isWeaponHit(opts) || (st.cd || 0) > world.t || world.rng() >= 0.35) return;
+      if (!isWeaponHit(opts) || (st.cd || 0) > world.t || world.rng() >= 0.45) return;
       st.cd = world.t + 0.25;
       skillDamage(world, me, target, amount * 0.8);
     },
@@ -1441,11 +1444,12 @@ export const SKILLS = [
     id: 'marksman',
     icon: '🦅',
     name: '狙撃手',
-    desc: '弾が防がれない・離れた相手へのダメージ +80%(近接なら刃がはじかれず +35%)',
+    desc: '弾が防がれない・離れた相手へのダメージ +80%(近接なら刃がはじかれず +35%)。どちらも威力 +15%',
     rarity: 'fusion',
     kinds: { far: '弾が防がれない・離れた相手に +80%', near: '刃がはじかれず、ダメージ +35%' },
     needs: ['pierce', 'sniper'],
     apply(world, me) {
+      me.power *= 1.15;
       if (me.def.kind === 'ranged') me.pierce = true;
       else for (const bl of me.blades) bl.parry = false;
     },
@@ -1497,18 +1501,18 @@ export const SKILLS = [
     id: 'earthRage',
     icon: '🪨',
     name: '大地の怒り',
-    desc: '着地するたびに大きな地震(まわりの相手に8ダメージ)・吹き飛ばされにくい(-70%)',
+    desc: '着地するたびに大きな地震(まわりの相手に10ダメージ)・吹き飛ばされにくい(-70%)',
     rarity: 'fusion',
     needs: ['landing', 'heavy'],
     apply: (w, me) => (me.knockMul = (me.knockMul ?? 1) * 0.3),
     update(world, me, foe, dt, st) {
       const onFloor = me.y >= ARENA - me.r - 3;
-      if (onFloor && (st.vy || 0) > 250 && (st.cd || 0) <= world.t) {
+      if (onFloor && (st.vy || 0) > 200 && (st.cd || 0) <= world.t) {
         st.cd = world.t + 0.8;
         world.events.push({ type: 'quake', x: me.x, y: ARENA - 4 });
         world.events.push({ type: 'shock', x: me.x, y: ARENA - 6, r: 190, color: '#a07a50' });
         for (const o of enemiesNear(world, me, 210)) {
-          skillDamage(world, me, o, 8);
+          skillDamage(world, me, o, 10);
           o.vy -= 420 * (o.knockMul ?? 1);
           o.stun = Math.max(o.stun, 0.2);
         }
@@ -1562,10 +1566,10 @@ export const SKILLS = [
     id: 'fortune',
     icon: '💎',
     name: '強運',
-    desc: 'これから先のカード選びで、カードが2枚ふえてレジェンドがとても出やすくなる・威力 +30%',
+    desc: 'これから先のカード選びで、カードが2枚ふえてレジェンドがとても出やすくなる・威力 +40%',
     rarity: 'fusion',
     needs: ['scout', 'luckyDraw'],
-    apply: (w, me) => (me.power *= 1.3),
+    apply: (w, me) => (me.power *= 1.4),
   },
   {
     id: 'lateKing',
@@ -1622,16 +1626,16 @@ export const SKILLS = [
     id: 'aLight',
     icon: '✨',
     name: '光の覚醒',
-    desc: '2.5秒ごとに光の衝撃波(まわりの相手全員に5ダメージ)',
+    desc: '2秒ごとに光の衝撃波(まわりの相手全員に6ダメージ)',
     rarity: 'awaken',
     apply: (w, me) => awaken(me),
     update(world, me, foe, dt, st) {
       st.t = (st.t ?? 1.5) - dt;
       if (st.t > 0) return;
-      st.t = 2.5;
+      st.t = 2;
       world.events.push({ type: 'shock', x: me.x, y: me.y, r: 190, color: '#ffe066' });
       for (const o of enemiesNear(world, me, 190)) {
-        skillDamage(world, me, o, 5);
+        skillDamage(world, me, o, 6);
         knockback(me, o, 260);
       }
     },
@@ -1731,12 +1735,12 @@ export const SKILLS = [
     id: 'shackles',
     icon: '⛓️',
     name: '重い枷',
-    desc: '威力 +40%・最大HP +60 / 素早さ -25%',
+    desc: '威力 +30%・最大HP +45 / 素早さ -25%',
     rarity: 'cursed',
     apply(world, me) {
-      me.power *= 1.4;
-      me.maxHp += 60;
-      me.hp += 60;
+      me.power *= 1.3;
+      me.maxHp += 45;
+      me.hp += 45;
       me.speedMul *= 0.75;
     },
   },
@@ -1744,9 +1748,9 @@ export const SKILLS = [
     id: 'glass',
     icon: '🥂',
     name: 'ガラスの大砲',
-    desc: '威力 2倍 / 受けるダメージ 1.5倍',
+    desc: '威力 2.3倍 / 受けるダメージ 1.5倍',
     rarity: 'cursed',
-    apply: (w, me) => (me.power *= 2),
+    apply: (w, me) => (me.power *= 2.3),
     incoming: (w, me, src, amount) => amount * 1.5,
   },
   {

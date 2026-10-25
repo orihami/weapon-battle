@@ -81,12 +81,14 @@ function strike(world, me, x, y, delay, chain, big = true) {
     life: delay,
     wall: 'stop',
     blockable: false,
-    onExpire(world, p, owner, foe) {
+    onExpire(world, p, owner) {
       world.events.push({ type: 'zap', x: p.x, y: p.y, big });
-      if (Math.hypot(foe.x - p.x, foe.y - p.y) < p.r + foe.r) {
+      // 落ちた所にいる相手全員に当たる(3人以上の試合で、ねらった相手以外にも)
+      for (const foe of world.balls) {
+        if (foe === owner || foe.dead || Math.hypot(foe.x - p.x, foe.y - p.y) >= p.r + foe.r) continue;
         landHit(world, owner, foe, big ? 4 : 2, { kind: 'zap', x: foe.x, y: foe.y });
-        foe.stun = Math.max(foe.stun, 0.2);
-        knockback(p, foe, 180);
+        foe.stun = Math.max(foe.stun, 0.08);
+        knockback(p, foe, 150);
         if (chain > 0) strike(world, owner, foe.x + foe.vx * 0.15, foe.y + foe.vy * 0.15, 0.16, chain - 1, false);
       }
     },
@@ -460,7 +462,8 @@ export const WEAPONS = [
     grow: '当たるたびに 回復量 +1(当てると回復)',
     stats: (b) => [['吸収/回復', fmt(b.w.heal)]],
     onHit(world, me) {
-      heal(world, me, me.w.heal);
+      // 3人以上の試合では何人にも当てて回復しすぎるので半分
+      heal(world, me, me.w.heal * (world.balls.length > 2 ? 0.5 : 1));
       me.w.heal += 1;
     },
   },
@@ -922,7 +925,7 @@ export const WEAPONS = [
       });
     },
     onHit(world, me) {
-      me.w.dmg += 1.2;
+      me.w.dmg += 1.5;
     },
   },
   {
@@ -1245,12 +1248,12 @@ export const WEAPONS = [
     name: '雷',
     en: 'Lightning',
     color: '#4f8ef0',
-    grow: '当たるたびに 落ちる雷 +1・連鎖 +0.25(当たった雷は相手を追ってもう一度落ちる)',
+    grow: '2回当たるたびに 落ちる雷 +1・連鎖 +0.25(当たった雷は相手を追ってもう一度落ちる)',
     init(b) {
       b.w = { n: 1, chain: 0.5, timer: 0.6 };
     },
     stats: (b) => [
-      ['雷', fmt(shown(b, 'n'))],
+      ['雷', fmt(Math.floor(shown(b, 'n')))],
       ['連鎖', fmt(Math.floor(shown(b, 'chain')))],
     ],
     update(world, me, foe, dt) {
@@ -1258,7 +1261,7 @@ export const WEAPONS = [
       me.w.timer -= dt;
       if (me.w.timer > 0) return;
       me.w.timer = 2.0;
-      for (let i = 0; i < me.w.n; i++) {
+      for (let i = 0; i < Math.floor(me.w.n); i++) {
         // 予告の円が出てから落ちる。相手が動いた先を少し読む
         const lead = 0.25 + world.rng() * 0.2;
         strike(
@@ -1272,7 +1275,7 @@ export const WEAPONS = [
       }
     },
     onHit(world, me) {
-      growStat(me, 'n', 1, 12, 0.5);
+      growStat(me, 'n', 0.5, 12, 0.5);
       growStat(me, 'chain', 0.25, 6, 0.5);
     },
   },
@@ -4160,6 +4163,203 @@ function grow(me) {
   growStat(me, 'width', 0.25, 7);
   me.w.reflect += 1;
   me.blades[0].w = me.w.width * 14;
+}
+
+// バランス調整: 武器ごとの与ダメージの倍率。総当たり(1組20試合)の勝率が50%に近づくように決めた。
+// 成長のしかたは変えずに強さだけ合わせるためのもの。ここにない武器は1
+export const TUNE = {
+  spear: 1.09,
+  axe: 1.09,
+  katana: 1.05,
+  scythe: 1.04,
+  whip: 1.05,
+  orbital: 0.94,
+  flail: 1.12,
+  bomb: 0.89,
+  crossbow: 0.91,
+  bow: 0.96,
+  potion: 1.16,
+  ice: 1.27,
+  boomerang: 1.22,
+  unarmed: 1.04,
+  spike: 1.10,
+  cluster: 1.16,
+  mine: 0.88,
+  meteor: 0.68,
+  missile: 0.96,
+  shuriken: 0.84,
+  bees: 0.79,
+  gatling: 0.91,
+  flame: 0.95,
+  gas: 1.10,
+  dual: 0.89,
+  dual: 0.89,
+  blackhole: 1.05,
+  fireworks: 1.09,
+  laser: 0.93,
+  slime: 1.40,
+  tornado: 1.04,
+  yoyo: 0.86,
+  bats: 0.72,
+  ricochet: 0.94,
+  greatsword: 0.86,
+  rocket: 1.18,
+  sonic: 1.17,
+  snowball: 1.18,
+  clone: 0.92,
+  curse: 1.08,
+  blizzard: 1.15,
+  hook: 1.06,
+  snake: 0.86,
+  squeaky: 0.89,
+  dice: 0.91,
+  javelin: 0.84,
+  drill: 0.93,
+  spellbook: 0.96,
+  kusarigama: 1.09,
+  sticky: 1.04,
+  web: 0.91,
+  clock: 1.05,
+  vine: 0.94,
+  revolver: 0.81,
+  counter: 0.86,
+  saber: 0.92,
+  drones: 0.96,
+  quake: 1.26,
+  magnet: 1.10,
+  star: 1.14,
+  axethrow: 1.05,
+  danmaku: 1.07,
+  wrecking: 0.81,
+  storm: 0.81,
+  giant: 1.02,
+  vampire: 0.92,
+  spirit: 0.77,
+  lava: 0.93,
+  gears: 1.43,
+  kamaitachi: 1.15,
+  bumper: 0.80,
+  prism: 1.14,
+  ghost: 1.26,
+  pinball: 0.88,
+  splitter: 1.23,
+  frog: 1.18,
+  balloon: 1.26,
+  cards: 0.80,
+  skeleton: 1.39,
+  firecracker: 1.05,
+  urchin: 1.09,
+  plasma: 1.15,
+  chakram: 1.06,
+  butterfly: 1.25,
+};
+
+// 3人以上の試合だけで掛ける倍率。4人バトルロイヤルの1位率が25%に近づくように決めた
+export const TUNE_FFA = {
+  sword: 0.75,
+  dagger: 0.65,
+  spear: 0.59,
+  axe: 0.58,
+  hammer: 0.83,
+  katana: 0.85,
+  scythe: 1.07,
+  whip: 0.63,
+  trident: 0.65,
+  scepter: 0.56,
+  lance: 0.52,
+  shield: 2.20,
+  orb: 1.04,
+  orbital: 0.91,
+  flail: 0.86,
+  bomb: 1.22,
+  crossbow: 1.29,
+  bow: 1.17,
+  potion: 1.29,
+  wand: 1.57,
+  ice: 1.30,
+  boomerang: 1.69,
+  unarmed: 1.52,
+  spike: 0.94,
+  cluster: 1.29,
+  mine: 1.05,
+  meteor: 0.54,
+  missile: 0.64,
+  shuriken: 0.85,
+  bees: 2.20,
+  gatling: 1.44,
+  lightning: 1.68,
+  saw: 0.80,
+  flame: 0.93,
+  gas: 0.97,
+  dual: 0.50,
+  dual: 0.50,
+  blackhole: 1.43,
+  fireworks: 0.98,
+  laser: 2.04,
+  slime: 1.11,
+  tornado: 1.25,
+  yoyo: 1.50,
+  bats: 0.91,
+  ricochet: 1.12,
+  greatsword: 0.60,
+  rocket: 1.25,
+  sonic: 1.25,
+  snowball: 0.85,
+  clone: 0.90,
+  curse: 1.38,
+  blizzard: 0.90,
+  hook: 1.58,
+  snake: 1.67,
+  knives: 0.91,
+  squeaky: 0.77,
+  dice: 1.23,
+  javelin: 1.20,
+  drill: 0.56,
+  spellbook: 2.13,
+  kusarigama: 0.53,
+  mirror: 0.77,
+  sticky: 1.07,
+  vine: 1.84,
+  revolver: 1.29,
+  shark: 1.15,
+  counter: 1.41,
+  gravity: 1.06,
+  saber: 0.71,
+  drones: 1.15,
+  quake: 1.68,
+  phoenix: 0.87,
+  magnet: 0.90,
+  star: 0.77,
+  axethrow: 1.11,
+  danmaku: 0.50,
+  wrecking: 1.93,
+  storm: 0.58,
+  giant: 1.23,
+  vampire: 0.54,
+  spirit: 1.89,
+  lava: 1.77,
+  gears: 0.76,
+  kamaitachi: 0.75,
+  bumper: 0.80,
+  prism: 1.59,
+  ghost: 0.91,
+  sakura: 0.74,
+  pinball: 0.95,
+  splitter: 1.46,
+  frog: 0.72,
+  balloon: 0.96,
+  cards: 0.77,
+  skeleton: 1.02,
+  firecracker: 1.43,
+  urchin: 0.50,
+  plasma: 0.76,
+  chakram: 1.69,
+  butterfly: 0.88,
+};
+
+for (const w of WEAPONS) {
+  w.tune = TUNE[w.id] ?? 1;
+  w.tuneFfa = TUNE_FFA[w.id] ?? 1;
 }
 
 export const WEAPON_BY_ID = Object.fromEntries(WEAPONS.map((w) => [w.id, w]));
