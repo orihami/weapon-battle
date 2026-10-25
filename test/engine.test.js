@@ -311,6 +311,36 @@ test('第3弾のスキル: カード選びが良くなる・重い体・貫通�
   assert.equal(foe.poison, 0, '成長の種で相手に毒が付いた');
 });
 
+test('新武器: 入れかえは場所が入れかわる・金床は落ちてくる・投げ縄は捕まえて投げる', () => {
+  // 入れかえ: 撃つ瞬間に自分と相手の場所が入れかわる
+  const w1 = createBattle(W.swap, W.sword, 1);
+  const [me, foe] = w1.balls;
+  me.w.timer = 0;
+  const before = [me.x, me.y, foe.x, foe.y];
+  W.swap.update(w1, me, foe, 1 / 120);
+  assert.deepEqual([foe.x, foe.y, me.x, me.y], before);
+  assert.ok(w1.projectiles.some((p) => p.kind === 'swapbomb'));
+  // 金床: 影の予告のあと、天井近くに金床が出て(すぐ消えずに)落ちる
+  const w2 = createBattle(W.anvil, W.sword, 1);
+  for (let i = 0; i < 120 * 2; i++) step(w2);
+  let anvilSeen = false;
+  for (let i = 0; i < 120 * 4 && !anvilSeen; i++) {
+    step(w2);
+    anvilSeen = w2.projectiles.some((p) => p.kind === 'anvil' && p.age > 0.05);
+  }
+  assert.ok(anvilSeen, '金床が出てすぐ消えている');
+  // 投げ縄: 当てると捕まえて振り回し、放り投げる
+  const w3 = createBattle(W.lasso, W.sword, 1);
+  let caught = false;
+  let thrown = false;
+  for (let i = 0; i < 120 * 20 && !w3.over && !thrown; i++) {
+    step(w3);
+    if (w3.balls[0].w.caught) caught = true;
+    else if (caught) thrown = w3.balls[1].slamT > 0;
+  }
+  assert.ok(caught && thrown, '投げ縄で捕まえて投げていない');
+});
+
 test('スキル: 全スキルを重ねがけしても決着し、数値が壊れない', async () => {
   const { SKILLS } = await import('../src/skills.js');
   let seed = 1;

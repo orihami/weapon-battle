@@ -115,6 +115,22 @@ function sawShape(ctx, r) {
 }
 
 const BLADE_SPRITES = {
+  rewind(ctx, b) {
+    // 時計の針と目盛り
+    rect(ctx, b.rIn, -3, b.rOut - b.rIn, 6, '#6aa0c8');
+    poly(ctx, [[b.rOut - 4, -8], [b.rOut + 10, 0], [b.rOut - 4, 8]], '#2f5d80');
+  },
+  chainsaw(ctx, b, t) {
+    rect(ctx, b.rIn, -6, 16, 12, '#e0a21b');
+    rect(ctx, b.rIn + 16, -5, b.rOut - b.rIn - 16, 10, '#c9d1da');
+    // 動く刃
+    ctx.fillStyle = '#4a4f57';
+    const off = (t * 120) % 8;
+    for (let x = b.rIn + 18 + off; x < b.rOut - 2; x += 8) {
+      ctx.fillRect(x, -7, 3, 2);
+      ctx.fillRect(x, 5, 3, 2);
+    }
+  },
   tongue(ctx, b) {
     // カエルの舌: 根元から先まで伸びるピンクの帯
     const len = b.rOut - b.rIn;
@@ -315,6 +331,73 @@ const BLADE_SPRITES = {
 
 // 遠距離武器などの「手に持っている物」
 const HELD = {
+  cannon(ctx) {
+    rect(ctx, -6, -9, 26, 18, '#3a3f47');
+    rect(ctx, 18, -11, 6, 22, '#2a2e34');
+  },
+  charger(ctx) {
+    // 角
+    poly(ctx, [[-6, -10], [12, -18], [4, -6]], '#f4ead2');
+    poly(ctx, [[-6, 10], [12, 18], [4, 6]], '#f4ead2');
+  },
+  lasso(ctx, ball) {
+    if (ball.w.caught) return;
+    ctx.beginPath();
+    ctx.ellipse(8, 0, 10, 7, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = '#c2924f';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  },
+  timebomb(ctx, ball) {
+    if (ball.w.active) return;
+    circle(ctx, 4, 0, 9, '#2b2b2b');
+    rect(ctx, -2, -4, 12, 8, '#d63b3b');
+  },
+  spring(ctx) {
+    // 体の下のばね
+    ctx.save();
+    ctx.strokeStyle = '#9aa3ad';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let i = 0; i <= 6; i++) ctx.lineTo(-14 + i * 4, i % 2 ? -7 : 7);
+    ctx.stroke();
+    ctx.restore();
+  },
+  swap(ctx, ball, t) {
+    ctx.rotate(t * 3);
+    for (const a of [0, Math.PI]) {
+      ctx.save();
+      ctx.rotate(a);
+      poly(ctx, [[2, -9], [11, -3], [2, 3]], '#e07ad1');
+      ctx.restore();
+    }
+  },
+  tesla(ctx) {
+    rect(ctx, -3, -10, 6, 20, '#5b6470');
+    circle(ctx, 0, -11, 4, '#7fe0ff');
+  },
+  sniperRifle(ctx) {
+    rect(ctx, -8, -3, 34, 6, '#3d4a26');
+    rect(ctx, 0, -8, 10, 5, '#222');
+  },
+  anvil(ctx) {
+    poly(ctx, [[-10, -6], [12, -6], [8, 0], [4, 0], [6, 6], [-6, 6], [-4, 0], [-8, 0]], '#5b6470');
+  },
+  rocketFist(ctx, ball) {
+    if (ball.w.out) return;
+    circle(ctx, 6, 0, 9, '#d94a3a');
+    rect(ctx, -6, -5, 8, 10, '#8a8f99');
+  },
+  drum(ctx, ball) {
+    const k = Math.max(0, ball.w.timer) < 0.08 ? 1.2 : 1;
+    ctx.scale(k, k);
+    rect(ctx, -9, -8, 18, 16, '#c0392b');
+    rect(ctx, -10, -9, 20, 4, '#f4ead2');
+  },
+  bowling(ctx) {
+    circle(ctx, 4, 0, 10, '#2e4a7d');
+    for (const [x, y] of [[1, -3], [6, -4], [4, 1]]) circle(ctx, x, y, 1.6, '#0e1a33', false);
+  },
   frog(ctx) {
     // 体の前に出っぱった目
     circle(ctx, -10, -8, 6, '#ffffff');
@@ -753,6 +836,74 @@ const HELD = {
 };
 
 const PROJ = {
+  cannonball(ctx, p) {
+    circle(ctx, 0, 0, p.r, '#3a3f47');
+    circle(ctx, -p.r * 0.35, -p.r * 0.35, p.r * 0.25, '#8a8f99', false);
+  },
+  loop(ctx, p) {
+    ctx.beginPath();
+    ctx.ellipse(0, 0, p.r, p.r * 0.7, p.age * 10, 0, Math.PI * 2);
+    ctx.strokeStyle = '#c2924f';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+  },
+  timebomb(ctx, p) {
+    circle(ctx, 0, 0, p.r + 2, '#2b2b2b');
+    rect(ctx, -p.r, -3, p.r * 2, 6, '#d63b3b');
+    if (p.on) {
+      // 残り時間(大きく点滅)
+      const left = Math.max(0, p.life - p.age);
+      ctx.fillStyle = Math.floor(left * 4) % 2 ? '#ff3030' : '#ffffff';
+      ctx.font = `22px ${NUM_FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 4;
+      ctx.strokeText(String(Math.ceil(left)), 0, -p.r - 14);
+      ctx.fillText(String(Math.ceil(left)), 0, -p.r - 14);
+    }
+  },
+  swapbomb(ctx, p) {
+    circle(ctx, 0, 0, p.r, '#e07ad1');
+    circle(ctx, 0, 0, p.r * 0.45, Math.floor(p.age * 10) % 2 ? '#ffffff' : '#ff3030', false);
+  },
+  post(ctx, p) {
+    rect(ctx, -4, -12, 8, 24, '#5b6470');
+    circle(ctx, 0, -13, 5, '#7fe0ff');
+  },
+  rifle(ctx, p) {
+    ctx.rotate(Math.atan2(p.vy, p.vx));
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    rect(ctx, -40, -1.5, 40, 3, '#ffd23f');
+    ctx.restore();
+    rect(ctx, -6, -2.5, 12, 5, '#f2c230');
+  },
+  anvilShadow(ctx, p) {
+    ctx.save();
+    ctx.globalAlpha = 0.25 + 0.3 * (p.age / p.life);
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, p.r * (0.6 + 0.4 * (p.age / p.life)), 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  },
+  anvil(ctx, p) {
+    poly(ctx, [[-22, -12], [24, -12], [16, 0], [8, 0], [12, 12], [-12, 12], [-8, 0], [-16, 0]], '#5b6470');
+  },
+  fist(ctx, p) {
+    ctx.rotate(p.angle);
+    rect(ctx, -16, -5, 10, 10, '#8a8f99');
+    circle(ctx, 2, 0, p.r, '#d94a3a');
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    circle(ctx, -22, 0, 5 + Math.random() * 3, '#ffb03a', false);
+    ctx.restore();
+  },
+  bowl(ctx, p) {
+    ctx.rotate(p.angle);
+    circle(ctx, 0, 0, p.r, '#2e4a7d');
+    for (const [x, y] of [[-0.2, -0.35], [0.2, -0.4], [0.05, -0.05]]) circle(ctx, x * p.r, y * p.r, p.r * 0.12, '#0e1a33', false);
+  },
   petal(ctx, p) {
     ctx.rotate(p.spin);
     ctx.beginPath();
@@ -1825,6 +1976,53 @@ export class Renderer {
       // 動画のドット絵のように太めに見せる(当たり判定の太さは変えない)
       ctx.scale(1, 1.5);
       fn(ctx, bl, t);
+      ctx.restore();
+    }
+    if (def.id === 'lasso' && b.w.caught) {
+      // 捕まえた相手へのロープ
+      ctx.save();
+      ctx.strokeStyle = '#c2924f';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y);
+      ctx.lineTo(b.w.caught.x, b.w.caught.y);
+      ctx.stroke();
+      ctx.restore();
+    } else if (def.id === 'tesla') {
+      // 柱どうしの電気(ジグザグ)
+      const posts = b.w.posts.filter((p) => !p.dead);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(80,200,255,0.9)';
+      ctx.lineWidth = 3;
+      for (let i = 0; i + 1 < posts.length; i++) {
+        const a = posts[i];
+        const c = posts[i + 1];
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y - 13);
+        for (let k = 1; k < 8; k++) {
+          const f = k / 8;
+          ctx.lineTo(a.x + (c.x - a.x) * f + (Math.random() - 0.5) * 10, a.y - 13 + (c.y - a.y) * f + (Math.random() - 0.5) * 10);
+        }
+        ctx.lineTo(c.x, c.y - 13);
+        ctx.stroke();
+      }
+      ctx.restore();
+    } else if (def.id === 'sniperRifle' && b.w.aiming) {
+      // ねらいの赤い線
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,40,40,0.55)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([10, 6]);
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y);
+      ctx.lineTo(b.x + Math.cos(b.angle) * 1400, b.y + Math.sin(b.angle) * 1400);
+      ctx.stroke();
+      ctx.restore();
+    } else if (def.id === 'shadow') {
+      // 影: うっすら黒いもや
+      ctx.save();
+      ctx.globalAlpha = 0.25;
+      circle(ctx, b.x - b.vx * 0.03, b.y - b.vy * 0.03, b.r + 6, '#3b2a5c', false);
       ctx.restore();
     }
     if (def.id === 'drones') {

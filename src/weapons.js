@@ -13,6 +13,7 @@ import {
   knockback,
   spawnProjectile,
   segPointDist,
+  bladeSegment,
 } from './engine.js';
 
 const TAU = Math.PI * 2;
@@ -4157,6 +4158,684 @@ export const WEAPONS = [
       growStat(me, 'n', 0.34, 6, 0.4);
     },
   },
+  // ---- 117種への追加分: 弾をばらまかず、1発の重さや動きそのもので戦う武器 ----
+  {
+    id: 'cannon',
+    kind: 'ranged',
+    name: '大砲',
+    en: 'Cannon',
+    color: '#4a4f57',
+    grow: '当たるたびに 砲弾のダメージ +1・大きさアップ(重い1発で吹き飛ばして壁ドン)',
+    init(b) {
+      b.w = { dmg: 6, size: 14, timer: 1 };
+    },
+    stats: (b) => [
+      ['ダメージ', fmt(b.w.dmg)],
+      ['大きさ', fmt(Math.round(shown(b, 'size')))],
+    ],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 2.6;
+      world.events.push({ type: 'shock', x: me.x + Math.cos(me.angle) * (me.r + 20), y: me.y + Math.sin(me.angle) * (me.r + 20), r: 40, color: '#9aa3ad' });
+      shoot(world, me, me.angle, 520, {
+        kind: 'cannonball',
+        r: me.w.size,
+        life: 3.5,
+        wall: 'bounce',
+        bounces: 2,
+        blockable: false,
+        damage: me.w.dmg,
+        onTouch(world, p, owner, o) {
+          p.dead = true;
+          world.events.push({ type: 'boom', x: p.x, y: p.y, radius: p.r + 20, kind: 'bomb' });
+          if (landHit(world, owner, o, p.damage, { kind: 'cannon', x: p.x, y: p.y }) > 0) {
+            knockback(p, o, 460);
+            o.slamT = 0.7;
+            o.slamBy = owner.id;
+          }
+        },
+      });
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'cannon') return;
+      me.w.dmg += 1;
+      growStat(me, 'size', 1, 30, 0.4);
+    },
+  },
+  {
+    id: 'charger',
+    kind: 'body',
+    name: '突進',
+    en: 'Charger',
+    color: '#b5562a',
+    grow: '突進が当たるたびに ダメージ +0.5・突進の速さアップ',
+    init(b) {
+      b.w = { dmg: 4, timer: 1.2, dash: 0, speed: 950, hit: false };
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)],
+      ['速さ', fmt(Math.round(shown(b, 'speed')))],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      if (w.dash > 0) {
+        w.dash -= dt;
+        me.angle = Math.atan2(me.vy, me.vx);
+        if (!w.hit && Math.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 6) {
+          w.hit = true;
+          w.dash = 0;
+          if (landHit(world, me, foe, w.dmg, { kind: 'charge', x: foe.x, y: foe.y }) > 0) {
+            knockback(me, foe, 520);
+            foe.slamT = 0.6;
+            foe.slamBy = me.id;
+          }
+        }
+        return;
+      }
+      me.angle = aimAt(me, foe);
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      // 相手めがけて一直線に突っこむ
+      w.timer = 1.7;
+      w.dash = 0.5;
+      w.hit = false;
+      me.vx = Math.cos(me.angle) * w.speed;
+      me.vy = Math.sin(me.angle) * w.speed;
+      world.events.push({ type: 'shock', x: me.x, y: me.y, r: 60, color: '#ffb07a' });
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'charge') return;
+      me.w.dmg += 0.5;
+      growStat(me, 'speed', 50, 1500, 0.5);
+    },
+  },
+  {
+    id: 'lasso',
+    kind: 'ranged',
+    name: '投げ縄',
+    en: 'Lasso',
+    color: '#c2924f',
+    grow: '捕まえるたびに 投げる勢いアップ(捕まえた相手を振り回して壁にたたきつける)',
+    init(b) {
+      b.w = { throw: 1050, timer: 1, hold: 0, spin: 0, caught: null };
+    },
+    stats: (b) => [['投げる勢い', fmt(Math.round(shown(b, 'throw')))]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      if (w.caught) {
+        const o = w.caught;
+        if (o.dead) {
+          w.caught = null;
+          return;
+        }
+        // 捕まえた相手を自分のまわりで振り回す
+        w.hold -= dt;
+        w.spin += dt * 11;
+        o.x = Math.max(o.r, Math.min(ARENA - o.r, me.x + Math.cos(w.spin) * 120));
+        o.y = Math.max(o.r, Math.min(ARENA - o.r, me.y + Math.sin(w.spin) * 120));
+        o.vx = o.vy = 0;
+        o.stun = Math.max(o.stun, 0.05);
+        me.angle = w.spin;
+        if (w.hold <= 0) {
+          // 回っている向きに放り投げる → 壁に当たると壁ドン
+          const sp = Math.min(w.throw, 1700);
+          o.vx = -Math.sin(w.spin) * sp;
+          o.vy = Math.cos(w.spin) * sp;
+          o.slamT = 1.2;
+          o.slamBy = me.id;
+          w.caught = null;
+          w.timer = 1.8;
+        }
+        return;
+      }
+      me.angle = aimAt(me, foe);
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 1.8;
+      shoot(world, me, me.angle, 600, {
+        kind: 'loop',
+        r: 16,
+        life: 1.1,
+        update: (world, p, owner, foe, dt) => homing(p, foe, 2, dt, 600),
+        onTouch(world, p, owner, o) {
+          p.dead = true;
+          if (owner.w.caught || landHit(world, owner, o, 1, { kind: 'lasso', x: p.x, y: p.y }) <= 0) return;
+          owner.w.caught = o;
+          owner.w.hold = 0.55;
+          owner.w.spin = Math.atan2(o.y - owner.y, o.x - owner.x);
+        },
+      });
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind === 'lasso') growStat(me, 'throw', 70, 1700, 0.6);
+    },
+  },
+  {
+    id: 'timebomb',
+    kind: 'ranged',
+    name: '時限爆弾',
+    en: 'Time Bomb',
+    color: '#d63b3b',
+    grow: '爆発が当たるたびに 爆発のダメージ +1.5(相手にくっつけて3秒後にドカン)',
+    init(b) {
+      b.w = { dmg: 10, timer: 0.8, active: false };
+    },
+    stats: (b) => [['爆発', fmt(b.w.dmg)]],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      if (me.w.active) return;
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 1;
+      me.w.active = true;
+      const done = (world, p, owner) => (owner.w.active = false);
+      shoot(world, me, me.angle, 640, {
+        kind: 'timebomb',
+        r: 9,
+        life: 1.4,
+        on: null,
+        fuse: 0,
+        update(world, p, owner, foe, dt) {
+          if (!p.on) return homing(p, foe, 2.5, dt, 640);
+          p.x = p.on.x + p.ox;
+          p.y = p.on.y + p.oy;
+          p.vx = p.vy = 0;
+          p.fuse = Math.max(0, p.life - p.age);
+        },
+        onTouch(world, p, owner, o) {
+          if (p.on) return;
+          p.on = o;
+          p.blockable = false;
+          p.wall = 'stop';
+          const a = Math.atan2(p.y - o.y, p.x - o.x);
+          p.ox = Math.cos(a) * o.r;
+          p.oy = Math.sin(a) * o.r;
+          p.life = p.age + 3;
+        },
+        onExpire(world, p, owner, foe) {
+          done(world, p, owner);
+          if (p.on) explode(world, p, owner, foe, 80, owner.w.dmg, 'timebomb');
+        },
+        onBlocked: done,
+      });
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind === 'timebomb') me.w.dmg += 1.5;
+    },
+  },
+  {
+    id: 'spring',
+    kind: 'body',
+    name: 'ばね',
+    en: 'Spring',
+    color: '#7cc242',
+    grow: '踏みつけが当たるたびに ダメージ +1(相手の上から急降下して踏みつける)',
+    init(b) {
+      b.w = { dmg: 8, cd: 0, diving: false };
+      setSpin(b, 0);
+    },
+    stats: (b) => [['踏みつけ', fmt(b.w.dmg)]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      me.angle = Math.PI / 2;
+      if (w.cd > 0) w.cd -= dt;
+      if (w.diving) {
+        if (Math.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 6 && me.y < foe.y) {
+          w.diving = false;
+          w.cd = 0.5;
+          if (landHit(world, me, foe, w.dmg, { kind: 'stomp', x: foe.x, y: foe.y - foe.r }) > 0) {
+            foe.stun = Math.max(foe.stun, 0.3);
+            foe.vy = Math.abs(foe.vy) + 400;
+            world.events.push({ type: 'shock', x: foe.x, y: foe.y - foe.r, r: 80, color: '#7cc242' });
+          }
+          me.vy = -1000; // ばねで高く跳ね上がる
+        } else if (me.y >= ARENA - me.r - 2 || me.vy < 0) {
+          w.diving = false;
+        }
+        return;
+      }
+      // 相手の真上あたりにいたら急降下
+      if (w.cd <= 0 && me.y < foe.y - 40 && Math.abs(foe.x - me.x) < 220) {
+        w.diving = true;
+        me.vy = 1150;
+        me.vx = (foe.x - me.x) * 2;
+      }
+      // 床で跳ねるときに、ばねで少し高く跳ぶ
+      if (me.y >= ARENA - me.r - 2 && me.vy < 0) me.vy -= 90;
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind === 'stomp') me.w.dmg += 1;
+    },
+  },
+  {
+    id: 'shadow',
+    kind: 'body',
+    name: '影',
+    en: 'Shadow',
+    color: '#3b2a5c',
+    grow: '不意打ちが当たるたびに ダメージ +0.6(ときどき相手の背後にワープして切りつける)',
+    init(b) {
+      b.w = { dmg: 3.5, timer: 1.5 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [['不意打ち', fmt(Math.round(b.w.dmg * 10) / 10)]],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 2.6;
+      // 相手が進んでいる向きの反対側(背後)にワープ
+      const sp = Math.hypot(foe.vx, foe.vy) || 1;
+      const d = foe.r + me.r + 8;
+      world.events.push({ type: 'shock', x: me.x, y: me.y, r: 50, color: '#3b2a5c' });
+      me.x = Math.max(me.r, Math.min(ARENA - me.r, foe.x - (foe.vx / sp) * d));
+      me.y = Math.max(me.r, Math.min(ARENA - me.r, foe.y - (foe.vy / sp) * d));
+      me.vx = foe.vx * 0.5;
+      me.vy = foe.vy * 0.5;
+      world.events.push({ type: 'shock', x: me.x, y: me.y, r: 60, color: '#8a6fd1' });
+      if (landHit(world, me, foe, me.w.dmg, { kind: 'shadow', x: foe.x, y: foe.y }) > 0) {
+        foe.stun = Math.max(foe.stun, 0.2);
+        knockback(me, foe, 200);
+      }
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind === 'shadow') me.w.dmg += 0.6;
+    },
+  },
+  {
+    id: 'swap',
+    kind: 'ranged',
+    name: '入れかえ',
+    en: 'Swap',
+    color: '#e07ad1',
+    grow: '爆発が当たるたびに ダメージ +1(自分の場所に爆弾を置いて、相手と場所を入れかえる)',
+    init(b) {
+      b.w = { dmg: 6, timer: 1.5 };
+    },
+    stats: (b) => [['爆発', fmt(b.w.dmg)]],
+    update(world, me, foe, dt) {
+      me.angle = aimAt(me, foe);
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 3.2;
+      // 今いる場所に爆弾 → 相手と場所(と勢い)を入れかえる → 相手が爆弾の上に
+      spawnProjectile(world, me, {
+        x: me.x,
+        y: me.y,
+        kind: 'swapbomb',
+        r: 10,
+        life: 0.35,
+        wall: 'stop',
+        blockable: false,
+        onExpire: (world, p, owner, foe) => explode(world, p, owner, foe, 70, owner.w.dmg, 'swap'),
+      });
+      for (const [x, y] of [[me.x, me.y], [foe.x, foe.y]]) world.events.push({ type: 'shock', x, y, r: 55, color: '#e07ad1' });
+      [me.x, foe.x] = [foe.x, me.x];
+      [me.y, foe.y] = [foe.y, me.y];
+      [me.vx, foe.vx] = [foe.vx, 0];
+      [me.vy, foe.vy] = [foe.vy, 0];
+      // 入れかわった相手は一瞬止まる(爆弾の上から逃げにくい)
+      foe.stun = Math.max(foe.stun, 0.3);
+      foe.freeze = Math.max(foe.freeze, 0.2);
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind === 'swap') me.w.dmg += 1;
+    },
+  },
+  {
+    id: 'tesla',
+    kind: 'ranged',
+    name: '電撃柵',
+    en: 'Tesla Fence',
+    color: '#3fb6e0',
+    grow: '感電させるたびに 電撃のダメージ +0.2(自分の通り道に柱を立て、柱どうしの間に電気が走る)',
+    init(b) {
+      b.w = { dmg: 1.2, timer: 0.5, posts: [], tick: 0 };
+    },
+    stats: (b) => [['電撃', fmt(Math.round(b.w.dmg * 10) / 10)]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      me.angle = -Math.PI / 2;
+      w.posts = w.posts.filter((p) => !p.dead);
+      w.timer -= dt;
+      if (w.timer <= 0) {
+        w.timer = 1.4;
+        spawnProjectile(world, me, { x: me.x, y: me.y, kind: 'post', r: 7, life: 4.5, wall: 'stop', blockable: false });
+        w.posts = [...w.posts, world.projectiles[world.projectiles.length - 1]].slice(-3);
+      }
+      w.tick -= dt;
+      if (w.tick > 0) return;
+      w.tick = 0.35;
+      // 柱と柱の間の線にふれた相手に電撃
+      for (let i = 0; i + 1 < w.posts.length; i++) {
+        const a = w.posts[i];
+        const b = w.posts[i + 1];
+        for (const o of world.balls) {
+          if (o === me || o.dead) continue;
+          if (segPointDist(a.x, a.y, b.x, b.y, o.x, o.y) < o.r + 5) {
+            landHit(world, me, o, w.dmg, { kind: 'tesla', x: o.x, y: o.y });
+            o.stun = Math.max(o.stun, 0.06);
+          }
+        }
+      }
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind === 'tesla') me.w.dmg += 0.2;
+    },
+  },
+  {
+    id: 'sniperRifle',
+    kind: 'ranged',
+    name: '狙撃銃',
+    en: 'Sniper Rifle',
+    color: '#556b2f',
+    grow: '当たるたびに ダメージ +2(赤い線でねらいを定めてから、刃でも防げないとても速い1発)',
+    init(b) {
+      b.w = { dmg: 14, timer: 1.5, aiming: false };
+      setSpin(b, 0);
+    },
+    stats: (b) => [['ダメージ', fmt(b.w.dmg)]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      w.timer -= dt;
+      // ねらっている間はゆっくり相手を追う(撃つ直前は止まる)
+      // 弾が届くころに相手がいる場所(進む先)をねらう
+      const lead = Math.hypot(foe.x - me.x, foe.y - me.y) / 1900;
+      const want = Math.atan2(foe.y + foe.vy * lead - me.y, foe.x + foe.vx * lead - me.x);
+      if (w.timer > 0.15) me.angle += ((((want - me.angle + Math.PI) % TAU) + TAU) % TAU - Math.PI) * Math.min(1, dt * 10);
+      w.aiming = w.timer < 1;
+      if (w.timer > 0) return;
+      w.timer = 2.3;
+      w.aiming = false;
+      shoot(world, me, me.angle, 1900, { kind: 'rifle', r: 6, life: 0.8, damage: w.dmg, blockable: false, onTouch: hitOnce() });
+      world.events.push({ type: 'shock', x: me.x + Math.cos(me.angle) * (me.r + 14), y: me.y + Math.sin(me.angle) * (me.r + 14), r: 30, color: '#ffd23f' });
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind === 'rifle') me.w.dmg += 2;
+    },
+  },
+  {
+    id: 'anvil',
+    kind: 'ranged',
+    name: '金床',
+    en: 'Anvil',
+    color: '#5b6470',
+    grow: '当たるたびに ダメージ +1.2(相手の頭上に影が出て、重い金床が落ちてくる)',
+    init(b) {
+      b.w = { dmg: 9, timer: 1 };
+    },
+    stats: (b) => [['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)]],
+    update(world, me, foe, dt) {
+      me.angle = -Math.PI / 2;
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 2;
+      // 金床の半径(28)より内側にする(壁の外にはみ出すと出た瞬間に消える)
+      const x = Math.max(32, Math.min(ARENA - 32, foe.x + foe.vx * 0.8));
+      // まず床に影(予告)、少しして天井から落ちる
+      spawnProjectile(world, me, {
+        x,
+        y: ARENA - 6,
+        kind: 'anvilShadow',
+        r: 26,
+        life: 0.55,
+        wall: 'stop',
+        blockable: false,
+        onExpire(world, p, owner) {
+          spawnProjectile(world, owner, {
+            x: p.x,
+            y: 32, // 半径より下から出す(上の壁の外だと出た瞬間に消える)
+            vy: 700,
+            kind: 'anvil',
+            r: 28,
+            life: 2,
+            gravity: 1.6,
+            wall: 'die',
+            blockable: false,
+            onTouch(world, q, owner, o) {
+              q.dead = true;
+              world.events.push({ type: 'boom', x: q.x, y: q.y, radius: 50, kind: 'bomb' });
+              if (landHit(world, owner, o, owner.w.dmg, { kind: 'anvil', x: q.x, y: q.y }) > 0) o.stun = Math.max(o.stun, 0.4);
+            },
+            onExpire: (world, q) => world.events.push({ type: 'quake', x: q.x, y: ARENA - 4 }),
+          });
+        },
+      });
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind === 'anvil') me.w.dmg += 1.2;
+    },
+  },
+  {
+    id: 'rocketFist',
+    kind: 'ranged',
+    name: 'ロケットパンチ',
+    en: 'Rocket Fist',
+    color: '#d94a3a',
+    grow: '当たるたびに ダメージ +0.6・吹き飛ばしアップ(こぶしを飛ばして、戻ってくる)',
+    init(b) {
+      b.w = { dmg: 4, knock: 380, timer: 0.9, out: false };
+    },
+    stats: (b) => [['ダメージ', fmt(b.w.dmg)]],
+    update(world, me, foe, dt) {
+      if (!me.w.out) me.angle = aimAt(me, foe);
+      if (me.w.out) return;
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.out = true;
+      const back = (world, p, owner) => {
+        owner.w.out = false;
+        owner.w.timer = 0.9;
+      };
+      shoot(world, me, me.angle, 760, {
+        kind: 'fist',
+        r: 13,
+        life: 2.5,
+        wall: 'bounce',
+        blockable: false,
+        hitDone: false,
+        update(world, p, owner, foe, dt) {
+          if (p.age < 0.45) return;
+          // 持ち主へ戻る
+          const dx = owner.x - p.x;
+          const dy = owner.y - p.y;
+          const d = Math.hypot(dx, dy) || 1;
+          p.vx = (dx / d) * 700;
+          p.vy = (dy / d) * 700;
+          p.angle = Math.atan2(-dy, -dx);
+          if (d < owner.r + p.r) {
+            p.dead = true;
+            back(world, p, owner);
+          }
+        },
+        onExpire: back,
+        onTouch(world, p, owner, o) {
+          if (p.hitDone) return;
+          p.hitDone = true;
+          world.events.push({ type: 'boom', x: p.x, y: p.y, radius: 34, kind: 'bomb' });
+          if (landHit(world, owner, o, owner.w.dmg, { kind: 'fist', x: p.x, y: p.y }) > 0) {
+            knockback(p, o, owner.w.knock);
+            o.slamT = 0.6;
+            o.slamBy = owner.id;
+          }
+        },
+      });
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'fist') return;
+      me.w.dmg += 0.6;
+      me.w.knock += 20;
+    },
+  },
+  {
+    id: 'drum',
+    kind: 'body',
+    name: '太鼓',
+    en: 'Drum',
+    color: '#c0392b',
+    grow: '当たるたびに テンポアップ(ドン・ドン・ドン・ドドン！ 4拍目は大きな衝撃波)',
+    init(b) {
+      b.w = { bpm: 70, beat: 0, timer: 0.8 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [['テンポ', fmt(Math.round(shown(b, 'bpm')))]],
+    update(world, me, foe, dt) {
+      me.angle = -Math.PI / 2;
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 60 / me.w.bpm;
+      me.w.beat = (me.w.beat + 1) % 4;
+      const big = me.w.beat === 0;
+      const r = big ? 230 : 140;
+      world.events.push({ type: 'shock', x: me.x, y: me.y, r, color: big ? '#ff7a1a' : '#f2c230' });
+      for (const o of world.balls) {
+        if (o === me || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > r + o.r) continue;
+        if (landHit(world, me, o, big ? 5 : 1.5, { kind: 'drum', x: o.x, y: o.y }) > 0 && big) knockback(me, o, 420);
+      }
+    },
+    onHit(world, me) {
+      growStat(me, 'bpm', 4, 200, 0.5);
+    },
+  },
+  {
+    ...melee('rewind', {
+      spin: 3.8,
+      state: { dmg: 2.6, back: 0.5, t: 0, timer: 5 },
+      blade: { rIn: 22, rOut: 86, w: 8 },
+      damage: (w, me) => me.w.dmg,
+      extra: {
+        update(world, me, foe, dt) {
+          const w = me.w;
+          // 0.25秒ごとにHPを覚えておき、5秒ごとに「3秒前」まで巻き戻す
+          // (state は浅いコピーなので、配列はここで1人ずつ作る)
+          w.hist ||= [];
+          w.t += dt;
+          if (w.t >= 0.25) {
+            w.t = 0;
+            w.hist.push(me.hp);
+            if (w.hist.length > 12) w.hist.shift();
+          }
+          w.timer -= dt;
+          if (w.timer > 0) return;
+          w.timer = 5;
+          const past = w.hist[0] ?? me.hp;
+          if (past > me.hp) {
+            // 3人以上の試合では、何人分ものダメージを巻き戻せて強すぎるので半分
+            heal(world, me, (past - me.hp) * w.back * (world.balls.length > 2 ? 0.5 : 1));
+            world.events.push({ type: 'timestop', x: me.x, y: me.y, target: me.id });
+          }
+        },
+      },
+    }),
+    name: '巻き戻し',
+    en: 'Rewind',
+    color: '#6aa0c8',
+    grow: '当たるたびに ダメージ +0.4・巻き戻す量アップ(5秒ごとにHPを3秒前まで戻す)',
+    stats: (b) => [
+      ['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)],
+      ['巻き戻し', Math.round(Math.min(1, b.w.back) * 100) + '%'],
+    ],
+    onHit(world, me) {
+      me.w.dmg += 0.4;
+      me.w.back = Math.min(1, me.w.back + 0.04);
+    },
+  },
+  {
+    id: 'bowling',
+    kind: 'ranged',
+    name: 'ボウリング',
+    en: 'Bowling',
+    color: '#2e4a7d',
+    grow: '当たるたびに ダメージ +0.8・玉が大きくなる(床を転がり、相手の下で跳ね上がって打ち上げる)',
+    init(b) {
+      b.w = { dmg: 5, size: 15, timer: 1 };
+    },
+    stats: (b) => [
+      ['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)],
+      ['大きさ', fmt(Math.round(shown(b, 'size')))],
+    ],
+    update(world, me, foe, dt) {
+      me.angle = Math.PI / 2;
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 2.3;
+      const dir = Math.sign(foe.x - me.x) || 1;
+      const r = me.w.size;
+      spawnProjectile(world, me, {
+        x: Math.max(r, Math.min(ARENA - r, me.x)),
+        y: ARENA - r,
+        vx: dir * 640,
+        vy: 0,
+        kind: 'bowl',
+        r,
+        life: 3,
+        wall: 'bounce',
+        bounces: 2,
+        blockable: false,
+        hitDone: false,
+        leapt: false,
+        update(world, p, owner, foe, dt) {
+          p.angle += (p.vx / p.r) * dt;
+          // 相手の真下まで転がったら、跳ね上がって打ち上げる
+          if (!p.leapt && Math.abs(foe.x - p.x) < 90 && foe.y < p.y - 50) {
+            p.leapt = true;
+            p.vy = -1000;
+            p.gravity = 1;
+          }
+          if (p.leapt && p.vy > 0 && p.y >= ARENA - p.r - 1) p.leapt = false; // 着地したらまた跳べる
+          if (!p.leapt) {
+            p.y = ARENA - p.r;
+            p.vy = 0;
+            p.gravity = 0;
+          }
+        },
+        onTouch(world, p, owner, o) {
+          if (p.hitDone) return;
+          p.hitDone = true;
+          if (landHit(world, owner, o, owner.w.dmg, { kind: 'bowl', x: p.x, y: p.y }) > 0) {
+            o.vy = -820 * (o.knockMul ?? 1);
+            o.vx += Math.sign(p.vx) * 220;
+            o.stun = Math.max(o.stun, 0.15);
+          }
+        },
+      });
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'bowl') return;
+      me.w.dmg += 0.8;
+      growStat(me, 'size', 1.2, 32, 0.4);
+    },
+  },
+  {
+    ...melee('chainsaw', {
+      spin: 0,
+      state: { dmg: 0.6 },
+      blade: { rIn: 22, rOut: 96, w: 16, knock: 0, cd: 0.1 },
+      damage: (w, me) => me.w.dmg,
+      extra: {
+        // 回さずに、いつも刃を相手に向ける(近づいている間ずっと削る)
+        update(world, me, foe, dt) {
+          const want = aimAt(me, foe);
+          me.angle += ((((want - me.angle + Math.PI) % TAU) + TAU) % TAU - Math.PI) * Math.min(1, dt * 5);
+        },
+      },
+    }),
+    name: 'チェーンソー',
+    en: 'Chainsaw',
+    color: '#e0a21b',
+    grow: '当たるたびに 1回のダメージ +0.03(刃をいつも相手に向け、ふれている間ずっと削って遅くする)',
+    stats: (b) => [['削り', fmt(Math.round(b.w.dmg * 100) / 100)]],
+    onHit(world, me, foe, info) {
+      me.w.dmg += 0.03;
+      if (info.kind === 'melee') {
+        foe.slow = Math.max(foe.slow, 0.3);
+        foe.slowT = 0.25;
+      }
+    },
+  },
 ];
 
 function grow(me) {
@@ -4252,20 +4931,34 @@ export const TUNE = {
   plasma: 1.15,
   chakram: 1.06,
   butterfly: 1.25,
+  cannon: 0.82,
+  charger: 0.75,
+  lasso: 0.65,
+  spring: 1.09,
+  shadow: 0.89,
+  swap: 0.71,
+  tesla: 1.25,
+  sniperRifle: 1.66,
+  anvil: 0.99,
+  rocketFist: 0.93,
+  drum: 1.80,
+  rewind: 1.38,
+  bowling: 1.10,
+  chainsaw: 1.23,
 };
 
 // 3人以上の試合だけで掛ける倍率。4人バトルロイヤルの1位率が25%に近づくように決めた
 export const TUNE_FFA = {
   sword: 0.75,
   dagger: 0.65,
-  spear: 0.59,
+  spear: 0.65,
   axe: 0.58,
   hammer: 0.83,
-  katana: 0.85,
+  katana: 0.81,
   scythe: 1.07,
-  whip: 0.63,
+  whip: 0.60,
   trident: 0.65,
-  scepter: 0.56,
+  scepter: 0.52,
   lance: 0.52,
   shield: 2.20,
   orb: 1.04,
@@ -4273,88 +4966,104 @@ export const TUNE_FFA = {
   flail: 0.86,
   bomb: 1.22,
   crossbow: 1.29,
-  bow: 1.17,
-  potion: 1.29,
-  wand: 1.57,
-  ice: 1.30,
-  boomerang: 1.69,
-  unarmed: 1.52,
+  bow: 1.16,
+  potion: 1.22,
+  wand: 1.50,
+  ice: 1.25,
+  boomerang: 1.53,
+  unarmed: 1.40,
   spike: 0.94,
   cluster: 1.29,
   mine: 1.05,
   meteor: 0.54,
   missile: 0.64,
-  shuriken: 0.85,
-  bees: 2.20,
+  shuriken: 0.78,
+  bees: 1.92,
   gatling: 1.44,
   lightning: 1.68,
   saw: 0.80,
-  flame: 0.93,
-  gas: 0.97,
+  flame: 0.89,
+  gas: 0.93,
   dual: 0.50,
   dual: 0.50,
   blackhole: 1.43,
-  fireworks: 0.98,
-  laser: 2.04,
-  slime: 1.11,
-  tornado: 1.25,
+  fireworks: 0.88,
+  laser: 2.17,
+  slime: 1.06,
+  tornado: 1.10,
   yoyo: 1.50,
-  bats: 0.91,
+  bats: 0.95,
   ricochet: 1.12,
   greatsword: 0.60,
   rocket: 1.25,
-  sonic: 1.25,
-  snowball: 0.85,
-  clone: 0.90,
-  curse: 1.38,
-  blizzard: 0.90,
-  hook: 1.58,
-  snake: 1.67,
+  sonic: 1.18,
+  snowball: 0.90,
+  clone: 0.88,
+  curse: 1.27,
+  blizzard: 0.84,
+  hook: 1.69,
+  snake: 1.56,
   knives: 0.91,
   squeaky: 0.77,
   dice: 1.23,
   javelin: 1.20,
   drill: 0.56,
   spellbook: 2.13,
+  water: 0.95,
   kusarigama: 0.53,
-  mirror: 0.77,
-  sticky: 1.07,
+  mirror: 0.82,
+  sticky: 1.14,
+  web: 1.03,
+  clock: 1.04,
   vine: 1.84,
-  revolver: 1.29,
+  revolver: 1.31,
   shark: 1.15,
-  counter: 1.41,
-  gravity: 1.06,
+  counter: 1.44,
+  gravity: 0.93,
   saber: 0.71,
-  drones: 1.15,
-  quake: 1.68,
+  drones: 1.10,
+  quake: 1.59,
   phoenix: 0.87,
-  magnet: 0.90,
-  star: 0.77,
-  axethrow: 1.11,
+  magnet: 1.01,
+  star: 0.82,
   danmaku: 0.50,
   wrecking: 1.93,
-  storm: 0.58,
-  giant: 1.23,
-  vampire: 0.54,
+  storm: 0.54,
+  giant: 1.24,
+  vampire: 0.50,
   spirit: 1.89,
   lava: 1.77,
   gears: 0.76,
-  kamaitachi: 0.75,
+  kamaitachi: 0.73,
   bumper: 0.80,
   prism: 1.59,
   ghost: 0.91,
   sakura: 0.74,
-  pinball: 0.95,
-  splitter: 1.46,
+  pinball: 0.90,
+  splitter: 1.66,
   frog: 0.72,
   balloon: 0.96,
   cards: 0.77,
   skeleton: 1.02,
   firecracker: 1.43,
   urchin: 0.50,
-  plasma: 0.76,
-  chakram: 1.69,
+  plasma: 0.79,
+  chakram: 1.78,
   butterfly: 0.88,
+  charger: 1.53,
+  lasso: 1.59,
+  timebomb: 1.64,
+  spring: 0.82,
+  shadow: 1.75,
+  swap: 1.39,
+  tesla: 0.61,
+  sniperRifle: 1.30,
+  anvil: 1.31,
+  rocketFist: 1.58,
+  drum: 0.91,
+  rewind: 0.78,
+  bowling: 1.12,
+  chainsaw: 0.70,
 };
 
 for (const w of WEAPONS) {
