@@ -291,8 +291,10 @@ export function knockback(from, target, power) {
   const d = Math.hypot(dx, dy) || 1;
   dx /= d;
   dy /= d;
-  target.vx += dx * power;
-  target.vy += dy * power;
+  // knockMul: 吹き飛ばされにくさ(スキル「重い体」など。なければ1)
+  const k = target.knockMul ?? 1;
+  target.vx += dx * power * k;
+  target.vy += dy * power * k;
 }
 
 export function spawnProjectile(world, owner, p) {
@@ -312,6 +314,9 @@ export function spawnProjectile(world, owner, p) {
     dead: false,
     ...p,
   };
+  // スキルの効果: pierce = 刃で防がれない / shotScale = 弾の当たり判定が大きい
+  if (owner.pierce) proj.blockable = false;
+  if (owner.shotScale) proj.r *= owner.shotScale;
   world.projectiles.push(proj);
   // スキル「分裂弾」: 武器が1回撃つごとに、最初の動く弾の左右に同じ弾を extraShots 発ふやす
   // (武器の update の中で撃った弾だけ。弾から生まれた子弾や、置いて止まっている物はふやさない)

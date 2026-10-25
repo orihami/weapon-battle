@@ -130,6 +130,18 @@ function preGrow(world, me, n) {
   world.events.length = 0;
 }
 
+// 試合中に、当てなくても武器を1回成長させる(相手に付く効果は消す。出たイベントも消す)
+function growQuiet(world, me, foe) {
+  if (!me.def.onHit || !foe) return;
+  const saved = { poison: foe.poison, curse: foe.curse, stun: foe.stun, slow: foe.slow, slowT: foe.slowT, freeze: foe.freeze, hp: foe.hp, maxHp: foe.maxHp, gravFlip: foe.gravFlip, burnT: foe.burnT, slamT: foe.slamT };
+  const mine = [me.hp, me.maxHp];
+  const n = world.events.length;
+  me.def.onHit(world, me, foe, { kind: 'pre' });
+  Object.assign(foe, saved);
+  [me.hp, me.maxHp] = mine;
+  world.events.length = n;
+}
+
 // 竜の息吹: 相手の方へ扇形に火の玉
 function breath(world, me, foe, n, dmg) {
   const a = Math.atan2(foe.y - me.y, foe.x - me.x);
@@ -398,6 +410,7 @@ export const SKILLS = [
     name: '分裂弾',
     desc: '飛び道具の武器なら、撃つたびに弾が2発ふえる。それ以外の武器(置くタイプの飛び道具も)は1.8秒ごとに3方向へ弾(各2ダメージ)',
     rarity: 'legend',
+    kinds: { far: '撃つたびに弾が2発ふえる(置くタイプの武器は3方向弾)', near: '1.8秒ごとに3方向へ弾(各2ダメージ)' },
     apply(world, me) {
       if (me.def.kind === 'ranged') me.extraShots = (me.extraShots || 0) + 2;
     },
@@ -748,7 +761,7 @@ export const SKILLS = [
   },
   {
     id: 'hellfire',
-    icon: '🌋',
+    icon: '☄️',
     name: '獄炎爆破',
     desc: '攻撃が当たると大爆発(まわりの相手全員に4ダメージ)+強いやけど',
     rarity: 'fusion',
@@ -768,7 +781,7 @@ export const SKILLS = [
   },
   {
     id: 'frostDance',
-    icon: '❄️',
+    icon: '💃',
     name: '氷の舞',
     desc: '当てると+2ダメージ・ときどき凍らせる。15%でよける・素早さ+10%',
     rarity: 'fusion',
@@ -791,7 +804,7 @@ export const SKILLS = [
   },
   {
     id: 'thunderEmperor',
-    icon: '⚡',
+    icon: '⚜️',
     name: '雷帝',
     desc: '1.6秒ごとに相手全員へ雷(6ダメージ)。当てると35%でさらに雷',
     rarity: 'fusion',
@@ -808,7 +821,7 @@ export const SKILLS = [
   },
   {
     id: 'bladeDance',
-    icon: '🌀',
+    icon: '🎡',
     name: '剣の輪舞',
     desc: 'まわりを回る剣が5本・攻撃速度 +15%',
     rarity: 'fusion',
@@ -1053,7 +1066,7 @@ export const SKILLS = [
   },
   {
     id: 'assassin',
-    icon: '🗡️',
+    icon: '🦂',
     name: '暗殺者',
     desc: '武器の攻撃 +1ダメージ・HP30%以下の相手へはダメージ3倍',
     rarity: 'fusion',
@@ -1103,12 +1116,478 @@ export const SKILLS = [
     },
   },
 
+  // ==== 第3弾: 成長・体の動き・武器との組み合わせ・時間・対策・カード選びのカード ====
+  // ---- ふつう ----
+  {
+    id: 'fastStart',
+    icon: '🏁',
+    name: '先手必勝',
+    desc: '試合の最初の15秒、与えるダメージ +90%',
+    rarity: 'common',
+    outgoing: (world, me, target, amount) => (world.t < 15 ? amount * 1.9 : amount),
+  },
+  {
+    id: 'cleanse',
+    icon: '🧼',
+    name: '浄化',
+    desc: '最大HP +15・2.5秒ごとに 毒・呪いを1つずつ消し、やけど・遅くなる効果も消す',
+    rarity: 'common',
+    apply: (w, me) => ((me.maxHp += 15), (me.hp += 15)),
+    update(world, me, foe, dt, st) {
+      st.t = (st.t || 0) + dt;
+      if (st.t < 2.5) return;
+      st.t = 0;
+      me.poison = Math.max(0, me.poison - 1);
+      me.curse = Math.max(0, me.curse - 1);
+      me.burnT = 0;
+      me.slow = 0;
+    },
+  },
+  {
+    id: 'lastStand',
+    icon: '🧱',
+    name: '背水の陣',
+    desc: 'HPが40%以下のあいだ、受けるダメージ -25%',
+    rarity: 'common',
+    incoming: (world, me, src, amount) => (me.hp < me.maxHp * 0.4 ? amount * 0.75 : amount),
+  },
+  {
+    id: 'heavy',
+    icon: '⚓',
+    name: '重い体',
+    desc: '吹き飛ばされにくい(-40%)・最大HP +10',
+    rarity: 'common',
+    apply(world, me) {
+      me.knockMul = (me.knockMul ?? 1) * 0.6;
+      me.maxHp += 10;
+      me.hp += 10;
+    },
+  },
+  {
+    id: 'seed',
+    icon: '🌰',
+    name: '成長の種',
+    desc: '6秒ごとに、当てなくても武器が1回成長する',
+    rarity: 'common',
+    update(world, me, foe, dt, st) {
+      st.t = (st.t || 0) + dt;
+      if (st.t < 6) return;
+      st.t = 0;
+      growQuiet(world, me, foe);
+    },
+  },
+
+  {
+    id: 'bodySlam',
+    icon: '🤜',
+    name: '体当たり',
+    desc: '近接・体の武器: ぶつかった相手に1.5ダメージ / 飛び道具: ぶつかった相手を強く押し返して距離を取る(1ダメージ)',
+    rarity: 'common',
+    kinds: { far: 'ぶつかった相手を強く押し返して距離を取る(1ダメージ)', near: 'ぶつかった相手に1.5ダメージ' },
+    contact(world, me, foe, st) {
+      if ((st.cd || 0) > world.t) return;
+      st.cd = world.t + 0.7;
+      if (me.def.kind === 'ranged') {
+        skillDamage(world, me, foe, 1);
+        knockback(me, foe, 520);
+      } else {
+        skillDamage(world, me, foe, 1.5);
+      }
+    },
+  },
+  {
+    id: 'quickDraw',
+    icon: '🤠',
+    name: '早撃ち',
+    desc: '飛び道具: 攻撃速度 +18% / 近接・体の武器: 攻撃速度 +28%・素早さ +10%',
+    rarity: 'rare',
+    kinds: { far: '攻撃速度 +18%', near: '攻撃速度 +28%・素早さ +10%' },
+    apply(world, me) {
+      if (me.def.kind === 'ranged') me.haste *= 1.18;
+      else {
+        me.haste *= 1.28;
+        me.speedMul *= 1.1;
+      }
+    },
+  },
+  // ---- レア ----
+  {
+    id: 'lateBloom',
+    icon: '🌇',
+    name: '後半型',
+    desc: '試合開始から25秒たつと、与えるダメージ +45%',
+    rarity: 'rare',
+    outgoing: (world, me, target, amount) => (world.t >= 25 ? amount * 1.45 : amount),
+  },
+  {
+    id: 'combo',
+    icon: '🥊',
+    name: '連撃',
+    desc: '1.4秒以内に続けて当てるとコンボ。1コンボごとにダメージ +10%(最大+100%)。攻撃を受けるとリセット。攻撃速度 +10%',
+    rarity: 'rare',
+    apply: (w, me) => (me.haste *= 1.1),
+    onHit(world, me, foe, info, st) {
+      st.n = world.t - (st.last ?? -9) < 1.4 ? Math.min(10, (st.n || 0) + 1) : 1;
+      st.last = world.t;
+      if (st.n >= 3 && st.n % 2 === 1) world.events.push({ type: 'combo', x: me.x, y: me.y, n: st.n });
+    },
+    outgoing(world, me, target, amount, opts, st) {
+      if (!isWeaponHit(opts) || world.t - (st.last ?? -9) >= 1.4) return amount;
+      return amount * (1 + 0.1 * (st.n || 0));
+    },
+    incoming(world, me, src, amount, opts, st) {
+      if (isWeaponHit(opts)) st.n = 0;
+      return amount;
+    },
+  },
+  {
+    id: 'mastery',
+    icon: '🎓',
+    name: '武器の名人',
+    desc: '近接武器: 刃が20%長く・30%太くなる / 飛び道具: 弾の当たり判定が50%大きくなる。どちらも威力 +8%',
+    rarity: 'rare',
+    kinds: { far: '弾の当たり判定が50%大きくなる', near: '刃が20%長く・30%太くなる' },
+    apply(world, me) {
+      me.power *= 1.08;
+      if (me.def.kind === 'ranged') {
+        me.shotScale = (me.shotScale || 1) * 1.5;
+        return;
+      }
+      for (const bl of me.blades) {
+        if (bl.extra) continue;
+        bl.rOut = bl.rIn + (bl.rOut - bl.rIn) * 1.2;
+        bl.w *= 1.3;
+      }
+    },
+  },
+  {
+    id: 'landing',
+    icon: '💢',
+    name: '着地の衝撃',
+    desc: '勢いよく床に着地すると、まわりの相手に衝撃(3ダメージ・1秒に1回まで)',
+    rarity: 'rare',
+    update(world, me, foe, dt, st) {
+      const onFloor = me.y >= ARENA - me.r - 3;
+      if (onFloor && (st.vy || 0) > 350 && (st.cd || 0) <= world.t) {
+        st.cd = world.t + 1;
+        world.events.push({ type: 'shock', x: me.x, y: ARENA - 6, r: 140, color: '#a07a50' });
+        for (const o of enemiesNear(world, me, 140)) {
+          skillDamage(world, me, o, 3);
+          o.vy -= 300 * (o.knockMul ?? 1);
+        }
+      }
+      st.vy = me.vy;
+    },
+  },
+  {
+    id: 'underdog',
+    icon: '🐺',
+    name: '下剋上',
+    desc: 'HPの割合で相手に負けているとき、当てるともう1回成長する',
+    rarity: 'rare',
+    onHit(world, me, foe, info) {
+      if (me.def.onHit && me.hp / me.maxHp < foe.hp / foe.maxHp) me.def.onHit(world, me, foe, info);
+    },
+  },
+  {
+    id: 'scout',
+    icon: '🔍',
+    name: '目利き',
+    desc: 'これから先のカード選びで、出てくるカードが1枚ふえる(重ねがけは2枚まで)・威力 +15%',
+    rarity: 'rare',
+    apply: (w, me) => (me.power *= 1.15),
+  },
+
+  // ---- エピック ----
+  {
+    id: 'focus',
+    icon: '🧘',
+    name: '集中',
+    desc: '2秒間攻撃を受けなかったら、次に当てた攻撃が4.5倍',
+    rarity: 'epic',
+    incoming(world, me, src, amount, opts, st) {
+      if (isWeaponHit(opts) && amount > 0) st.calm = world.t;
+      return amount;
+    },
+    outgoing(world, me, target, amount, opts, st) {
+      if (!isWeaponHit(opts) || world.t - Math.max(st.calm ?? 0, st.used ?? 0) < 2) return amount;
+      st.used = world.t;
+      world.events.push({ type: 'crit', x: target.x, y: target.y });
+      return amount * 4.5;
+    },
+  },
+  {
+    id: 'pierce',
+    icon: '🏹',
+    name: '貫通',
+    desc: '飛び道具: 弾が相手の刃で防がれない / 近接: 刃がはじかれない。どちらも威力 +25%',
+    rarity: 'rare',
+    kinds: { far: '弾が相手の刃で防がれない', near: '刃がはじかれない' },
+    apply(world, me) {
+      me.power *= 1.25;
+      if (me.def.kind === 'ranged') me.pierce = true;
+      else for (const bl of me.blades) bl.parry = false;
+    },
+  },
+  {
+    id: 'mirrorShield',
+    icon: '🔰',
+    name: '鏡の盾',
+    desc: '飛んできた弾を30%ではね返す(自分はダメージを受けない)・受けるダメージ -10%',
+    rarity: 'epic',
+    incoming(world, me, src, amount, opts) {
+      if (!opts.projectile || !src || src === me || world.rng() >= 0.3) return amount * 0.9;
+      world.events.push({ type: 'block', x: me.x, y: me.y });
+      const a = Math.atan2(src.y - me.y, src.x - me.x);
+      skillShot(world, me, src, a, 560, Math.min(8, amount), 'skillbolt', {
+        update: (world, p, owner, foe, dt) => homingStep(p, src.dead ? foe : src, 3, dt, 560),
+      });
+      return 0;
+    },
+  },
+  {
+    id: 'learn',
+    icon: '📚',
+    name: '学習',
+    desc: '攻撃を受けると50%で、自分の武器が1回成長する(相手から学ぶ)',
+    rarity: 'epic',
+    incoming(world, me, src, amount, opts, st) {
+      if (src && src !== me && isWeaponHit(opts) && (st.cd || 0) <= world.t && world.rng() < 0.5) {
+        st.cd = world.t + 0.3;
+        growQuiet(world, me, src);
+      }
+      return amount;
+    },
+  },
+  {
+    id: 'luckyDraw',
+    icon: '🎴',
+    name: '天運',
+    desc: 'これから先のカード選びで、エピック・レジェンドが出やすくなる・攻撃速度 +15%',
+    rarity: 'epic',
+    apply: (w, me) => (me.haste *= 1.15),
+  },
+
+  // ---- レジェンド ----
+  {
+    id: 'spring',
+    icon: '⛲',
+    name: '無限の泉',
+    desc: '5秒ごとに 毒・呪い・やけどを全部消して8回復し、その試合の威力が+6%ずつ上がる',
+    rarity: 'legend',
+    update(world, me, foe, dt, st) {
+      st.t = (st.t || 0) + dt;
+      if (st.t < 5) return;
+      st.t = 0;
+      me.poison = 0;
+      me.curse = 0;
+      me.burnT = 0;
+      heal(world, me, 8);
+      me.power *= 1.06;
+    },
+  },
+  {
+    id: 'homing',
+    icon: '🧿',
+    name: '必中',
+    desc: '飛び道具: 自分の弾が相手の方へ曲がっていく / 近接: 刃が30%長くなる。どちらも威力 +15%',
+    rarity: 'legend',
+    kinds: { far: '自分の弾が相手の方へ曲がっていく', near: '刃が30%長くなる' },
+    apply(world, me) {
+      me.power *= 1.15;
+      if (me.def.kind === 'ranged') return;
+      for (const bl of me.blades) if (!bl.extra) bl.rOut = bl.rIn + (bl.rOut - bl.rIn) * 1.3;
+    },
+    update(world, me, foe, dt) {
+      if (me.def.kind !== 'ranged') return;
+      for (const p of world.projectiles) {
+        if (p.owner !== me.id || p.gravity || !(p.vx || p.vy) || p.age < 0.05) continue;
+        const target = foeOf(world, me);
+        const want = Math.atan2(target.y - p.y, target.x - p.x);
+        const cur = Math.atan2(p.vy, p.vx);
+        const diff = ((want - cur + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+        const a = cur + Math.max(-2.4 * dt, Math.min(2.4 * dt, diff));
+        const sp = Math.hypot(p.vx, p.vy);
+        p.vx = Math.cos(a) * sp;
+        p.vy = Math.sin(a) * sp;
+      }
+    },
+  },
+
+  // ==== 第3弾の合体進化 ====
+  {
+    id: 'ranbu',
+    icon: '💫',
+    name: '乱舞',
+    desc: 'コンボ1つごとにダメージ +12%(最大+150%)・武器の攻撃が35%でもう1回当たる',
+    rarity: 'fusion',
+    needs: ['combo', 'double'],
+    onHit(world, me, foe, info, st) {
+      st.n = world.t - (st.last ?? -9) < 1.4 ? Math.min(13, (st.n || 0) + 1) : 1;
+      st.last = world.t;
+      if (st.n >= 3 && st.n % 2 === 1) world.events.push({ type: 'combo', x: me.x, y: me.y, n: st.n });
+    },
+    outgoing(world, me, target, amount, opts, st) {
+      if (!isWeaponHit(opts) || world.t - (st.last ?? -9) >= 1.4) return amount;
+      return amount * (1 + 0.12 * (st.n || 0));
+    },
+    afterDeal(world, me, target, amount, opts, st) {
+      if (!isWeaponHit(opts) || (st.cd || 0) > world.t || world.rng() >= 0.35) return;
+      st.cd = world.t + 0.25;
+      skillDamage(world, me, target, amount * 0.8);
+    },
+  },
+  {
+    id: 'marksman',
+    icon: '🦅',
+    name: '狙撃手',
+    desc: '弾が防がれない・離れた相手へのダメージ +80%(近接なら刃がはじかれず +35%)',
+    rarity: 'fusion',
+    kinds: { far: '弾が防がれない・離れた相手に +80%', near: '刃がはじかれず、ダメージ +35%' },
+    needs: ['pierce', 'sniper'],
+    apply(world, me) {
+      if (me.def.kind === 'ranged') me.pierce = true;
+      else for (const bl of me.blades) bl.parry = false;
+    },
+    outgoing(world, me, target, amount) {
+      if (me.def.kind !== 'ranged') return amount * 1.35;
+      return Math.hypot(target.x - me.x, target.y - me.y) > 200 ? amount * 1.8 : amount;
+    },
+  },
+  {
+    id: 'oneShot',
+    icon: '🎇',
+    name: '一撃必殺',
+    desc: '2秒間攻撃を受けなかったら、次の攻撃が5倍・ふだんも25%でダメージ2倍',
+    rarity: 'fusion',
+    needs: ['focus', 'crit'],
+    incoming(world, me, src, amount, opts, st) {
+      if (isWeaponHit(opts) && amount > 0) st.calm = world.t;
+      return amount;
+    },
+    outgoing(world, me, target, amount, opts, st) {
+      if (!isWeaponHit(opts)) return amount;
+      if (world.t - Math.max(st.calm ?? 0, st.used ?? 0) >= 2) {
+        st.used = world.t;
+        world.events.push({ type: 'crit', x: target.x, y: target.y });
+        return amount * 5;
+      }
+      if (world.rng() < 0.25) {
+        world.events.push({ type: 'crit', x: target.x, y: target.y });
+        return amount * 2;
+      }
+      return amount;
+    },
+  },
+  {
+    id: 'holySpring',
+    icon: '💧',
+    name: '聖なる泉',
+    desc: '毎秒2.5回復・毒と呪いとやけどがつかない',
+    rarity: 'fusion',
+    needs: ['cleanse', 'regen'],
+    update(world, me, foe, dt, st) {
+      me.poison = 0;
+      me.curse = 0;
+      me.burnT = 0;
+      regen(2.5)(world, me, foe, dt, st);
+    },
+  },
+  {
+    id: 'earthRage',
+    icon: '🪨',
+    name: '大地の怒り',
+    desc: '着地するたびに大きな地震(まわりの相手に8ダメージ)・吹き飛ばされにくい(-70%)',
+    rarity: 'fusion',
+    needs: ['landing', 'heavy'],
+    apply: (w, me) => (me.knockMul = (me.knockMul ?? 1) * 0.3),
+    update(world, me, foe, dt, st) {
+      const onFloor = me.y >= ARENA - me.r - 3;
+      if (onFloor && (st.vy || 0) > 250 && (st.cd || 0) <= world.t) {
+        st.cd = world.t + 0.8;
+        world.events.push({ type: 'quake', x: me.x, y: ARENA - 4 });
+        world.events.push({ type: 'shock', x: me.x, y: ARENA - 6, r: 190, color: '#a07a50' });
+        for (const o of enemiesNear(world, me, 210)) {
+          skillDamage(world, me, o, 8);
+          o.vy -= 420 * (o.knockMul ?? 1);
+          o.stun = Math.max(o.stun, 0.2);
+        }
+      }
+      st.vy = me.vy;
+    },
+  },
+  {
+    id: 'perfectReflect',
+    icon: '💠',
+    name: '完全反射',
+    desc: '飛んできた弾を40%ではね返し、受けたダメージの40%を相手に返す',
+    rarity: 'fusion',
+    needs: ['mirrorShield', 'reflect'],
+    incoming(world, me, src, amount, opts) {
+      if (!src || src === me) return amount;
+      if (opts.projectile && world.rng() < 0.4) {
+        world.events.push({ type: 'block', x: me.x, y: me.y });
+        const a = Math.atan2(src.y - me.y, src.x - me.x);
+        skillShot(world, me, src, a, 600, Math.min(10, amount * 1.2), 'skillbolt', {
+          update: (world, p, owner, foe, dt) => homingStep(p, src.dead ? foe : src, 3.5, dt, 600),
+        });
+        return 0;
+      }
+      if (opts.kind !== 'reflect' && opts.kind !== 'skill') dealDamage(world, me, src, amount * 0.4, { kind: 'reflect' });
+      return amount;
+    },
+  },
+  {
+    id: 'genius',
+    icon: '🧠',
+    name: '天才',
+    desc: '3秒ごとに武器が1回成長・攻撃を受けると60%でも成長',
+    rarity: 'fusion',
+    needs: ['seed', 'learn'],
+    update(world, me, foe, dt, st) {
+      st.t = (st.t || 0) + dt;
+      if (st.t < 3) return;
+      st.t = 0;
+      growQuiet(world, me, foe);
+    },
+    incoming(world, me, src, amount, opts, st) {
+      if (src && src !== me && isWeaponHit(opts) && (st.cd || 0) <= world.t && world.rng() < 0.6) {
+        st.cd = world.t + 0.25;
+        growQuiet(world, me, src);
+      }
+      return amount;
+    },
+  },
+  {
+    id: 'fortune',
+    icon: '💎',
+    name: '強運',
+    desc: 'これから先のカード選びで、カードが2枚ふえてレジェンドがとても出やすくなる・威力 +30%',
+    rarity: 'fusion',
+    needs: ['scout', 'luckyDraw'],
+    apply: (w, me) => (me.power *= 1.3),
+  },
+  {
+    id: 'lateKing',
+    icon: '🌅',
+    name: '大器晩成',
+    desc: '20秒たつと威力 +40%・負けているときは当てるたびに2回多く成長する',
+    rarity: 'fusion',
+    needs: ['lateBloom', 'underdog'],
+    outgoing: (world, me, target, amount) => (world.t >= 20 ? amount * 1.4 : amount),
+    onHit(world, me, foe, info) {
+      if (!me.def.onHit || me.hp / me.maxHp >= foe.hp / foe.maxHp) return;
+      me.def.onHit(world, me, foe, info);
+      if (!foe.dead) me.def.onHit(world, me, foe, info);
+    },
+  },
+
   // ==== 武器進化: ボスを倒したときなどに選ぶ。重ねるほど武器の名前が「改 → 真 → 極 → 神」と変わる ====
   { id: 'aPower', icon: '🔺', name: '力の覚醒', desc: '武器の威力 +45%', rarity: 'awaken', apply: (w, me) => (awaken(me), (me.power *= 1.45)) },
   { id: 'aSpeed', icon: '💨', name: '速さの覚醒', desc: '攻撃速度 +30%・素早さ +10%', rarity: 'awaken', apply: (w, me) => (awaken(me), (me.haste *= 1.3), (me.speedMul *= 1.1)) },
   {
     id: 'aGrowth',
-    icon: '🌱',
+    icon: '🌻',
     name: '成長の覚醒',
     desc: '最初から3回分成長・当たると50%でもう1回成長',
     rarity: 'awaken',
@@ -1119,7 +1598,7 @@ export const SKILLS = [
   },
   {
     id: 'aGuard',
-    icon: '🛡️',
+    icon: '🏯',
     name: '守りの覚醒',
     desc: '最大HP +50・受けるダメージ -10%',
     rarity: 'awaken',
@@ -1171,7 +1650,7 @@ export const SKILLS = [
   },
   {
     id: 'aFlame',
-    icon: '🔥',
+    icon: '♨️',
     name: '炎の覚醒',
     desc: '武器の攻撃で相手が燃える(2秒間・毎秒2.5)',
     rarity: 'awaken',
@@ -1231,7 +1710,7 @@ export const SKILLS = [
   },
   {
     id: 'bloodPrice',
-    icon: '🩸',
+    icon: '💉',
     name: '血の代償',
     desc: '攻撃速度 +50% / 毎秒HPが0.6減る(HP1より下にはならない)',
     rarity: 'cursed',
@@ -1285,7 +1764,16 @@ export const SKILL_BY_ID = Object.fromEntries(SKILLS.map((s) => [s.id, s]));
 
 // レア度の重みでランダムに n 枚(重複なし)。boost=true だと良いカードが出やすい(大進化)
 export function drawSkills(n, rng = Math.random, boost = false) {
-  const weight = (s) => (boost ? { common: 0, rare: 40, epic: 40, legend: 20 } : { common: 55, rare: 30, epic: 12, legend: 3 })[s.rarity];
+  // boost: true = 大進化 / 'lucky' = 天運 / 'fortune' = 強運
+  const table =
+    boost === 'fortune'
+      ? { common: 20, rare: 30, epic: 30, legend: 20 }
+      : boost === 'lucky'
+        ? { common: 35, rare: 35, epic: 22, legend: 8 }
+        : boost
+          ? { common: 0, rare: 40, epic: 40, legend: 20 }
+          : { common: 55, rare: 30, epic: 12, legend: 3 };
+  const weight = (s) => table[s.rarity];
   const pool = SKILLS.filter((s) => weight(s) > 0);
   const out = [];
   while (out.length < n && pool.length) {
@@ -1326,7 +1814,11 @@ export function fusionsNear(owned) {
 
 // カード選びに出す n 枚。材料がそろっていれば合体進化が混ざり(大進化なら必ず)、ときどき呪いのカードも出る
 export function makeOffer(owned, n, rng = Math.random, big = false) {
-  const cards = drawSkills(n, rng, big);
+  // 目利き・強運: 出てくるカードがふえる / 天運・強運: 良いカードが出やすい
+  const has = (id) => owned.filter((s) => s.id === id).length;
+  n += Math.min(2, has('scout')) + 2 * Math.min(1, has('fortune'));
+  const luck = has('fortune') ? 'fortune' : has('luckyDraw') ? 'lucky' : false;
+  const cards = drawSkills(n, rng, big || luck);
   const ready = fusionsReady(owned).slice();
   let slot = cards.length - 1;
   const fusionCount = ready.length ? (big ? Math.min(2, ready.length) : rng() < 0.6 ? 1 : 0) : 0;

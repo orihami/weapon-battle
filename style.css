@@ -558,3 +558,8 @@ dialog { color: var(--ink); }
 .skill-row small { color: var(--muted); }
 
 .skill-row .sc-recipe { grid-column: 2; }
+
+/* 武器によって効き方が変わるカード */
+.sc-kind { font-style: normal; font-size: 13px; font-weight: bold; color: #1d6fd8; background: #e7f1ff; border-radius: 6px; padding: 2px 6px; }
+
+.kind-tag { font-size: 11px; font-weight: normal; color: #fff; background: #1d6fd8; border-radius: 6px; padding: 1px 6px; vertical-align: middle; }

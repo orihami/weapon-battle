@@ -604,6 +604,7 @@ function nextPick(r) {
     choose: pend.choose,
     cpu: p.cpu,
     mine: p.skills,
+    weapon: p.weapon,
     onDone(cards) {
       pickSkills(r, cards);
       renderSideInfo();
@@ -662,6 +663,7 @@ function chalResult(won) {
       cards: offer.cards,
       choose: offer.choose,
       mine: ch.skills,
+      weapon: ch.weapon,
       onDone(cards) {
         takeCards(ch, cards);
         playChalStage();
@@ -679,6 +681,7 @@ function chalResult(won) {
       cards: offer.awaken,
       choose: 1,
       mine: ch.skills,
+      weapon: ch.weapon,
       onDone([card]) {
         takeAwaken(ch, card);
         cardPick();
@@ -792,7 +795,7 @@ function recipeText(card) {
 
 // ---- スキルカード選び ----
 
-function showCards({ who, color, sub, cards, choose, cpu = false, mine = [], onDone }) {
+function showCards({ who, color, sub, cards, choose, cpu = false, mine = [], weapon = null, onDone }) {
   const dlg = $('cardDialog');
   dlg.dataset.seq = Number(dlg.dataset.seq || 0) + 1; // 何回目のカード選びか(テスト用)
   $('cardWho').textContent = who;
@@ -808,7 +811,11 @@ function showCards({ who, color, sub, cards, choose, cpu = false, mine = [], onD
     const b = el('button', { type: 'button', className: 'skill-card r-' + card.rarity });
     b.style.setProperty('--r', rare.color);
     const recipe = card.needs ? `<em class="sc-recipe">${recipeText(card)} を合体</em>` : '';
-    b.innerHTML = `<span class="sc-rare">${rare.name}</span><span class="sc-icon">${card.icon}</span><b>${card.name}</b>${recipe}<small>${card.desc}</small>`;
+    // 武器によって効き方が変わるカードは、今の武器での効き方を目立たせる
+    const far = weapon && weapon.kind === 'ranged';
+    const fit = card.kinds && weapon ? `<em class="sc-kind">あなたの${weapon.name}(${far ? '飛び道具' : '近接'})なら → ${far ? card.kinds.far : card.kinds.near}</em>` : '';
+    const rest = fit ? `(${far ? '近接' : '飛び道具'}なら: ${far ? card.kinds.near : card.kinds.far})` : card.desc;
+    b.innerHTML = `<span class="sc-rare">${rare.name}</span><span class="sc-icon">${card.icon}</span><b>${card.name}</b>${recipe}${fit}<small>${rest}</small>`;
     b.addEventListener('click', () => {
       if (cpu || done) return;
       if (choose === 1) return finishPick([card]);
@@ -895,7 +902,7 @@ function renderSkillBook() {
     for (const c of list) {
       const row = el('div', { className: 'skill-row' });
       row.style.setProperty('--r', RARITY[c.rarity].color);
-      row.innerHTML = `<span class="si">${c.icon}</span><b>${c.name}</b><small>${c.desc}</small>${c.needs ? `<em class="sc-recipe">${recipeText(c)}</em>` : ''}`;
+      row.innerHTML = `<span class="si">${c.icon}</span><b>${c.name}${c.kinds ? ' <span class="kind-tag">武器で変わる</span>' : ''}</b><small>${c.desc}</small>${c.needs ? `<em class="sc-recipe">${recipeText(c)}</em>` : ''}`;
       box.append(row);
     }
   }

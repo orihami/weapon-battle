@@ -1515,6 +1515,8 @@ export class Renderer {
         this.burst(ball.x, ball.y, 40, '#ffb03a', 2);
         this.rings.push({ x: ball.x, y: ball.y, r0: 10, r1: 140, life: 0.5, age: 0, color: '#ff7a1a', fill: true, strong: true });
         this.flashA = Math.max(this.flashA, 0.4);
+      } else if (e.type === 'combo') {
+        this.texts.push({ x: e.x, y: e.y - 52, text: `${e.n}コンボ`, color: '#ff7a1a', life: 0.6, age: 0, size: 18 + Math.min(14, e.n), jp: true });
       } else if (e.type === 'crit') {
         this.texts.push({ x: e.x, y: e.y - 44, text: '会心！', color: '#ff3b3b', life: 0.7, age: 0, size: 22, jp: true });
       } else if (e.type === 'dodge') {

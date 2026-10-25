@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createBattle, createMelee, runToEnd, step, segSegDist, landHit, MAX_HP, HARD_LIMIT, bladeSegment } from '../src/engine.js';
+import { createBattle, createMelee, runToEnd, step, segSegDist, landHit, knockback, MAX_HP, HARD_LIMIT, bladeSegment } from '../src/engine.js';
 import { WEAPONS, WEAPON_BY_ID, validateWeapon } from '../src/weapons.js';
 
 const W = WEAPON_BY_ID;
@@ -276,6 +276,39 @@ test('進化: 材料がそろうと合体進化が出て、選ぶと材料と合
   assert.ok(!w3.balls[0].dead, '不滅で2回よみがえらない');
   landHit(w3, w3.balls[1], w3.balls[0], 999);
   assert.ok(w3.balls[0].dead);
+});
+
+test('第3弾のスキル: カード選びが良くなる・重い体・貫通・成長の種', async () => {
+  const { SKILL_BY_ID: S, makeOffer } = await import('../src/skills.js');
+  // 目利き: カードが1枚ふえる(2枚まで) / 強運: 2枚ふえてレジェンドが出やすい
+  assert.equal(makeOffer([], 3).length, 3);
+  assert.equal(makeOffer([S.scout], 3).length, 4);
+  assert.equal(makeOffer([S.scout, S.scout, S.scout], 3).length, 5);
+  assert.equal(makeOffer([S.fortune], 3).length, 5);
+  const legends = (owned) => {
+    let n = 0;
+    for (let i = 0; i < 400; i++) n += makeOffer(owned, 3).filter((c) => c.rarity === 'legend').length;
+    return n;
+  };
+  assert.ok(legends([S.luckyDraw]) > legends([]) * 1.6, '天運でレジェンドが出やすくなっていない');
+  // 重い体: 吹き飛ばされにくい
+  const w1 = createBattle(W.sword, W.sword, 1, { a: { skills: [S.heavy] } });
+  const [a, b] = w1.balls;
+  a.vx = b.vx = a.vy = b.vy = 0;
+  knockback(b, a, 100);
+  knockback(a, b, 100);
+  assert.ok(Math.abs(Math.hypot(a.vx, a.vy) - 60) < 1e-6 && Math.abs(Math.hypot(b.vx, b.vy) - 100) < 1e-6);
+  // 貫通: 飛び道具の弾が刃で防がれない
+  const w2 = createBattle(W.bow, W.sword, 1, { a: { skills: [S.pierce] } });
+  for (let i = 0; i < 120 * 3; i++) step(w2);
+  assert.ok(w2.balls[0].pierce && w2.projectiles.filter((p) => p.owner === 0).every((p) => !p.blockable));
+  // 成長の種: 当てなくても6秒ごとに成長(相手には何も起きない)
+  const w3 = createBattle(W.scythe, W.sword, 1, { a: { skills: [S.seed] } });
+  const ball = w3.balls[0];
+  const st = ball.skills[0].st;
+  const foe = w3.balls[1];
+  for (let i = 0; i < 7 * 120; i++) S.seed.update(w3, ball, foe, 1 / 120, st);
+  assert.equal(foe.poison, 0, '成長の種で相手に毒が付いた');
 });
 
 test('スキル: 全スキルを重ねがけしても決着し、数値が壊れない', async () => {
