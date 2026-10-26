@@ -357,6 +357,54 @@ test('格闘家: 柔道は床へ投げる・相撲は大きくなる・ボクサ
   assert.equal(W.boxer.onTakeDamage(w3, boxer, w3.balls[1], 5, { kind: 'melee' }), 0, 'ボクサーがよけない');
 });
 
+test('第4弾の武器: 甲羅・風の守り・バナナ・縮小光線・ピンポンのラリー', () => {
+  // カメ: 甲羅にこもっている間はダメージがとても小さい
+  const w1 = createBattle(W.turtle, W.sword, 1);
+  const [turtle, foe] = w1.balls;
+  turtle.w.shell = 1;
+  const hp = turtle.hp;
+  landHit(w1, foe, turtle, 10);
+  assert.ok(hp - turtle.hp < 2, '甲羅でダメージが減っていない');
+  // 風の守り: 近くに来た矢を自分の弾にして撃ち返す
+  const w2 = createBattle(W.windBarrier, W.bow, 1);
+  const [wind, archer] = w2.balls;
+  w2.projectiles.push({ owner: archer.id, kind: 'arrow', x: wind.x + 50, y: wind.y, vx: -400, vy: 0, r: 4, life: 2, age: 0, damage: 2, blockable: true, wall: 'die', dead: false });
+  W.windBarrier.update(w2, wind, archer, 1 / 120);
+  const arrow = w2.projectiles.find((p) => p.kind === 'arrow');
+  assert.ok(arrow.owner === wind.id && arrow.vx > 0, '撃ち返していない');
+  // バナナ: ふんだ相手はすべって飛ばされ、しびれる
+  const w3 = createBattle(W.banana, W.sword, 1);
+  const [ban, f3] = w3.balls;
+  ban.w.timer = 0;
+  W.banana.update(w3, ban, f3, 1 / 120);
+  const peel = w3.projectiles.find((p) => p.kind === 'peel');
+  peel.age = 1;
+  peel.onTouch(w3, peel, ban, f3);
+  assert.ok(f3.stun > 0 && Math.abs(f3.vx) >= 800, 'すべっていない');
+  // 縮小光線: 当たった相手は小さくなり、時間がたつと元に戻る
+  const w4 = createBattle(W.shrinkRay, W.sword, 1);
+  const [ray, f4] = w4.balls;
+  f4.x = ray.x + 200;
+  f4.y = ray.y;
+  const r0 = f4.r;
+  ray.w.timer = 0;
+  W.shrinkRay.update(w4, ray, f4, 1 / 120);
+  assert.ok(f4.r < r0 && f4.outMul < 1, '小さくなっていない');
+  ray.w.timer = 99; // 次の光線は撃たせない
+  for (let i = 0; i < 4 * 120; i++) W.shrinkRay.update(w4, ray, f4, 1 / 120);
+  assert.ok(f4.r === r0 && f4.outMul === 1, '元に戻っていない');
+  // ピンポン: 打ち合うほどラリーが続く
+  let rally = 0;
+  for (const seed of [1, 2, 3, 4, 5]) {
+    const w5 = createBattle(W.pingpong, W.sword, seed);
+    for (let i = 0; i < 120 * 20 && !w5.over; i++) {
+      step(w5);
+      rally = Math.max(rally, w5.balls[0].w.rally);
+    }
+  }
+  assert.ok(rally >= 2, `ラリーが続かない(${rally})`);
+});
+
 test('スキル: 全スキルを重ねがけしても決着し、数値が壊れない', async () => {
   const { SKILLS } = await import('../src/skills.js');
   let seed = 1;
