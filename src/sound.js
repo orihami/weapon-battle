@@ -74,6 +74,8 @@ export class Sound {
         this.tone('quake', 60, 0.4, 'square', 0.07, 0.6);
       } else if (e.type === 'rebirth') {
         [392, 523, 659, 784].forEach((f, i) => setTimeout(() => this.tone('reb' + i, f, 0.16, 'triangle', 0.06), i * 70));
+      } else if (e.type === 'evolve') {
+        [523, 659, 784].forEach((f, i) => setTimeout(() => this.tone('evo' + i, f, 0.12, 'square', 0.05), i * 60));
       } else if (e.type === 'prism') {
         this.tone('prism', 1700, 0.25, 'sawtooth', 0.05, 0.4);
       } else if (e.type === 'timestop') {

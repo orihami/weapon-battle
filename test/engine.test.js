@@ -543,3 +543,61 @@ test('不死鳥は1度だけよみがえる', () => {
   landHit(world, foe, ph, 500);
   assert.ok(ph.dead, '2度目もよみがえってしまった');
 });
+
+test('大器晩成の武器: 当てるほど姿が変わり、後半は最初よりずっと強い', () => {
+  const evolveTexts = (world) => world.events.filter((e) => e.type === 'evolve').map((e) => e.text);
+  // たまご → ひよこ → ニワトリ → ドラゴン
+  const w1 = createBattle(W.egg, W.sword, 1);
+  const [egg, f1] = w1.balls;
+  assert.equal(egg.blades.length, 0);
+  for (let i = 0; i < 12; i++) W.egg.onHit(w1, egg, f1, { kind: 'egg' });
+  assert.equal(egg.w.stage, 3);
+  assert.deepEqual(evolveTexts(w1), ['ひよこ', 'ニワトリ', 'ドラゴン']);
+  assert.ok(egg.blades.length === 1 && egg.r > 40, 'ドラゴンになっていない');
+  // 鍛冶の剣: 木の棒から伝説の剣へ。ダメージが何倍にもなる
+  const w2 = createBattle(W.forge, W.sword, 1);
+  const [fg, f2] = w2.balls;
+  const d0 = fg.blades[0].damage(w2, fg, f2);
+  for (let i = 0; i < 14; i++) W.forge.onHit(w2, fg, f2, { kind: 'melee' });
+  assert.equal(fg.w.stage, 4);
+  assert.ok(fg.blades[0].damage(w2, fg, f2) > d0 * 10, '伝説の剣が強くない');
+  // 修行僧: Lv3 で回し蹴りの足が増える
+  const w3 = createBattle(W.monk, W.sword, 1);
+  const [mk, f3] = w3.balls;
+  for (let i = 0; i < 5; i++) W.monk.onHit(w3, mk, f3, { kind: 'melee' });
+  assert.equal(mk.w.lv, 3);
+  assert.equal(mk.blades.length, 2);
+  // 月の刃: 3回ごとに刃が増え、12枚で満月。何枚ふれても1回しか当たらない
+  const w4 = createBattle(W.moon, W.sword, 1);
+  const [mn, f4] = w4.balls;
+  for (let i = 0; i < 33; i++) W.moon.onHit(w4, mn, f4, {});
+  assert.equal(mn.blades.length, 12);
+  assert.equal(mn.w.stage, 3);
+  mn.blades[0].damage(w4, mn, f4);
+  assert.ok(mn.blades.every((bl) => bl.cdLeft > 0), '刃の待ち時間がそろっていない');
+  // 貯金箱: 貯まると大きな金貨を投げ、目標が上がる
+  const w5 = createBattle(W.piggy, W.sword, 1);
+  const [pg, f5] = w5.balls;
+  for (let i = 0; i < 5; i++) W.piggy.onHit(w5, pg, f5, { kind: 'piggy' });
+  W.piggy.update(w5, pg, f5, 1 / 120);
+  const coin = w5.projectiles.find((p) => p.kind === 'coin');
+  assert.ok(coin && coin.damage > 4 && pg.w.coins === 0 && pg.w.goal > 6, '金貨が出ていない');
+  // 変身ヒーロー: ゲージがたまると変身し、時間がたつと戻る。次の変身は長い
+  const w6 = createBattle(W.hero, W.sword, 1);
+  const [hr, f6] = w6.balls;
+  for (let i = 0; i < 4; i++) W.hero.onHit(w6, hr, f6, {});
+  W.hero.update(w6, hr, f6, 1 / 120);
+  assert.ok(hr.w.on > 0 && hr.r > 40 && hr.blades[0].damage, '変身していない');
+  for (let i = 0; i < 5 * 120; i++) W.hero.update(w6, hr, f6, 1 / 120);
+  assert.ok(hr.w.on <= 0 && hr.r === 40 && hr.blades[0].damage === undefined && hr.w.dur > 4, '変身がとけていない');
+  // 転がる石・火種は当てるほど大きくなる
+  const w7 = createBattle(W.pebble, W.ember, 1);
+  const [pb, em] = w7.balls;
+  const r0 = pb.r;
+  for (let i = 0; i < 20; i++) {
+    W.pebble.onHit(w7, pb, em, {});
+    W.ember.onHit(w7, em, pb, {});
+  }
+  assert.ok(pb.r > r0 * 2 && pb.w.stage === 3, '石が大きくならない');
+  assert.ok(em.w.rad > 100 && em.w.stage >= 2, '炎が広がらない');
+});

@@ -79,7 +79,7 @@ function homing(p, foe, turn, dt, speed) {
 }
 
 // 雷を1本落とす。delay 秒後に落ち、当たれば chain 回まで相手を追って連鎖する
-function strike(world, me, x, y, delay, chain, big = true) {
+function strike(world, me, x, y, delay, chain, big = true, mul = 1) {
   spawnProjectile(world, me, {
     x,
     y,
@@ -93,10 +93,10 @@ function strike(world, me, x, y, delay, chain, big = true) {
       // 落ちた所にいる相手全員に当たる(3人以上の試合で、ねらった相手以外にも)
       for (const foe of world.balls) {
         if (foe === owner || foe.dead || Math.hypot(foe.x - p.x, foe.y - p.y) >= p.r + foe.r) continue;
-        landHit(world, owner, foe, big ? 4 : 2, { kind: 'zap', x: foe.x, y: foe.y });
+        landHit(world, owner, foe, (big ? 4 : 2) * mul, { kind: 'zap', x: foe.x, y: foe.y });
         foe.stun = Math.max(foe.stun, 0.08);
         knockback(p, foe, 150);
-        if (chain > 0) strike(world, owner, foe.x + foe.vx * 0.15, foe.y + foe.vy * 0.15, 0.16, chain - 1, false);
+        if (chain > 0) strike(world, owner, foe.x + foe.vx * 0.15, foe.y + foe.vy * 0.15, 0.16, chain - 1, false, mul);
       }
     },
   });
@@ -284,6 +284,46 @@ function melee(id, o) {
     },
     ...o.extra,
   };
+}
+
+// 大器晩成の武器: 当てた回数(xp)が needs に届くたびに次の姿(names)へ進化する。進化すると 'evolve' の演出
+function evolveStep(world, me, needs, names) {
+  const w = me.w;
+  w.xp++;
+  if (w.stage >= needs.length || w.xp < needs[w.stage]) return false;
+  w.stage++;
+  world.events.push({ type: 'evolve', target: me.id, x: me.x, y: me.y, text: names[w.stage] });
+  return true;
+}
+// 3人以上の試合では当てる相手が多くて早く育ちすぎるので、進化に必要な回数を増やす
+const needsFor = (world, needs, k) => (world.balls.length > 2 ? needs.map((n) => Math.round(n * k)) : needs);
+const EGG_NAMES = ['たまご', 'ひよこ', 'ニワトリ', 'ドラゴン'];
+const eggDamage = (b) => b.w.dmg + [0, 0.9, 2.2, 3.8][b.w.stage];
+const FORGE_NAMES = ['木の棒', '銅の剣', '鉄の剣', '鋼の剣', '伝説の剣'];
+const FORGE_LEN = [70, 74, 80, 88, 98];
+const forgeDamage = (b) => [1, 3, 6, 11, 18][b.w.stage] + b.w.bonus;
+const PEBBLE_NAMES = ['小石', '石', '岩', '大岩'];
+const APPRENTICE_SPELLS = ['火花', 'ファイア', 'アイス', 'サンダー', 'メテオ'];
+const MOON_NAMES = ['三日月', '半月', '十三夜', '満月'];
+const EMBER_NAMES = ['火種', 'たき火', '大火', '業火'];
+const SEED_NAMES = ['種', '芽', 'つぼみ', '花', '大樹'];
+const SEED_LEN = [56, 62, 70, 78, 92];
+const seedDamage = (b) => [0.8, 2.5, 5, 8, 13][b.w.stage] + b.w.bonus;
+const MONK_SKILLS = [[1, '正拳突き'], [3, '回し蹴り'], [5, '気功波'], [7, '百裂拳']];
+const monkDamage = (b) => 1 + b.w.lv * 0.6;
+
+// 月の刃: n 枚の刃を並べて弧(三日月)にする。12枚でぐるっと一周(満月)
+function moonBlades(b) {
+  const n = b.w.n;
+  b.blades = [];
+  for (let i = 0; i < n; i++) {
+    b.blades.push(makeBlade({ sprite: 'crescent', off: (i - (n - 1) / 2) * (TAU / 12), rIn: b.r + 2, rOut: b.r + 30, w: 14, damage: moonHit, cd: 0.35, knock: 130, parry: i === 0 }));
+  }
+}
+// 何枚の刃が同時にふれても1回だけ当たる(全部の刃を同じ待ち時間にする)
+function moonHit(world, me) {
+  for (const bl of me.blades) bl.cdLeft = bl.cd;
+  return me.w.dmg;
 }
 
 export const WEAPONS = [
@@ -6419,6 +6459,521 @@ export const WEAPONS = [
       me.w.dmg += 0.25;
     },
   },
+  // ===== 大器晩成: 最初は弱いが、当てるほど姿が変わって後半に化ける =====
+  {
+    id: 'egg',
+    kind: 'body',
+    name: 'たまご',
+    en: 'Egg',
+    color: '#f3e5c0',
+    grow: '当てるたびに 経験 +1。3回で ひよこ → 8回で ニワトリ → 15回で ドラゴン(火をはく)に進化',
+    init(b) {
+      b.w = { stage: 0, xp: 0, dmg: 0.8, breath: 0, timer: 2, jump: 2 };
+      setSpin(b, 2);
+    },
+    stats: (b) => [
+      ['すがた', EGG_NAMES[b.w.stage]],
+      ['ダメージ', fmt(Math.round(eggDamage(b) * 10) / 10)],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      if (w.stage === 0) return; // たまごは転がるだけ
+      turnTo(me, aimAt(me, foe), dt, w.stage >= 3 ? 5 : 8);
+      if (w.breath > 0) w.breath -= dt;
+      if (w.stage === 2) {
+        // ニワトリ: ときどき相手へ飛びかかる
+        w.jump -= dt;
+        if (w.jump <= 0) {
+          w.jump = 2;
+          const a = aimAt(me, foe);
+          me.vx = Math.cos(a) * 520;
+          me.vy = Math.sin(a) * 520 - 200;
+        }
+      }
+      if (w.stage < 3) return;
+      // ドラゴン: 前方に火をはく(扇形の中の相手全員)
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 2.2;
+      w.breath = 0.35;
+      for (const o of world.balls) {
+        if (o === me || o.dead) continue;
+        const d = Math.hypot(o.x - me.x, o.y - me.y);
+        const diff = Math.abs(((aimAt(me, o) - me.angle + Math.PI) % TAU + TAU) % TAU - Math.PI);
+        if (d > me.r + 170 + o.r || diff > 0.5) continue;
+        if (landHit(world, me, o, eggDamage(me) * 1.2, { kind: 'breath', x: o.x, y: o.y }) > 0) {
+          o.burnT = Math.max(o.burnT, 2);
+          o.burnDps = Math.max(o.burnDps, 1);
+          o.burnSrc = me.id;
+        }
+      }
+    },
+    onContact(world, me, foe) {
+      // たまごの体当たり(ひよこ以降はくちばしで戦う)
+      if (me.w.stage > 0) return;
+      if (landHit(world, me, foe, me.w.dmg, { kind: 'egg', x: (me.x + foe.x) / 2, y: (me.y + foe.y) / 2 }) > 0) knockback(me, foe, 120);
+    },
+    onHit(world, me, foe) {
+      const w = me.w;
+      w.dmg += 0.08;
+      if (!evolveStep(world, me, [2, 6, 12], EGG_NAMES)) return;
+      me.color = ['#f3e5c0', '#ffd54f', '#fafafa', '#2e8b57'][w.stage];
+      if (w.stage === 1) {
+        setSpin(me, 0);
+        me.blades = [makeBlade({ sprite: 'beak', rIn: me.r - 6, rOut: me.r + 18, w: 12, damage: (world, me) => eggDamage(me), cd: 0.35, knock: 120, parry: false })];
+      } else if (w.stage === 2) {
+        me.blades[0].rOut = me.r + 30;
+        me.blades[0].knock = 220;
+      } else if (w.stage === 3) {
+        me.r = BALL_R * 1.2;
+        me.blades[0].rIn = me.r - 6;
+        me.blades[0].rOut = me.r + 40;
+        me.blades[0].w = 16;
+        me.blades[0].knock = 300;
+      }
+    },
+  },
+  {
+    id: 'forge',
+    kind: 'melee',
+    name: '鍛冶の剣',
+    en: 'Forge',
+    color: '#b5651d',
+    grow: '当てるたびに きたえる +1。木の棒 → 銅 → 鉄 → 鋼 → 伝説の剣(斬撃を飛ばす)と長く強くなる',
+    init(b) {
+      b.w = { stage: 0, xp: 0, bonus: 0, timer: 1.5 };
+      setSpin(b, 3.6);
+      b.blades = [makeBlade({ sprite: 'forge', rIn: 22, rOut: FORGE_LEN[0] + 26, w: 10, damage: (world, me) => forgeDamage(me) })];
+    },
+    stats: (b) => [
+      ['剣', FORGE_NAMES[b.w.stage]],
+      ['ダメージ', fmt(Math.round(forgeDamage(b) * 10) / 10)],
+    ],
+    update(world, me, foe, dt) {
+      if (me.w.stage < 4) return;
+      // 伝説の剣: 斬撃を飛ばす
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 1.6;
+      shoot(world, me, aimAt(me, foe), 520, {
+        kind: 'slash',
+        r: 14,
+        life: 1.6,
+        damage: forgeDamage(me) * 0.6,
+        onTouch: hitOnce(),
+      });
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'melee' && info.kind !== 'slash') return;
+      me.w.bonus += 0.25;
+      if (evolveStep(world, me, needsFor(world, [2, 5, 9, 14], 1.7), FORGE_NAMES)) {
+        me.blades[0].stage = me.w.stage;
+        me.blades[0].rOut = FORGE_LEN[me.w.stage] + 26;
+        me.blades[0].w = 10 + me.w.stage * 1.5;
+      }
+    },
+  },
+  {
+    id: 'piggy',
+    kind: 'body',
+    name: '貯金箱',
+    en: 'Piggy Bank',
+    color: '#f5a3c0',
+    grow: '体当たりのたびに 貯金が増え、1回に入る額もアップ。目標まで貯まると 大きな金貨をドカン！(目標も上がる)',
+    init(b) {
+      b.w = { coins: 0, rate: 1, goal: 6, cd: 0 };
+    },
+    stats: (b) => [
+      ['貯金', `${Math.floor(b.w.coins)}/${Math.round(b.w.goal)}`],
+      ['1回', '+' + fmt(Math.round(b.w.rate * 10) / 10)],
+    ],
+    update(world, me, foe) {
+      me.angle = Math.atan2(me.vy, me.vx);
+      const w = me.w;
+      if (w.coins < w.goal) return;
+      // 貯まった! 割って中身を大きな金貨にして投げる
+      const sum = w.coins;
+      w.coins = 0;
+      w.goal *= 1.25;
+      world.events.push({ type: 'evolve', target: me.id, x: me.x, y: me.y, text: 'パリーン！', color: '#d4ac0d' });
+      shoot(world, me, aimAt(me, foe), 460, {
+        kind: 'coin',
+        r: Math.min(30, 10 + sum * 0.3),
+        life: 2.5,
+        wall: 'bounce',
+        bounces: 2,
+        blockable: false,
+        damage: sum * 0.75,
+        onTouch(world, p, owner, o) {
+          p.dead = true;
+          if (landHit(world, owner, o, p.damage, { kind: 'bigcoin', x: p.x, y: p.y }) > 0) knockback(p, o, 260 + p.r * 6);
+        },
+      });
+    },
+    onContact(world, me, foe) {
+      if (me.w.cd > world.t) return;
+      me.w.cd = world.t + 0.6;
+      if (landHit(world, me, foe, 1, { kind: 'piggy', x: (me.x + foe.x) / 2, y: (me.y + foe.y) / 2 }) > 0) knockback(me, foe, 160);
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'piggy') return;
+      me.w.coins += me.w.rate;
+      me.w.rate += 0.6;
+    },
+  },
+  {
+    id: 'monk',
+    kind: 'body',
+    name: '修行僧',
+    en: 'Monk',
+    color: '#e67e22',
+    grow: '当てるたびに 修行 +1でレベルアップ。Lv3 回し蹴り → Lv5 気功波 → Lv7 百裂拳 と技が増える',
+    init(b) {
+      b.w = { lv: 1, xp: 0, need: 2, timer: 2.5, rush: 0, rushCd: 3 };
+      setSpin(b, 0);
+      b.blades = [makeBlade({ sprite: 'fist', rIn: b.r - 4, rOut: b.r + 14, w: 14, damage: (world, me) => monkDamage(me), cd: 0.5, knock: 150, parry: false })];
+    },
+    stats: (b) => [
+      ['レベル', 'Lv' + b.w.lv],
+      ['技', MONK_SKILLS.filter(([lv]) => b.w.lv >= lv).pop()[1]],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 10);
+      const fist = me.blades[0];
+      // 百裂拳: 近くにいる相手へ、目にもとまらぬ連打
+      if (w.lv >= 7) {
+        w.rushCd -= dt;
+        if (w.rush > 0) w.rush -= dt;
+        else if (w.rushCd <= 0 && Math.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 50) {
+          w.rush = 1;
+          w.rushCd = 3.5;
+        }
+      }
+      fist.cd = w.rush > 0 ? 0.08 : 0.5;
+      fist.rOut = me.r + 14 + (w.rush > 0 ? Math.abs(Math.sin(world.t * 40)) * 20 : 0);
+      if (w.lv < 5) return;
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 2.5;
+      shoot(world, me, aimAt(me, foe), 420, {
+        kind: 'kiball',
+        r: 11 + Math.min(10, w.lv - 5),
+        life: 2,
+        damage: monkDamage(me) * 1.4,
+        onTouch: hitOnce(),
+      });
+    },
+    onHit(world, me) {
+      const w = me.w;
+      w.xp++;
+      if (w.xp < w.need) return;
+      w.xp = 0;
+      w.lv++;
+      w.need = Math.min(6, w.need + 1);
+      const learn = MONK_SKILLS.find(([lv]) => lv === w.lv);
+      world.events.push({ type: 'evolve', target: me.id, x: me.x, y: me.y, text: 'Lv' + w.lv + (learn ? ' ' + learn[1] : '') });
+      if (w.lv === 3) me.blades.push(makeBlade({ sprite: 'leg', free: true, rot: 0, rIn: me.r - 4, rOut: me.r + 34, w: 14, damage: (world, me) => monkDamage(me) * 0.8, cd: 0.6, knock: 240, parry: false, block: false }));
+    },
+  },
+  {
+    id: 'pebble',
+    kind: 'body',
+    name: '転がる石',
+    en: 'Rolling Stone',
+    color: '#9e9e9e',
+    grow: 'ぶつかるたびに 大きくなる。小石 → 石 → 岩 → 大岩 と、大きいほど重くて痛い体当たり',
+    init(b) {
+      b.w = { size: 0.6, stage: 0, cd: 0 };
+      b.r = BALL_R * 0.6;
+    },
+    stats: (b) => [
+      ['すがた', PEBBLE_NAMES[b.w.stage]],
+      ['大きさ', '×' + fmt(Math.round(shown(b, 'size') * 100) / 100)],
+    ],
+    update(world, me, foe, dt) {
+      me.angle += Math.hypot(me.vx, me.vy) * dt * 0.02 * Math.sign(me.vx || 1);
+    },
+    onContact(world, me, foe, rel) {
+      if (me.w.cd > world.t) return;
+      me.w.cd = world.t + 0.5;
+      const s = me.w.size;
+      const sp = Math.min(2, (rel || 300) / 300);
+      if (landHit(world, me, foe, 3 * s * s * (0.6 + sp * 0.4), { kind: 'pebble', x: (me.x + foe.x) / 2, y: (me.y + foe.y) / 2 }) > 0) knockback(me, foe, 160 * s);
+    },
+    onHit(world, me) {
+      growStat(me, 'size', 0.06, 1.8, 0.5);
+      me.r = BALL_R * me.w.size;
+      const stage = me.w.size < 0.9 ? 0 : me.w.size < 1.2 ? 1 : me.w.size < 1.5 ? 2 : 3;
+      if (stage > me.w.stage) {
+        me.w.stage = stage;
+        world.events.push({ type: 'evolve', target: me.id, x: me.x, y: me.y, text: PEBBLE_NAMES[stage] });
+      }
+    },
+  },
+  {
+    id: 'apprentice',
+    kind: 'ranged',
+    name: '見習い魔法使い',
+    en: 'Apprentice',
+    color: '#5e60ce',
+    grow: '当てるたびに 魔力 +5%。経験がたまると 火花 → ファイア → アイス → サンダー → メテオ と呪文を覚える',
+    init(b) {
+      b.w = { stage: 0, xp: 0, mag: 1, timer: 1, cast: 0 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['呪文', b.w.stage + 1 + '種'],
+      ['魔力', '×' + fmt(Math.round(b.w.mag * 100) / 100)],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 8);
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 1;
+      // 覚えた呪文を順番に唱える
+      const spell = w.cast % (w.stage + 1);
+      w.cast++;
+      const a = aimAt(me, foe);
+      const m = w.mag;
+      if (spell === 0) {
+        shoot(world, me, a, 420, { kind: 'spark', r: 7, hue: 50, life: 1.2, damage: 1.2 * m, onTouch: hitOnce() });
+      } else if (spell === 1) {
+        shoot(world, me, a, 400, {
+          kind: 'fireball',
+          r: 11,
+          life: 2,
+          damage: 3 * m,
+          onTouch(world, p, owner, o) {
+            p.dead = true;
+            if (landHit(world, owner, o, p.damage, { kind: 'fireball', x: p.x, y: p.y }) <= 0) return;
+            o.burnT = Math.max(o.burnT, 2);
+            o.burnDps = Math.max(o.burnDps, 0.8 * m);
+            o.burnSrc = owner.id;
+          },
+        });
+      } else if (spell === 2) {
+        shoot(world, me, a, 560, {
+          kind: 'icicle',
+          r: 8,
+          life: 1.6,
+          damage: 2.8 * m,
+          onTouch(world, p, owner, o) {
+            p.dead = true;
+            if (landHit(world, owner, o, p.damage, { kind: 'icicle', x: p.x, y: p.y }) <= 0) return;
+            o.slow = Math.max(o.slow, 0.5);
+            o.slowT = Math.max(o.slowT, 1.5);
+          },
+        });
+      } else if (spell === 3) {
+        strike(world, me, foe.x + foe.vx * 0.3, foe.y + foe.vy * 0.3, 0.5, 0, true, m);
+      } else {
+        // メテオ: 相手の上から大きな隕石
+        spawnProjectile(world, me, {
+          x: Math.max(30, Math.min(ARENA - 30, foe.x + foe.vx * 0.4)),
+          y: 30,
+          vx: 0,
+          vy: 520,
+          kind: 'meteor',
+          r: 22,
+          life: 2.5,
+          blockable: false,
+          damage: 8 * m,
+          onTouch(world, p, owner, o) {
+            explode(world, p, owner, o, 90, p.damage, 'meteor');
+          },
+          onExpire(world, p, owner, o) {
+            explode(world, p, owner, o, 90, p.damage, 'meteor');
+          },
+        });
+      }
+    },
+    onHit(world, me) {
+      me.w.mag += 0.15;
+      evolveStep(world, me, [2, 4, 7, 11], APPRENTICE_SPELLS);
+    },
+  },
+  {
+    id: 'moon',
+    kind: 'melee',
+    name: '月の刃',
+    en: 'Moon Blade',
+    color: '#f7dc6f',
+    grow: '3回当たるたびに 刃 +1。三日月 → 半月 → 満月(まわり全部が刃)と満ちていく。満月になると月光の波も出す',
+    init(b) {
+      b.w = { n: 1, hits: 0, dmg: 1, cd: 0, timer: 3, stage: 0 };
+      setSpin(b, 3.2);
+      moonBlades(b);
+    },
+    stats: (b) => [
+      ['すがた', MOON_NAMES[b.w.stage]],
+      ['刃', fmt(shown(b, 'n')) + '枚'],
+    ],
+    update(world, me, foe, dt) {
+      if (me.w.stage < 3) return;
+      // 満月: 月光の波
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 3;
+      const R = me.r + 140;
+      world.events.push({ type: 'shock', x: me.x, y: me.y, r: R, color: '#f7dc6f' });
+      for (const o of world.balls) {
+        if (o === me || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        if (landHit(world, me, o, me.w.dmg * 1.5, { kind: 'moonlight', x: o.x, y: o.y }) > 0) knockback(me, o, 260);
+      }
+    },
+    onHit(world, me, foe, info) {
+      const w = me.w;
+      w.dmg += 0.06;
+      w.hits++;
+      if (w.hits % 3 !== 0) return;
+      growStat(me, 'n', 1, 12, 0.5);
+      moonBlades(me);
+      const stage = w.n < 4 ? 0 : w.n < 8 ? 1 : w.n < 12 ? 2 : 3;
+      if (stage > w.stage) {
+        w.stage = stage;
+        world.events.push({ type: 'evolve', target: me.id, x: me.x, y: me.y, text: MOON_NAMES[stage], color: '#c9a227' });
+      }
+    },
+  },
+  {
+    id: 'ember',
+    kind: 'body',
+    name: '火種',
+    en: 'Ember',
+    color: '#ff8c42',
+    grow: '燃やすたびに 炎が広がる。火種 → たき火 → 大火 → 業火 と、まわりを焼く炎がどんどん大きくなる',
+    init(b) {
+      b.w = { rad: 46, dmg: 0.5, tick: 0.4, stage: 0 };
+    },
+    stats: (b) => [
+      ['すがた', EMBER_NAMES[b.w.stage]],
+      ['炎', fmt(Math.round(shown(b, 'rad')))],
+    ],
+    update(world, me, foe, dt) {
+      me.angle = -Math.PI / 2;
+      const w = me.w;
+      w.tick -= dt;
+      if (w.tick > 0) return;
+      w.tick = 0.4;
+      const R = me.r + w.rad;
+      for (const o of world.balls) {
+        if (o === me || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        // 炎が大きいほど熱い
+        landHit(world, me, o, w.dmg * (0.6 + shown(me, 'rad') / 75), { kind: 'ember', x: o.x, y: o.y });
+      }
+    },
+    onHit(world, me) {
+      const w = me.w;
+      growStat(me, 'rad', 4, 150, 0.25);
+      w.dmg += 0.06;
+      const stage = w.rad < 70 ? 0 : w.rad < 100 ? 1 : w.rad < 130 ? 2 : 3;
+      if (stage > w.stage) {
+        w.stage = stage;
+        world.events.push({ type: 'evolve', target: me.id, x: me.x, y: me.y, text: EMBER_NAMES[stage], color: '#e8481a' });
+      }
+    },
+  },
+  {
+    id: 'seed',
+    kind: 'melee',
+    name: '種',
+    en: 'Seed',
+    color: '#7cb342',
+    grow: '当てるたびに 育つ。種 → 芽 → つぼみ → 花(当てると回復) → 大樹(太い幹でなぎはらう)',
+    init(b) {
+      b.w = { stage: 0, xp: 0, bonus: 0 };
+      setSpin(b, 3);
+      b.blades = [makeBlade({ sprite: 'plant', rIn: b.r - 4, rOut: b.r + SEED_LEN[0], w: 10, damage: (world, me) => seedDamage(me), cd: 0.3, knock: 110 })];
+    },
+    stats: (b) => [
+      ['すがた', SEED_NAMES[b.w.stage]],
+      ['ダメージ', fmt(Math.round(seedDamage(b) * 10) / 10)],
+    ],
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'melee') return;
+      const w = me.w;
+      w.bonus += 0.25;
+      if (w.stage >= 3) heal(world, me, w.stage >= 4 ? 1.6 : 1);
+      if (evolveStep(world, me, needsFor(world, [2, 5, 9, 14], 1.7), SEED_NAMES)) {
+        const bl = me.blades[0];
+        bl.stage = w.stage;
+        bl.rOut = me.r + SEED_LEN[w.stage];
+        bl.w = w.stage >= 4 ? 22 : 10 + w.stage * 2;
+        bl.knock = w.stage >= 4 ? 320 : 110 + w.stage * 30;
+      }
+    },
+  },
+  {
+    id: 'hero',
+    kind: 'body',
+    name: '変身ヒーロー',
+    en: 'Hero',
+    color: '#d62828',
+    grow: 'パンチが当たるか 攻撃を受けると 変身ゲージがたまる。たまると変身して 大きく・速く・強く。変身するたびに 変身の時間と強さアップ',
+    init(b) {
+      b.w = { gauge: 0, need: 4, on: 0, dur: 4, count: 0, cd: 0, taken: 0 };
+      setSpin(b, 0);
+      // 変身中だけ出る光の剣(ふだんは damage なし＝当たらない)
+      b.blades = [makeBlade({ sprite: 'heroBeam', rIn: b.r - 4, rOut: b.r - 4, w: 12, damage: undefined, cd: 0.3, knock: 260, parry: false })];
+    },
+    stats: (b) => [
+      ['ゲージ', b.w.on > 0 ? '変身中' : `${b.w.gauge}/${b.w.need}`],
+      ['変身', fmt(Math.round(b.w.dur * 10) / 10) + '秒'],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      const bl = me.blades[0];
+      if (w.on > 0) {
+        w.on -= dt;
+        me.angle += dt * 9;
+        bl.rOut = me.r + 50;
+        if (w.on <= 0) {
+          // 変身がとける(次の変身は長くなる)
+          w.dur += 0.7;
+          me.r = BALL_R;
+          me.speedMul = 1;
+          bl.rIn = me.r - 4;
+          bl.rOut = me.r - 4;
+          bl.damage = undefined;
+        }
+        return;
+      }
+      turnTo(me, aimAt(me, foe), dt, 8);
+      if (w.gauge < w.need) return;
+      w.gauge = 0;
+      w.on = w.dur;
+      w.count++;
+      me.r = BALL_R * 1.3;
+      me.speedMul = 1.35;
+      bl.rIn = me.r - 4;
+      bl.damage = (world, me) => 3 + me.w.count * 1.2;
+      world.events.push({ type: 'evolve', target: me.id, x: me.x, y: me.y, text: '変身！', color: '#d62828' });
+    },
+    onContact(world, me, foe) {
+      if (me.w.cd > world.t) return;
+      me.w.cd = world.t + (me.w.on > 0 ? 0.3 : 0.6);
+      const dmg = me.w.on > 0 ? 4 + me.w.count * 1.5 : 1;
+      if (landHit(world, me, foe, dmg, { kind: 'hero', x: (me.x + foe.x) / 2, y: (me.y + foe.y) / 2 }) > 0) knockback(me, foe, me.w.on > 0 ? 380 : 150);
+    },
+    // 攻撃を受けても ゲージがたまる(8ダメージで +1)
+    onTakeDamage(world, me, src, amount) {
+      const w = me.w;
+      if (w.on > 0 || !src || src === me) return amount;
+      w.taken += amount;
+      while (w.taken >= 8) {
+        w.taken -= 8;
+        w.gauge++;
+      }
+      return amount;
+    },
+    onHit(world, me) {
+      const w = me.w;
+      if (w.on > 0) return;
+      w.gauge++;
+    },
+  },
 ];
 
 function grow(me) {
@@ -6566,6 +7121,15 @@ export const TUNE = {
   conductor: 1.50,
   ufo: 0.58,
   clown: 1.41,
+  forge: 1.42,
+  piggy: 0.93,
+  monk: 1.07,
+  pebble: 1.09,
+  apprentice: 1.03,
+  moon: 0.62,
+  ember: 1.12,
+  seed: 1.68,
+  hero: 0.93,
 };
 
 // 3人以上の試合だけで掛ける倍率。4人バトルロイヤルの1位率が25%に近づくように決めた
@@ -6725,6 +7289,16 @@ export const TUNE_FFA = {
   conductor: 1.34,
   ufo: 1.13,
   clown: 1.11,
+  egg: 1.08,
+  forge: 1.05,
+  piggy: 1.14,
+  monk: 0.91,
+  pebble: 1.27,
+  apprentice: 1.37,
+  moon: 0.75,
+  ember: 1.12,
+  seed: 0.85,
+  hero: 1.25,
 };
 
 for (const w of WEAPONS) {
