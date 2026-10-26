@@ -163,11 +163,35 @@ function toast(text) {
 
 // ---- 画面の切り替え(スマホの「戻る」でも戻れるように履歴を使う) ----
 
+// バトル画面にいる間は、スマホの画面が自動で暗くなって消えないようにする(Screen Wake Lock)
+// 対応していないブラウザでは何もしない。アプリを裏に回すとブラウザが外すので、戻ってきたらまたかける
+let wakeLock = null;
+async function keepAwake(on) {
+  state.awake = on;
+  try {
+    if (on && !wakeLock && navigator.wakeLock && document.visibilityState === 'visible') {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => (wakeLock = null));
+    } else if (!on && wakeLock) {
+      const w = wakeLock;
+      wakeLock = null;
+      await w.release();
+    }
+  } catch {
+    wakeLock = null; // 電池の節約モードなどで断られたときは、あきらめる
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && state.awake) keepAwake(true);
+});
+
 function show(screen, push = true) {
   if (state.screen === 'battle' && screen !== 'battle') leaveBattle();
   if (push && state.screen !== screen) history.pushState({ screen }, '');
   for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== screen;
   state.screen = screen;
+  keepAwake(screen === 'battle');
   if (screen === 'home') renderHome();
   if (screen === 'book') renderBook();
   if (screen === 'battle') requestAnimationFrame(resize);

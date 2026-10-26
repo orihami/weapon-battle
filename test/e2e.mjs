@@ -67,6 +67,7 @@ try {
   await page.waitForTimeout(1500);
   let s = await st();
   check(s.screen === 'battle' && s.t > 1, `共有URLでバトル画面へ・時間が進む (t=${s.t.toFixed(1)})`);
+  check(await page.evaluate(() => window.__weaponBattle.state.awake === true), 'バトル中は画面を点けたままにする');
   const title = await page.textContent('#battleTitle');
   check(title.includes('剣') && title.includes('短剣'), `タイトル: ${title.replace(/\s+/g, ' ').trim()}`);
   await page.screenshot({ path: join(outDir, '1-battle.png') });
@@ -80,6 +81,7 @@ try {
   await page.click('#battle [data-back]');
   s = await st();
   check(s.screen === 'setup' && s.slots[0] === 'sword' && s.slots[1] === 'dagger', `戻ると準備画面: ${s.screen} ${s.slots.slice(0, 2).join(' vs ')}`);
+  check(await page.evaluate(() => window.__weaponBattle.state.awake === false), 'バトル画面を出たら画面の点けたままをやめる');
 
   // 3) 1対1の準備: 武器選び(検索)・片方だけランダム・入れ替え
   await page.goto(base + '?speed=4');
