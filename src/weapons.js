@@ -3,6 +3,7 @@
 
 import {
   ARENA,
+  BALL_R,
   BASE_SPEED,
   foeOf,
   GRAVITY,
@@ -28,6 +29,11 @@ function fmt(n) {
 
 function aimAt(me, foe) {
   return Math.atan2(foe.y - me.y, foe.x - me.x);
+}
+
+// 相手の方へ少しずつ向きを変える(rate: 1秒あたりどれだけ追いつくか)
+function turnTo(me, want, dt, rate) {
+  me.angle += ((((want - me.angle + Math.PI) % TAU) + TAU) % TAU - Math.PI) * Math.min(1, dt * rate);
 }
 
 function setSpin(b, speed) {
@@ -4836,6 +4842,354 @@ export const WEAPONS = [
       }
     },
   },
+  // ---- 127種への追加分: 体ひとつで戦う格闘家たち(弾を出さない) ----
+  {
+    id: 'kungfu',
+    kind: 'body',
+    name: '拳法',
+    en: 'Kung Fu',
+    color: '#d4472f',
+    grow: '当たるたびに 突きのダメージ +0.3(相手に近づくと左右の拳で連続で突く)',
+    init(b) {
+      b.w = { dmg: 2, timer: 0.4, jab: 0, side: 1 };
+      setSpin(b, 0);
+      b.blades = [makeBlade({ sprite: 'fist', rIn: b.r - 6, rOut: b.r, w: 18, damage: (w, me) => me.w.dmg, cd: 0.15, knock: 160, parry: false })];
+    },
+    stats: (b) => [['突き', fmt(Math.round(b.w.dmg * 10) / 10)]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      const bl = me.blades[0];
+      turnTo(me, aimAt(me, foe), dt, 10);
+      w.timer -= dt;
+      if (w.timer <= 0 && w.jab <= 0 && Math.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 90) {
+        w.timer = 0.42;
+        w.jab = 0.18;
+        w.side = -w.side;
+        bl.off = w.side * 0.35; // 左右の拳を交互に
+      }
+      w.jab = Math.max(0, w.jab - dt);
+      bl.rOut = me.r + Math.sin((Math.PI * w.jab) / 0.18) * 62;
+      bl.rIn = me.r - 6;
+    },
+    onHit(world, me) {
+      me.w.dmg += 0.3;
+    },
+  },
+  {
+    id: 'sumo',
+    kind: 'body',
+    name: '相撲',
+    en: 'Sumo',
+    color: '#e8b98a',
+    grow: '当たるたびに ぶちかましのダメージ +0.4・体が大きくなる(ぶつかって押し出し、壁にたたきつける)',
+    init(b) {
+      b.w = { dmg: 2.5, push: 300, size: 1.05, cd: 0 };
+      b.r = BALL_R * 1.05;
+      b.speedMul = 0.92;
+    },
+    stats: (b) => [
+      ['ぶちかまし', fmt(Math.round(b.w.dmg * 10) / 10)],
+      ['大きさ', '×' + fmt(Math.round(shown(b, 'size') * 100) / 100)],
+    ],
+    onContact(world, me, foe) {
+      if (me.w.cd > world.t) return;
+      me.w.cd = world.t + 0.8;
+      if (landHit(world, me, foe, me.w.dmg, { kind: 'sumo', x: (me.x + foe.x) / 2, y: (me.y + foe.y) / 2 }) <= 0) return;
+      knockback(me, foe, me.w.push);
+      foe.slamT = 0.5;
+      foe.slamBy = me.id;
+    },
+    update(world, me) {
+      me.angle = Math.atan2(me.vy, me.vx);
+    },
+    onHit(world, me) {
+      me.w.dmg += 0.4;
+      me.w.push += 10;
+      growStat(me, 'size', 0.015, 1.6, 0.3);
+      me.r = BALL_R * me.w.size;
+    },
+  },
+  {
+    id: 'judo',
+    kind: 'body',
+    name: '柔道',
+    en: 'Judo',
+    color: '#f4f4f4',
+    grow: '投げるたびに 投げの威力アップ(ぶつかった相手を床にたたきつける)',
+    init(b) {
+      b.w = { slamMul: 1, power: 640, cd: 0 };
+    },
+    stats: (b) => [['投げ', '×' + fmt(Math.round(b.w.slamMul * 10) / 10)]],
+    onContact(world, me, foe) {
+      if (me.w.cd > world.t) return;
+      me.w.cd = world.t + 1.5;
+      if (landHit(world, me, foe, 1.5, { kind: 'judo', x: foe.x, y: foe.y }) <= 0) return;
+      // 背負い投げ: 相手を床へ向けて勢いよく投げる(床に当たると壁ドンのダメージ)
+      foe.vy = me.w.power * (foe.knockMul ?? 1);
+      foe.vx = Math.sign(foe.x - me.x || 1) * 250;
+      foe.slamT = 1;
+      foe.slamBy = me.id;
+      world.events.push({ type: 'shock', x: foe.x, y: foe.y, r: 60, color: '#ffffff' });
+    },
+    update(world, me) {
+      me.angle = Math.atan2(me.vy, me.vx);
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind === 'slam' || info.kind === 'judo') me.w.slamMul += 0.04;
+    },
+  },
+  {
+    id: 'spinKick',
+    kind: 'body',
+    name: '回し蹴り',
+    en: 'Spin Kick',
+    color: '#4a90d9',
+    grow: '当たるたびに 蹴りのダメージ +0.5(ときどき足をのばしてぐるっと回る)',
+    init(b) {
+      b.w = { dmg: 3, timer: 0.6, kick: 0 };
+      setSpin(b, 0);
+      b.blades = [makeBlade({ sprite: 'leg', rIn: b.r - 6, rOut: b.r, w: 16, damage: (w, me) => me.w.dmg, cd: 0.3, knock: 300, parry: false })];
+    },
+    stats: (b) => [['蹴り', fmt(Math.round(b.w.dmg * 10) / 10)]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      const bl = me.blades[0];
+      w.timer -= dt;
+      if (w.timer <= 0 && w.kick <= 0) {
+        w.timer = 1.2;
+        w.kick = 0.4;
+      }
+      if (w.kick > 0) {
+        // 0.4秒で1回転半
+        w.kick -= dt;
+        me.angle += dt * 24;
+        bl.rOut = me.r + 62;
+      } else {
+        turnTo(me, aimAt(me, foe), dt, 4);
+        bl.rOut = me.r;
+      }
+      bl.rIn = me.r - 6;
+    },
+    onHit(world, me) {
+      me.w.dmg += 0.5;
+    },
+  },
+  {
+    id: 'boxer',
+    kind: 'body',
+    name: 'ボクサー',
+    en: 'Boxer',
+    color: '#c0392b',
+    grow: '当たるたびに ジャブ +0.2・見切り(よける確率)+0.8%(よけると横にステップ)',
+    init(b) {
+      b.w = { dmg: 1.6, dodge: 3, timer: 0.4, jab: 0 };
+      setSpin(b, 0);
+      b.blades = [makeBlade({ sprite: 'glove', rIn: b.r - 6, rOut: b.r, w: 18, damage: (w, me) => me.w.dmg, cd: 0.2, knock: 200, parry: false })];
+    },
+    stats: (b) => [
+      ['ジャブ', fmt(Math.round(b.w.dmg * 10) / 10)],
+      ['見切り', Math.round(Math.min(30, shown(b, 'dodge'))) + '%'],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      const bl = me.blades[0];
+      turnTo(me, aimAt(me, foe), dt, 12);
+      w.timer -= dt;
+      if (w.timer <= 0 && w.jab <= 0 && Math.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 80) {
+        w.timer = 0.55;
+        w.jab = 0.14;
+      }
+      w.jab = Math.max(0, w.jab - dt);
+      bl.rOut = me.r + Math.sin((Math.PI * w.jab) / 0.14) * 56;
+      bl.rIn = me.r - 6;
+    },
+    onTakeDamage(world, me, src, amount, opts) {
+      if (!src || opts.kind === 'poison' || opts.kind === 'burn' || world.rng() * 100 >= me.w.dodge) return amount;
+      // 見切って横にステップ
+      const a = Math.atan2(me.y - src.y, me.x - src.x) + Math.PI / 2;
+      me.vx += Math.cos(a) * 260;
+      me.vy += Math.sin(a) * 260;
+      world.events.push({ type: 'dodge', x: me.x, y: me.y, target: me.id });
+      return 0;
+    },
+    onHit(world, me) {
+      me.w.dmg += 0.2;
+      growStat(me, 'dodge', 0.8, 30, 0.3);
+    },
+  },
+  {
+    id: 'palm',
+    kind: 'body',
+    name: '掌底',
+    en: 'Palm Strike',
+    color: '#e6a15c',
+    grow: '当たるたびに ダメージ +0.6・届く距離アップ(近くの相手を前方の衝撃でふっとばす)',
+    init(b) {
+      b.w = { dmg: 2.5, reach: 150, timer: 0.8 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['掌底', fmt(Math.round(b.w.dmg * 10) / 10)],
+      ['距離', fmt(Math.round(shown(b, 'reach')))],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 8);
+      w.timer -= dt;
+      if (w.timer > 0 || Math.hypot(foe.x - me.x, foe.y - me.y) > w.reach + foe.r) return;
+      w.timer = 2;
+      const c = Math.cos(me.angle);
+      const s = Math.sin(me.angle);
+      world.events.push({ type: 'shock', x: me.x + c * (me.r + 30), y: me.y + s * (me.r + 30), r: 70, color: '#ffd9a8' });
+      for (const o of world.balls) {
+        if (o === me || o.dead) continue;
+        const dx = o.x - me.x;
+        const dy = o.y - me.y;
+        const d = Math.hypot(dx, dy);
+        // 前方(だいたい120度の範囲)にいる相手
+        if (d > w.reach + o.r || (dx * c + dy * s) / (d || 1) < 0.5) continue;
+        if (landHit(world, me, o, w.dmg, { kind: 'palm', x: o.x, y: o.y }) > 0) {
+          knockback(me, o, 320);
+          o.slamT = 0.5;
+          o.slamBy = me.id;
+        }
+      }
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'palm') return;
+      me.w.dmg += 0.6;
+      growStat(me, 'reach', 4, 260, 0.3);
+    },
+  },
+  {
+    id: 'lariat',
+    kind: 'body',
+    name: 'ラリアット',
+    en: 'Lariat',
+    color: '#8e44ad',
+    grow: '当たるたびに 腕のダメージ +0.3(両腕を広げて回る。速く動くほど速く回る)',
+    init(b) {
+      b.w = { dmg: 1.6 };
+      setSpin(b, 0);
+      for (const off of [0, Math.PI]) b.blades.push(makeBlade({ sprite: 'arm', off, rIn: b.r - 6, rOut: b.r + 38, w: 16, damage: (w, me) => me.w.dmg, cd: 0.3, knock: 260, parry: false }));
+    },
+    stats: (b) => [['腕', fmt(Math.round(b.w.dmg * 10) / 10)]],
+    update(world, me, foe, dt) {
+      me.angle += dt * (2 + Math.hypot(me.vx, me.vy) / 110);
+    },
+    onHit(world, me) {
+      me.w.dmg += 0.3;
+    },
+  },
+  {
+    id: 'bearhug',
+    kind: 'body',
+    name: 'ベアハッグ',
+    en: 'Bear Hug',
+    color: '#8b5a2b',
+    grow: '締めるたびに 締めつけのダメージ +0.1(ぶつかった相手をつかまえて1秒しめつける)',
+    init(b) {
+      b.w = { sq: 0.8, hold: 0, tick: 0, cd: 0, target: null };
+    },
+    stats: (b) => [['締めつけ', fmt(Math.round(b.w.sq * 10) / 10)]],
+    onContact(world, me, foe) {
+      const w = me.w;
+      if (w.target || w.cd > 0) return;
+      w.target = foe;
+      w.hold = 1;
+      w.tick = 0;
+      w.off = Math.atan2(foe.y - me.y, foe.x - me.x);
+    },
+    update(world, me, foe, dt) {
+      const w = me.w;
+      if (w.cd > 0) w.cd -= dt;
+      const o = w.target;
+      if (!o) {
+        me.angle = Math.atan2(me.vy, me.vx);
+        return;
+      }
+      if (o.dead) {
+        w.target = null;
+        return;
+      }
+      // つかまえている間は相手をくっつけたまま締める
+      w.hold -= dt;
+      me.angle = w.off;
+      o.x = Math.max(o.r, Math.min(ARENA - o.r, me.x + Math.cos(w.off) * (me.r + o.r - 4)));
+      o.y = Math.max(o.r, Math.min(ARENA - o.r, me.y + Math.sin(w.off) * (me.r + o.r - 4)));
+      o.vx = me.vx;
+      o.vy = me.vy;
+      o.stun = Math.max(o.stun, 0.05);
+      w.tick -= dt;
+      if (w.tick <= 0) {
+        w.tick = 0.25;
+        landHit(world, me, o, w.sq, { kind: 'hug', x: o.x, y: o.y });
+      }
+      if (w.hold <= 0 || o.dead) {
+        knockback(me, o, 400);
+        w.target = null;
+        w.cd = 1.5;
+      }
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind === 'hug') me.w.sq += 0.1;
+    },
+  },
+  {
+    id: 'ironBody',
+    kind: 'body',
+    name: '鋼の体',
+    en: 'Iron Body',
+    color: '#7f8c8d',
+    grow: '攻撃を受けるたびに 体当たりのダメージ +0.4(打たれるほど強くなる)・受けるダメージ -15%',
+    init(b) {
+      b.w = { dmg: 2 };
+    },
+    stats: (b) => [['体当たり', fmt(Math.round(b.w.dmg * 10) / 10)]],
+    onContact(world, me, foe) {
+      if (landHit(world, me, foe, me.w.dmg, { kind: 'iron', x: (me.x + foe.x) / 2, y: (me.y + foe.y) / 2 }) > 0) knockback(me, foe, 220);
+    },
+    onTakeDamage(world, me, src, amount, opts) {
+      if (src && src !== me && opts.kind !== 'poison' && opts.kind !== 'burn') me.w.dmg += 0.4;
+      return amount * 0.85;
+    },
+    update(world, me) {
+      me.angle = Math.atan2(me.vy, me.vx);
+    },
+  },
+  {
+    id: 'rush',
+    kind: 'body',
+    name: 'ラッシュ',
+    en: 'Rush',
+    color: '#f39c12',
+    grow: '当たるたびに 1発のダメージ +0.02(近くの相手に目にもとまらぬ連打。1.5秒打って1秒休む)',
+    init(b) {
+      b.w = { dmg: 0.7, on: 0, rest: 0.5, tick: 0 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [['連打', fmt(Math.round(b.w.dmg * 100) / 100)]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 10);
+      const near = Math.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 90;
+      if (w.on > 0) {
+        w.on -= dt;
+        if (w.on <= 0) w.rest = 1;
+        w.tick -= dt;
+        if (w.tick <= 0 && near) {
+          w.tick = 0.08;
+          landHit(world, me, foe, w.dmg, { kind: 'rush', x: foe.x + (world.rng() - 0.5) * 30, y: foe.y + (world.rng() - 0.5) * 30 });
+        }
+        return;
+      }
+      w.rest -= dt;
+      if (w.rest <= 0 && near) w.on = 1.5;
+    },
+    onHit(world, me) {
+      me.w.dmg += 0.02;
+    },
+  },
 ];
 
 function grow(me) {
@@ -4945,125 +5299,145 @@ export const TUNE = {
   rewind: 1.38,
   bowling: 1.10,
   chainsaw: 1.23,
+  kungfu: 0.83,
+  sumo: 0.55,
+  judo: 0.60,
+  spinKick: 1.26,
+  boxer: 0.62,
+  palm: 0.61,
+  lariat: 1.48,
+  bearhug: 0.90,
+  ironBody: 0.80,
+  rush: 1.05,
 };
 
 // 3人以上の試合だけで掛ける倍率。4人バトルロイヤルの1位率が25%に近づくように決めた
 export const TUNE_FFA = {
   sword: 0.75,
-  dagger: 0.65,
-  spear: 0.65,
+  dagger: 0.62,
+  spear: 0.61,
   axe: 0.58,
   hammer: 0.83,
   katana: 0.81,
   scythe: 1.07,
-  whip: 0.60,
-  trident: 0.65,
+  whip: 0.69,
+  trident: 0.75,
   scepter: 0.52,
   lance: 0.52,
   shield: 2.20,
   orb: 1.04,
-  orbital: 0.91,
-  flail: 0.86,
+  orbital: 0.96,
+  flail: 0.80,
   bomb: 1.22,
   crossbow: 1.29,
-  bow: 1.16,
-  potion: 1.22,
+  bow: 1.10,
+  potion: 1.29,
   wand: 1.50,
   ice: 1.25,
   boomerang: 1.53,
-  unarmed: 1.40,
-  spike: 0.94,
+  unarmed: 1.50,
+  spike: 0.99,
   cluster: 1.29,
   mine: 1.05,
   meteor: 0.54,
-  missile: 0.64,
+  missile: 0.60,
   shuriken: 0.78,
   bees: 1.92,
   gatling: 1.44,
   lightning: 1.68,
-  saw: 0.80,
+  saw: 0.76,
   flame: 0.89,
-  gas: 0.93,
-  dual: 0.50,
-  dual: 0.50,
+  gas: 0.89,
+  dual: 0.56,
+  dual: 0.56,
   blackhole: 1.43,
   fireworks: 0.88,
   laser: 2.17,
-  slime: 1.06,
-  tornado: 1.10,
+  slime: 1.11,
+  tornado: 1.15,
   yoyo: 1.50,
-  bats: 0.95,
-  ricochet: 1.12,
+  bats: 0.91,
+  ricochet: 1.04,
   greatsword: 0.60,
   rocket: 1.25,
   sonic: 1.18,
   snowball: 0.90,
   clone: 0.88,
   curse: 1.27,
-  blizzard: 0.84,
+  blizzard: 0.78,
   hook: 1.69,
-  snake: 1.56,
+  snake: 1.64,
   knives: 0.91,
   squeaky: 0.77,
-  dice: 1.23,
-  javelin: 1.20,
-  drill: 0.56,
+  dice: 1.17,
+  javelin: 1.09,
+  drill: 0.58,
   spellbook: 2.13,
   water: 0.95,
   kusarigama: 0.53,
   mirror: 0.82,
   sticky: 1.14,
-  web: 1.03,
-  clock: 1.04,
+  web: 1.08,
+  clock: 1.13,
   vine: 1.84,
   revolver: 1.31,
   shark: 1.15,
-  counter: 1.44,
-  gravity: 0.93,
+  counter: 1.51,
   saber: 0.71,
-  drones: 1.10,
+  drones: 1.05,
   quake: 1.59,
-  phoenix: 0.87,
+  phoenix: 0.82,
   magnet: 1.01,
   star: 0.82,
+  axethrow: 1.08,
   danmaku: 0.50,
-  wrecking: 1.93,
+  wrecking: 1.83,
   storm: 0.54,
   giant: 1.24,
   vampire: 0.50,
   spirit: 1.89,
   lava: 1.77,
-  gears: 0.76,
+  gears: 0.80,
   kamaitachi: 0.73,
-  bumper: 0.80,
+  bumper: 0.84,
   prism: 1.59,
-  ghost: 0.91,
+  ghost: 1.01,
   sakura: 0.74,
-  pinball: 0.90,
-  splitter: 1.66,
+  pinball: 0.94,
+  splitter: 1.74,
   frog: 0.72,
-  balloon: 0.96,
-  cards: 0.77,
-  skeleton: 1.02,
+  balloon: 0.92,
+  cards: 0.73,
+  skeleton: 0.93,
   firecracker: 1.43,
   urchin: 0.50,
   plasma: 0.79,
-  chakram: 1.78,
+  chakram: 1.67,
   butterfly: 0.88,
+  cannon: 1.06,
   charger: 1.53,
-  lasso: 1.59,
+  lasso: 1.67,
   timebomb: 1.64,
   spring: 0.82,
-  shadow: 1.75,
-  swap: 1.39,
+  shadow: 1.66,
+  swap: 1.52,
   tesla: 0.61,
   sniperRifle: 1.30,
-  anvil: 1.31,
-  rocketFist: 1.58,
+  anvil: 1.42,
+  rocketFist: 1.51,
   drum: 0.91,
   rewind: 0.78,
-  bowling: 1.12,
-  chainsaw: 0.70,
+  bowling: 1.19,
+  chainsaw: 0.63,
+  kungfu: 0.59,
+  sumo: 1.17,
+  judo: 1.17,
+  spinKick: 1.05,
+  boxer: 0.65,
+  palm: 1.21,
+  lariat: 0.66,
+  bearhug: 1.48,
+  ironBody: 0.68,
 };
 
 for (const w of WEAPONS) {

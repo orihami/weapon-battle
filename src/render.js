@@ -115,6 +115,29 @@ function sawShape(ctx, r) {
 }
 
 const BLADE_SPRITES = {
+  fist(ctx, b) {
+    // 腕と拳(のびているときだけ)
+    const len = b.rOut - b.rIn;
+    if (len < 10) return;
+    rect(ctx, b.rIn, -5, len - 10, 10, '#f1c9a5');
+    circle(ctx, b.rOut - 6, 0, 10, '#f1c9a5');
+  },
+  glove(ctx, b) {
+    const len = b.rOut - b.rIn;
+    if (len < 10) return;
+    rect(ctx, b.rIn, -5, len - 12, 10, '#f1c9a5');
+    circle(ctx, b.rOut - 8, 0, 12, '#d62828');
+  },
+  leg(ctx, b) {
+    const len = b.rOut - b.rIn;
+    if (len < 10) return;
+    rect(ctx, b.rIn, -6, len - 8, 12, '#2f4f6f');
+    rect(ctx, b.rOut - 12, -8, 14, 16, '#1a1a1a');
+  },
+  arm(ctx, b) {
+    rect(ctx, b.rIn, -6, b.rOut - b.rIn - 8, 12, '#f1c9a5');
+    circle(ctx, b.rOut - 6, 0, 9, '#f1c9a5');
+  },
   rewind(ctx, b) {
     // 時計の針と目盛り
     rect(ctx, b.rIn, -3, b.rOut - b.rIn, 6, '#6aa0c8');
@@ -331,6 +354,47 @@ const BLADE_SPRITES = {
 
 // 遠距離武器などの「手に持っている物」
 const HELD = {
+  sumo(ctx) {
+    // まわし
+    rect(ctx, -26, -6, 14, 12, '#2b2b6b');
+  },
+  judo(ctx) {
+    // 黒帯
+    rect(ctx, -24, -4, 10, 8, '#1a1a1a');
+    rect(ctx, -18, 3, 4, 10, '#1a1a1a');
+  },
+  palm(ctx, ball) {
+    const k = ball.w.timer > 1.15 ? 1.4 : 1;
+    ctx.scale(k, k);
+    rect(ctx, -2, -9, 10, 18, '#f1c9a5');
+    for (let i = 0; i < 4; i++) rect(ctx, 8, -9 + i * 4.5, 6, 3.5, '#f1c9a5');
+  },
+  bearhug(ctx, ball) {
+    if (ball.w.target) {
+      rect(ctx, -10, -24, 14, 8, '#6b4220');
+      rect(ctx, -10, 16, 14, 8, '#6b4220');
+    } else {
+      circle(ctx, -2, -10, 6, '#6b4220');
+      circle(ctx, -2, 10, 6, '#6b4220');
+    }
+  },
+  ironBody(ctx) {
+    // 鉢巻き
+    rect(ctx, -28, -4, 8, 8, '#e8484d');
+  },
+  rush(ctx, ball, t) {
+    if (ball.w.on <= 0) {
+      circle(ctx, 0, -9, 7, '#f1c9a5');
+      circle(ctx, 0, 9, 7, '#f1c9a5');
+      return;
+    }
+    // 連打中: たくさんの拳が見える
+    for (let i = 0; i < 5; i++) {
+      const y = Math.sin(t * 60 + i * 1.7) * 14;
+      const x = 4 + ((t * 300 + i * 13) % 26);
+      circle(ctx, x, y, 6, '#f1c9a5');
+    }
+  },
   cannon(ctx) {
     rect(ctx, -6, -9, 26, 18, '#3a3f47');
     rect(ctx, 18, -11, 6, 22, '#2a2e34');

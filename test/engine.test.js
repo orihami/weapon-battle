@@ -341,6 +341,22 @@ test('新武器: 入れかえは場所が入れかわる・金床は落ちてく
   assert.ok(caught && thrown, '投げ縄で捕まえて投げていない');
 });
 
+test('格闘家: 柔道は床へ投げる・相撲は大きくなる・ボクサーはよける', () => {
+  const w1 = createBattle(W.judo, W.sword, 1);
+  const [judo, foe] = w1.balls;
+  W.judo.onContact(w1, judo, foe);
+  assert.ok(foe.vy > 500 && foe.slamT > 0, '柔道で床へ投げていない');
+  const w2 = createBattle(W.sumo, W.sword, 1);
+  const sumo = w2.balls[0];
+  const r0 = sumo.r;
+  for (let i = 0; i < 10; i++) W.sumo.onHit(w2, sumo, w2.balls[1], { kind: 'sumo' });
+  assert.ok(sumo.r > r0, '相撲が大きくならない');
+  const w3 = createBattle(W.boxer, W.sword, 1);
+  const boxer = w3.balls[0];
+  boxer.w.dodge = 100;
+  assert.equal(W.boxer.onTakeDamage(w3, boxer, w3.balls[1], 5, { kind: 'melee' }), 0, 'ボクサーがよけない');
+});
+
 test('スキル: 全スキルを重ねがけしても決着し、数値が壊れない', async () => {
   const { SKILLS } = await import('../src/skills.js');
   let seed = 1;
