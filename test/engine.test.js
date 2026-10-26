@@ -67,10 +67,14 @@ test('刃どうしがぶつかると両方の回転が逆になる(受け流し)
   assert.ok(segSegDist(bladeSegment(a, a.blades[0]), bladeSegment(b, b.blades[0])) >= 0);
 });
 
-test('全ての組み合わせが制限時間内に決着し、数値が壊れない', () => {
+// 全組み合わせを1回ずつ回して、決着・数値・勝率をまとめて見る(武器が多いので2回に分けると遅い)
+test('全ての組み合わせが制限時間内に決着し、数値が壊れない。どの武器も勝てるし負けることもある', () => {
+  const wins = Object.fromEntries(WEAPONS.map((w) => [w.id, 0]));
+  const games = Object.fromEntries(WEAPONS.map((w) => [w.id, 0]));
+  let seed = 100;
   for (const a of WEAPONS) {
     for (const b of WEAPONS) {
-      const world = runToEnd(createBattle(a, b, 7));
+      const world = runToEnd(createBattle(a, b, a === b ? 7 : seed++));
       assert.ok(world.over, `${a.id} vs ${b.id} が終わらない`);
       assert.ok(world.t <= HARD_LIMIT + 0.01);
       for (const ball of world.balls) {
@@ -78,18 +82,7 @@ test('全ての組み合わせが制限時間内に決着し、数値が壊れ�
         assert.ok(ball.hp >= 0 && ball.hp <= Math.max(MAX_HP, ball.maxHp), `${a.id} vs ${b.id}: HP=${ball.hp}`);
         for (const [, v] of ball.def.stats(ball, world)) assert.ok(!String(v).includes('NaN'));
       }
-    }
-  }
-});
-
-test('どの武器も勝てるし、負けることもある(極端に強い/弱い武器がない)', () => {
-  const wins = Object.fromEntries(WEAPONS.map((w) => [w.id, 0]));
-  const games = Object.fromEntries(WEAPONS.map((w) => [w.id, 0]));
-  let seed = 100;
-  for (const a of WEAPONS) {
-    for (const b of WEAPONS) {
       if (a === b) continue;
-      const world = runToEnd(createBattle(a, b, seed++));
       games[a.id]++;
       games[b.id]++;
       if (world.winner === 0) wins[a.id]++;
