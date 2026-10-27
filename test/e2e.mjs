@@ -218,6 +218,9 @@ try {
     s.chal.stage = 5;
     s.chal.enemy.boss = true;
     s.chal.skills.push(S.vamp, S.hp);
+    // ボスのカード(回復する守護神など)で持ち直さないよう、カードを外してからHPを減らす
+    s.world.balls[1].skills = [];
+    s.world.balls[1].w.revived = true; // 不死鳥のよみがえりも使い切ったことにする
     s.world.balls[1].hp = 0.01;
   });
   await page.waitForFunction(() => document.querySelector('#cardDialog').open, null, { timeout: 200000 });
