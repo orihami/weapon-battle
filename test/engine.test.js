@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createBattle, createMelee, runToEnd, step, segSegDist, landHit, knockback, MAX_HP, HARD_LIMIT, bladeSegment } from '../src/engine.js';
+import { createBattle, createMelee, runToEnd, step, segSegDist, landHit, knockback, dealDamage, MAX_HP, HARD_LIMIT, bladeSegment } from '../src/engine.js';
 import { WEAPONS, WEAPON_BY_ID, validateWeapon } from '../src/weapons.js';
+import { SKILL_BY_ID } from '../src/skills.js';
 
 const W = WEAPON_BY_ID;
 
@@ -593,4 +594,85 @@ test('大器晩成の武器: 当てるほど姿が変わり、後半は最初よ
   }
   assert.ok(pb.r > r0 * 2 && pb.w.stage === 3, '石が大きくならない');
   assert.ok(em.w.rad > 100 && em.w.stage >= 2, '炎が広がらない');
+});
+
+test('大器晩成 第2弾: さなぎ・石像の目覚め・チェスの成り上がり・灯台の光', () => {
+  // カブトムシ: 3回で さなぎ(受けるダメージが減る) → 4秒でカブトムシ(角)
+  const w1 = createBattle(W.beetle, W.sword, 1);
+  const [bt, f1] = w1.balls;
+  for (let i = 0; i < 3; i++) W.beetle.onHit(w1, bt, f1, { kind: 'larva' });
+  assert.ok(bt.w.stage === 1 && bt.w.pupa > 0, 'さなぎにならない');
+  assert.ok(W.beetle.onTakeDamage(w1, bt, f1, 10) < 5, 'さなぎが硬くない');
+  for (let i = 0; i < 4 * 120 + 2; i++) W.beetle.update(w1, bt, f1, 1 / 120);
+  assert.ok(bt.w.stage === 2 && bt.blades.length === 1, '羽化しない');
+  // 石像: 攻撃を受けると目覚める
+  const w2 = createBattle(W.statue, W.sword, 1);
+  const [stt, f2] = w2.balls;
+  for (let i = 0; i < 12; i++) dealDamage(w2, f2, stt, 5);
+  assert.ok(stt.w.stage >= 1 && stt.blades.length === 2, '目覚めない');
+  // チェスの駒: 14回でクイーン
+  const w3 = createBattle(W.pawn, W.sword, 1);
+  const [pw, f3] = w3.balls;
+  for (let i = 0; i < 14; i++) W.pawn.onHit(w3, pw, f3, {});
+  assert.equal(pw.w.stage, 4);
+  // 電球: 灯台になると回る光が当たる
+  const w4 = createBattle(W.bulb, W.sword, 1);
+  const [bl, f4] = w4.balls;
+  for (let i = 0; i < 12; i++) W.bulb.onHit(w4, bl, f4, {});
+  assert.equal(bl.w.stage, 3);
+  const hp = f4.hp;
+  for (let i = 0; i < 6 * 120; i++) W.bulb.update(w4, bl, f4, 1 / 120);
+  assert.ok(f4.hp < hp, '灯台の光が当たらない');
+});
+
+test('遊び道具の武器: 消しゴム・輪投げ・トランポリン', () => {
+  // 消しゴム: 当てた相手の与えるダメージが減る
+  const w1 = createBattle(W.eraser, W.sword, 1);
+  const [er, f1] = w1.balls;
+  const before = dealDamage(w1, f1, er, 10);
+  for (let i = 0; i < 5; i++) W.eraser.onHit(w1, er, f1, { kind: 'melee' });
+  const after = dealDamage(w1, f1, er, 10);
+  assert.ok(after < before * 0.9, `消せていない ${before} → ${after}`);
+  // 輪投げ: 輪がはまると受けるダメージが増え、時間で外れる
+  const w2 = createBattle(W.ringToss, W.sword, 1);
+  const [, f2] = w2.balls;
+  const d0 = dealDamage(w2, w2.balls[0], f2, 10);
+  f2.rings = 4;
+  f2.ringT = 5;
+  const d1 = dealDamage(w2, w2.balls[0], f2, 10);
+  assert.ok(d1 > d0 * 1.15, '輪でダメージが増えない');
+  w2.balls[0].w.timer = 1e9; // 新しい輪は投げさせない
+  for (let i = 0; i < 25 * 120 && !w2.over; i++) step(w2);
+  assert.ok(!(f2.rings > 0) || w2.over, '輪が外れない');
+  // トランポリン: 上に来た相手をはね上げる
+  const w3 = createBattle(W.trampoline, W.sword, 1);
+  const [tp, f3] = w3.balls;
+  tp.w.timer = 0;
+  W.trampoline.update(w3, tp, f3, 1 / 120);
+  const pad = w3.projectiles.find((p) => p.kind === 'trampoline');
+  f3.x = pad.x;
+  f3.y = 600 - f3.r;
+  f3.vy = 0;
+  pad.update(w3, pad, tp, f3, 1 / 120);
+  assert.ok(f3.vy < -500, 'はね上がらない');
+});
+
+test('第4弾のカード: 進化の石・ステップ・根っこ', () => {
+  // 進化の石: 大器晩成の武器は最初から進化が進んでいる
+  const w1 = createBattle(W.egg, W.sword, 1, { a: { skills: [SKILL_BY_ID.evoStone] } });
+  assert.ok(w1.balls[0].w.stage >= 2, `たまごのまま(${w1.balls[0].w.stage})`);
+  // ステップ: 大きな攻撃を1回よける
+  const w2 = createBattle(W.sword, W.sword, 1, { a: { skills: [SKILL_BY_ID.step] } });
+  const [me, foe] = w2.balls;
+  assert.equal(dealDamage(w2, foe, me, 2) > 0, true, '小さい攻撃はよけない');
+  assert.equal(dealDamage(w2, foe, me, 6), 0);
+  assert.ok(dealDamage(w2, foe, me, 6) > 0, '続けてはよけない');
+  // 根っこ: 床の近くでは受けるダメージがさらに減る
+  const w3 = createBattle(W.sword, W.sword, 1, { a: { skills: [SKILL_BY_ID.rooted] } });
+  const [r1, r2] = w3.balls;
+  r1.y = 200;
+  const air = dealDamage(w3, r2, r1, 10);
+  r1.y = 600 - r1.r;
+  const floor = dealDamage(w3, r2, r1, 10);
+  assert.ok(floor < air * 0.8, '床で減らない');
 });

@@ -34,8 +34,11 @@ const KIND_TABS = [
   ['near', '近接'],
   ['far', '飛び道具'],
   ['other', '特殊'],
+  ['bloom', '大器晩成'],
 ];
 const kindTab = (def) => (def.kind === 'ranged' ? 'far' : def.kind === 'body' || def.kind === 'copy' ? 'other' : 'near');
+// タブに入るか(大器晩成は近接・飛び道具などと重なってよい)
+const inTab = (def, tab) => tab === 'all' || (tab === 'bloom' ? def.bloom : kindTab(def) === tab);
 
 const params = new URLSearchParams(location.search);
 const renderer = new Renderer($('arena'));
@@ -878,7 +881,7 @@ function openPicker(title, onPick, onRandom) {
 function renderPicker() {
   $('pickerTabs').replaceChildren(
     ...KIND_TABS.map(([id, label]) => {
-      const n = id === 'all' ? WEAPONS.length : WEAPONS.filter((w) => kindTab(w) === id).length;
+      const n = WEAPONS.filter((w) => inTab(w, id)).length;
       const b = el('button', { type: 'button', textContent: `${label} ${n}`, className: state.pickerTab === id ? 'on' : '' });
       b.addEventListener('click', () => {
         state.pickerTab = id;
@@ -888,7 +891,7 @@ function renderPicker() {
     }),
   );
   const q = $('pickerSearch').value.trim().toLowerCase();
-  const list = WEAPONS.filter((w) => (state.pickerTab === 'all' || kindTab(w) === state.pickerTab) && (!q || w.name.includes(q) || w.en.toLowerCase().includes(q)));
+  const list = WEAPONS.filter((w) => inTab(w, state.pickerTab) && (!q || w.name.includes(q) || w.en.toLowerCase().includes(q)));
   const grid = $('pickerGrid');
   grid.replaceChildren(
     ...list.map((def) => {

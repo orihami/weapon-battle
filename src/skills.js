@@ -1586,6 +1586,302 @@ export const SKILLS = [
     },
   },
 
+  // ==== 第4弾: 床・お守り・筋トレ・進化の石・磁力・時間で強くなるカード ====
+  // ---- ふつう ----
+  {
+    id: 'rooted',
+    icon: '🌳',
+    name: '根っこ',
+    desc: '受けるダメージ -8%。床の近くにいる間は さらに -30%',
+    rarity: 'common',
+    incoming: (world, me, src, amount) => amount * (me.y >= ARENA - me.r - 40 ? 0.64 : 0.92),
+  },
+  {
+    id: 'charm',
+    icon: '🧿',
+    name: 'お守り',
+    desc: '1回で4以上の大きなダメージを受けたとき、5回まで半分にする',
+    rarity: 'common',
+    incoming(world, me, src, amount, opts, st) {
+      if (amount < 4 || (st.n || 0) >= 5) return amount;
+      st.n = (st.n || 0) + 1;
+      world.events.push({ type: 'shock', x: me.x, y: me.y, r: me.r + 30, color: '#5dade2' });
+      return amount / 2;
+    },
+  },
+  {
+    id: 'training',
+    icon: '🏋️',
+    name: '筋トレ',
+    desc: '武器の攻撃が当たるたびに 威力 +1.5%(最大 +30%)',
+    rarity: 'common',
+    onHit(world, me, foe, info, st) {
+      st.k = Math.min(0.3, (st.k || 0) + 0.015);
+    },
+    outgoing: (world, me, target, amount, opts, st) => (isWeaponHit(opts) ? amount * (1 + (st.k || 0)) : amount),
+  },
+  {
+    id: 'cushion',
+    icon: '🛏️',
+    name: 'クッション',
+    desc: '受けるダメージ -8%・壁ドンのダメージ -70%・ふっとばされにくくなる(-20%)',
+    rarity: 'common',
+    apply: (world, me) => (me.knockMul = (me.knockMul ?? 1) * 0.8),
+    incoming: (world, me, src, amount, opts) => amount * (opts.kind === 'slam' ? 0.3 : 0.92),
+  },
+  // ---- レア ----
+  {
+    id: 'evoStone',
+    icon: '💎',
+    name: '進化の石',
+    desc: '試合開始の時点で4回分成長している。大器晩成の武器なら6回分(進化が早くなる)',
+    rarity: 'rare',
+    apply: (world, me) => preGrow(world, me, me.def.bloom ? 6 : 4),
+  },
+  {
+    id: 'magnetism',
+    icon: '🧲',
+    name: '磁力の盾',
+    desc: '近くに来た相手の弾を横へそらす。ぶつかった相手を磁力ではじく(2ダメージ)',
+    rarity: 'rare',
+    contact(world, me, foe, st) {
+      if ((st.cd || 0) > world.t) return;
+      st.cd = world.t + 0.6;
+      skillDamage(world, me, foe, 2);
+      knockback(me, foe, 380);
+    },
+    update(world, me, foe, dt) {
+      for (const p of world.projectiles) {
+        if (p.owner === me.id || !(p.vx || p.vy)) continue;
+        const dx = p.x - me.x;
+        const dy = p.y - me.y;
+        const d = Math.hypot(dx, dy);
+        if (d > me.r + 110 || d < 1) continue;
+        p.vx += (dx / d) * 1300 * dt;
+        p.vy += (dy / d) * 1300 * dt;
+      }
+    },
+  },
+  {
+    id: 'absorb',
+    icon: '🫙',
+    name: '吸収',
+    desc: '受けたダメージの25%をためて、次に武器の攻撃が当たったときに上乗せする(最大10)',
+    rarity: 'rare',
+    incoming(world, me, src, amount, opts, st) {
+      st.bank = Math.min(10, (st.bank || 0) + amount * 0.25);
+      return amount;
+    },
+    outgoing(world, me, target, amount, opts, st) {
+      if (!isWeaponHit(opts) || !(st.bank > 0)) return amount;
+      const add = st.bank;
+      st.bank = 0;
+      return amount + add;
+    },
+  },
+  {
+    id: 'step',
+    icon: '🩰',
+    name: 'ステップ',
+    desc: '10秒に1回、5以上の大きな攻撃を必ずよける',
+    rarity: 'rare',
+    incoming(world, me, src, amount, opts, st) {
+      if (amount < 5 || opts.kind === 'poison' || opts.kind === 'burn' || (st.ready ?? 0) > world.t) return amount;
+      st.ready = world.t + 10;
+      world.events.push({ type: 'dodge', x: me.x, y: me.y, target: me.id });
+      return 0;
+    },
+  },
+  // ---- エピック ----
+  {
+    id: 'overdrive',
+    icon: '🔥',
+    name: 'オーバードライブ',
+    desc: '9秒ごとに 3.5秒間、攻撃速度 +80%・素早さ +20%',
+    rarity: 'epic',
+    update(world, me, foe, dt, st) {
+      st.t = (st.t ?? 7) - dt;
+      if (!st.on && st.t <= 0) {
+        st.on = true;
+        st.t = 3.5;
+        me.haste *= 1.8;
+        me.speedMul *= 1.2;
+        world.events.push({ type: 'shock', x: me.x, y: me.y, r: me.r + 40, color: '#ff7a1a' });
+      } else if (st.on && st.t <= 0) {
+        st.on = false;
+        st.t = 5.5;
+        me.haste /= 1.8;
+        me.speedMul /= 1.2;
+      }
+    },
+  },
+  {
+    id: 'guardian',
+    icon: '👼',
+    name: '守護霊',
+    desc: 'HPが30%を下回ったとき1度だけ、5秒間 受けるダメージ -70%',
+    rarity: 'epic',
+    update(world, me, foe, dt, st) {
+      if (st.t > 0) st.t -= dt;
+      if (st.used || me.hp > me.maxHp * 0.3) return;
+      st.used = true;
+      st.t = 5;
+      world.events.push({ type: 'say', x: me.x, y: me.y, text: '守護霊！', color: '#5dade2' });
+    },
+    incoming: (world, me, src, amount, opts, st) => (st.t > 0 ? amount * 0.3 : amount),
+  },
+  // ---- レジェンド ----
+  {
+    id: 'ascension',
+    icon: '🌟',
+    name: '覚醒の時',
+    desc: '25秒たつと覚醒: 体が大きくなり、威力 +70%・攻撃速度 +30%',
+    rarity: 'legend',
+    update(world, me, foe, dt, st) {
+      if (st.done || world.t < 25) return;
+      st.done = true;
+      resize(me, 1.2);
+      me.power *= 1.7;
+      me.haste *= 1.3;
+      world.events.push({ type: 'evolve', target: me.id, x: me.x, y: me.y, text: '覚醒！', color: '#e0a600' });
+    },
+  },
+  {
+    id: 'accel',
+    icon: '⏩',
+    name: '時間加速',
+    desc: '8秒ごとに 攻撃速度 +12%・威力 +6%(最大6回まで)',
+    rarity: 'legend',
+    update(world, me, foe, dt, st) {
+      const n = Math.min(6, Math.floor(world.t / 8));
+      while ((st.n || 0) < n) {
+        st.n = (st.n || 0) + 1;
+        me.haste *= 1.12;
+        me.power *= 1.06;
+      }
+    },
+  },
+  // ---- 呪い ----
+  {
+    id: 'snailCurse',
+    icon: '🐌',
+    name: '鈍足の呪い',
+    desc: '威力 +45% / 素早さ -25%',
+    rarity: 'cursed',
+    apply(world, me) {
+      me.power *= 1.45;
+      me.speedMul *= 0.75;
+    },
+  },
+  // ==== 第4弾の合体進化 ====
+  {
+    id: 'rootFortress',
+    icon: '🌲',
+    name: '大樹の根',
+    desc: '受けるダメージ -20%。床の近くにいる間は さらに -35%。毎秒HPが1回復',
+    rarity: 'fusion',
+    needs: ['rooted', 'armor'],
+    update(world, me, foe, dt, st) {
+      st.rg = (st.rg || 0) + dt;
+      if (st.rg < 1) return;
+      st.rg -= 1;
+      heal(world, me, 1);
+    },
+    incoming: (world, me, src, amount) => amount * (me.y >= ARENA - me.r - 40 ? 0.45 : 0.8),
+  },
+  {
+    id: 'muscleGod',
+    icon: '🦾',
+    name: '筋肉の神',
+    desc: '威力 +20%。武器の攻撃が当たるたびに 威力 +3%(最大 +75%)',
+    rarity: 'fusion',
+    needs: ['training', 'power'],
+    apply: (w, me) => (me.power *= 1.2),
+    onHit(world, me, foe, info, st) {
+      st.k = Math.min(0.75, (st.k || 0) + 0.03);
+    },
+    outgoing: (world, me, target, amount, opts, st) => (isWeaponHit(opts) ? amount * (1 + (st.k || 0)) : amount),
+  },
+  {
+    id: 'evoGod',
+    icon: '🧬',
+    name: '進化の神',
+    desc: '試合開始の時点で4回分成長(大器晩成の武器なら7回分)・当てると40%でもう1回成長',
+    rarity: 'fusion',
+    needs: ['evoStone', 'growth2'],
+    apply: (world, me) => preGrow(world, me, me.def.bloom ? 7 : 4),
+    onHit(world, me, foe, info) {
+      if (me.def.onHit && world.rng() < 0.4) me.def.onHit(world, me, foe, info);
+    },
+  },
+  {
+    id: 'hyper',
+    icon: '🚀',
+    name: '超加速',
+    desc: '攻撃速度 +20%。6秒ごとに 3秒間、攻撃速度 +80%・素早さ +25%',
+    rarity: 'fusion',
+    needs: ['overdrive', 'haste'],
+    apply: (w, me) => (me.haste *= 1.2),
+    update(world, me, foe, dt, st) {
+      st.t = (st.t ?? 3) - dt;
+      if (!st.on && st.t <= 0) {
+        st.on = true;
+        st.t = 3;
+        me.haste *= 1.8;
+        me.speedMul *= 1.25;
+        world.events.push({ type: 'shock', x: me.x, y: me.y, r: me.r + 50, color: '#ff3d9a' });
+      } else if (st.on && st.t <= 0) {
+        st.on = false;
+        st.t = 3;
+        me.haste /= 1.8;
+        me.speedMul /= 1.25;
+      }
+    },
+  },
+  {
+    id: 'guardianGod',
+    icon: '😇',
+    name: '守護神',
+    desc: 'HPが30%を下回ったとき1度だけ、HP +20 回復して 7秒間 受けるダメージ -75%',
+    rarity: 'fusion',
+    needs: ['guardian', 'guts'],
+    update(world, me, foe, dt, st) {
+      if (st.t > 0) st.t -= dt;
+      if (st.used || me.hp > me.maxHp * 0.3) return;
+      st.used = true;
+      st.t = 7;
+      heal(world, me, 20);
+      world.events.push({ type: 'say', x: me.x, y: me.y, text: '守護神！', color: '#f2c230' });
+    },
+    incoming: (world, me, src, amount, opts, st) => (st.t > 0 ? amount * 0.25 : amount),
+  },
+  {
+    id: 'stormGuard',
+    icon: '🌪️',
+    name: '嵐の守り',
+    desc: '近くに来た相手の弾を はじき返す(1発1回)。3秒ごとに近くの相手を吹き飛ばす(6ダメージ)',
+    rarity: 'fusion',
+    needs: ['magnetism', 'cyclone'],
+    update(world, me, foe, dt, st) {
+      for (const p of world.projectiles) {
+        if (p.owner === me.id || p.stormed || !(p.vx || p.vy)) continue;
+        if (Math.hypot(p.x - me.x, p.y - me.y) > me.r + 90) continue;
+        // はじき返す(持ち主は変えない。武器ごとの弾の仕組みがこわれないように)
+        p.stormed = true;
+        p.vx = -p.vx;
+        p.vy = -p.vy;
+      }
+      st.t = (st.t ?? 2) - dt;
+      if (st.t > 0) return;
+      st.t = 3;
+      world.events.push({ type: 'shock', x: me.x, y: me.y, r: 160, color: '#9ad7ff' });
+      for (const o of enemiesNear(world, me, 160)) {
+        skillDamage(world, me, o, 6);
+        knockback(me, o, 480);
+      }
+    },
+  },
+
   // ==== 武器進化: ボスを倒したときなどに選ぶ。重ねるほど武器の名前が「改 → 真 → 極 → 神」と変わる ====
   { id: 'aPower', icon: '🔺', name: '力の覚醒', desc: '武器の威力 +45%', rarity: 'awaken', apply: (w, me) => (awaken(me), (me.power *= 1.45)) },
   { id: 'aSpeed', icon: '💨', name: '速さの覚醒', desc: '攻撃速度 +30%・素早さ +10%', rarity: 'awaken', apply: (w, me) => (awaken(me), (me.haste *= 1.3), (me.speedMul *= 1.1)) },

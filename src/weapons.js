@@ -326,6 +326,79 @@ function moonHit(world, me) {
   return me.w.dmg;
 }
 
+// 大器晩成 第2弾で使うもの
+const BEETLE_NAMES = ['幼虫', 'さなぎ', 'カブトムシ', 'ヘラクレス'];
+const beetleDamage = (b) => [0.7, 0.7, 1.9, 3.3][b.w.stage] + b.w.bonus;
+const PUPPY_NAMES = ['子犬', '番犬', 'オオカミ', 'ケルベロス'];
+const puppyDamage = (b) => [0.6, 1.2, 2, 2][b.w.stage] + b.w.bonus;
+const NINJA_NAMES = ['下忍', '中忍', '上忍', '影'];
+const ninjaDamage = (b) => [1.1, 1.8, 2.5, 3][b.w.stage] + b.w.bonus;
+const HERMIT_NAMES = ['貝殻', '空き缶', 'ヘルメット', 'お城'];
+const HERMIT_GUARD = [0.92, 0.82, 0.72, 0.62];
+const hermitDamage = (b) => [0.8, 1.5, 2.4, 3.4][b.w.stage] + b.w.bonus;
+const PAWN_NAMES = ['ポーン', 'ナイト', 'ビショップ', 'ルーク', 'クイーン'];
+const pawnDamage = (b) => [1.2, 3.2, 4.2, 5.4, 7][b.w.stage] + b.w.bonus;
+const MUSCLE_NAMES = ['ガリガリ', '細マッチョ', 'マッチョ', '筋肉の神'];
+const muscleDamage = (b) => [0.4, 1.1, 2.1, 3.2][b.w.stage] + b.w.bonus;
+const SNOWMAN_NAMES = ['雪玉', '雪だるま', '雪の巨人'];
+const STATUE_NAMES = ['眠る石像', '目覚め', '石の魔神'];
+const STATUE_NEED = [30, 80];
+const BULB_NAMES = ['豆電球', '懐中電灯', 'サーチライト', '灯台'];
+const bulbDamage = (b) => [1.3, 1.9, 2.6, 3.4][b.w.stage] + b.w.bonus;
+const VEHICLE_NAMES = ['三輪車', '自転車', 'バイク', '戦車'];
+
+// 刃を向けたい方向へ向ける(相手の方)。体の大きさが変わったら刃の根元も合わせる
+function fitBlades(me) {
+  for (const bl of me.blades) {
+    const len = bl.rOut - bl.rIn;
+    bl.rIn = me.r - 6;
+    bl.rOut = bl.rIn + len;
+  }
+}
+
+// 方向を一番近い「ななめ」/「たて・よこ」にそろえる(チェスの駒の動き)
+function snapAngle(a, offset) {
+  const step = Math.PI / 2;
+  return Math.round((a - offset) / step) * step + offset;
+}
+
+// 光線(電球): angle の向きに長さ len・太さ wid の帯に入っている相手に当てる。
+// 毎フレーム調べて、同じ相手には cd 秒に1回だけ(回る光でも、通りすぎる間に当たるように)
+function beamHit(world, me, angle, len, wid, dmg, kind, cd) {
+  const ex = me.x + Math.cos(angle) * len;
+  const ey = me.y + Math.sin(angle) * len;
+  const next = me.w.next || (me.w.next = {});
+  for (const o of world.balls) {
+    if (o === me || o.dead || (next[o.id] ?? 0) > world.t) continue;
+    if (segPointDist(me.x, me.y, ex, ey, o.x, o.y) > o.r + wid) continue;
+    next[o.id] = world.t + cd;
+    landHit(world, me, o, dmg, { kind, x: o.x, y: o.y });
+  }
+}
+
+// 石像: 受けたダメージや当てた回数で目覚めが進み、たまると次の姿へ
+function statueWake(world, me, amount) {
+  const w = me.w;
+  if (w.stage >= 2) return;
+  w.wake += amount;
+  if (w.wake < STATUE_NEED[w.stage]) return;
+  w.stage++;
+  w.wake = 0;
+  me.speedMul = 1;
+  world.events.push({ type: 'evolve', target: me.id, x: me.x, y: me.y, text: STATUE_NAMES[w.stage], color: '#6e6a5e' });
+  if (w.stage === 1) {
+    me.blades = [-0.5, 0.5].map((off) => makeBlade({ sprite: 'stoneFist', off, rIn: me.r - 6, rOut: me.r + 22, w: 16, damage: (world, me) => [0, 2.2, 3.8][me.w.stage] + me.w.bonus, cd: 0.6, knock: 220, parry: false }));
+  } else {
+    me.r = BALL_R * 1.25;
+    me.color = '#6e6a5e';
+    fitBlades(me);
+    for (const bl of me.blades) {
+      bl.rOut = me.r + 28;
+      bl.w = 20;
+    }
+  }
+}
+
 export const WEAPONS = [
   {
     ...melee('sword', {
@@ -6463,6 +6536,7 @@ export const WEAPONS = [
   {
     id: 'egg',
     kind: 'body',
+    bloom: true,
     name: 'たまご',
     en: 'Egg',
     color: '#f3e5c0',
@@ -6536,6 +6610,7 @@ export const WEAPONS = [
   {
     id: 'forge',
     kind: 'melee',
+    bloom: true,
     name: '鍛冶の剣',
     en: 'Forge',
     color: '#b5651d',
@@ -6576,6 +6651,7 @@ export const WEAPONS = [
   {
     id: 'piggy',
     kind: 'body',
+    bloom: true,
     name: '貯金箱',
     en: 'Piggy Bank',
     color: '#f5a3c0',
@@ -6624,6 +6700,7 @@ export const WEAPONS = [
   {
     id: 'monk',
     kind: 'body',
+    bloom: true,
     name: '修行僧',
     en: 'Monk',
     color: '#e67e22',
@@ -6679,6 +6756,7 @@ export const WEAPONS = [
   {
     id: 'pebble',
     kind: 'body',
+    bloom: true,
     name: '転がる石',
     en: 'Rolling Stone',
     color: '#9e9e9e',
@@ -6714,6 +6792,7 @@ export const WEAPONS = [
   {
     id: 'apprentice',
     kind: 'ranged',
+    bloom: true,
     name: '見習い魔法使い',
     en: 'Apprentice',
     color: '#5e60ce',
@@ -6797,6 +6876,7 @@ export const WEAPONS = [
   {
     id: 'moon',
     kind: 'melee',
+    bloom: true,
     name: '月の刃',
     en: 'Moon Blade',
     color: '#f7dc6f',
@@ -6840,6 +6920,7 @@ export const WEAPONS = [
   {
     id: 'ember',
     kind: 'body',
+    bloom: true,
     name: '火種',
     en: 'Ember',
     color: '#ff8c42',
@@ -6878,6 +6959,7 @@ export const WEAPONS = [
   {
     id: 'seed',
     kind: 'melee',
+    bloom: true,
     name: '種',
     en: 'Seed',
     color: '#7cb342',
@@ -6908,6 +6990,7 @@ export const WEAPONS = [
   {
     id: 'hero',
     kind: 'body',
+    bloom: true,
     name: '変身ヒーロー',
     en: 'Hero',
     color: '#d62828',
@@ -6972,6 +7055,986 @@ export const WEAPONS = [
       const w = me.w;
       if (w.on > 0) return;
       w.gauge++;
+    },
+  },
+  // ===== 大器晩成 第2弾 =====
+  {
+    id: 'beetle',
+    kind: 'body',
+    bloom: true,
+    name: 'カブトムシ',
+    en: 'Beetle',
+    color: '#e8d9a8',
+    grow: '当てるたびに 成長。幼虫 → さなぎ(4秒じっと耐える・受けるダメージ大きく減る) → カブトムシ → ヘラクレス(大きな角で打ち上げる)',
+    init(b) {
+      b.w = { stage: 0, xp: 0, bonus: 0, pupa: 0, cd: 0 };
+      b.speedMul = 0.9;
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['すがた', BEETLE_NAMES[b.w.stage]],
+      ['角', fmt(Math.round(beetleDamage(b) * 10) / 10)],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      if (w.pupa > 0) {
+        w.pupa -= dt;
+        if (w.pupa > 0) return;
+        // さなぎから羽化
+        w.stage = 2;
+        me.speedMul = 1;
+        me.color = '#5a3a1e';
+        me.blades = [makeBlade({ sprite: 'horn', rIn: me.r - 6, rOut: me.r + 36, w: 14, damage: (world, me) => beetleDamage(me), cd: 0.4, knock: 200, parry: false })];
+        world.events.push({ type: 'evolve', target: me.id, x: me.x, y: me.y, text: 'カブトムシ' });
+        return;
+      }
+      if (w.stage >= 2) turnTo(me, aimAt(me, foe), dt, 7);
+      else me.angle = Math.atan2(me.vy, me.vx);
+    },
+    onContact(world, me, foe) {
+      if (me.w.stage > 1 || me.w.cd > world.t) return;
+      me.w.cd = world.t + 0.6;
+      if (landHit(world, me, foe, beetleDamage(me), { kind: 'larva', x: (me.x + foe.x) / 2, y: (me.y + foe.y) / 2 }) > 0) knockback(me, foe, 130);
+    },
+    onTakeDamage: (world, me, src, amount) => (me.w.pupa > 0 ? amount * 0.3 : amount),
+    onHit(world, me, foe, info) {
+      const w = me.w;
+      w.xp++;
+      w.bonus += 0.1;
+      // 角で打ち上げる
+      if (info.kind === 'melee' && w.stage >= 2) {
+        foe.vy = -(w.stage >= 3 ? 700 : 480) * (foe.knockMul ?? 1);
+        foe.slamT = 0.8;
+        foe.slamBy = me.id;
+      }
+      if (w.stage === 0 && w.xp >= 3) {
+        w.stage = 1;
+        w.pupa = 4;
+        me.speedMul = 0.35;
+        me.color = '#b08a4a';
+        world.events.push({ type: 'evolve', target: me.id, x: me.x, y: me.y, text: 'さなぎ' });
+      } else if (w.stage === 2 && w.xp >= 13) {
+        w.stage = 3;
+        me.r = BALL_R * 1.2;
+        me.color = '#2b2b2b';
+        fitBlades(me);
+        me.blades[0].rOut = me.r + 52;
+        me.blades[0].w = 18;
+        world.events.push({ type: 'evolve', target: me.id, x: me.x, y: me.y, text: 'ヘラクレス' });
+      }
+    },
+  },
+  {
+    id: 'puppy',
+    kind: 'melee',
+    bloom: true,
+    name: '子犬',
+    en: 'Puppy',
+    color: '#e0b07a',
+    grow: 'かむたびに 成長。子犬 → 番犬 → オオカミ(飛びかかる) → ケルベロス(頭が3つ)',
+    init(b) {
+      b.w = { stage: 0, xp: 0, bonus: 0, lunge: 2 };
+      setSpin(b, 0);
+      b.blades = [makeBlade({ sprite: 'jaw', rIn: b.r - 6, rOut: b.r + 18, w: 16, damage: (world, me) => puppyDamage(me), cd: 0.45, knock: 140, parry: false })];
+    },
+    stats: (b) => [
+      ['すがた', PUPPY_NAMES[b.w.stage]],
+      ['かみつき', fmt(Math.round(puppyDamage(b) * 10) / 10)],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 9);
+      if (w.stage < 2) return;
+      w.lunge -= dt;
+      if (w.lunge > 0) return;
+      w.lunge = 2.4;
+      const a = aimAt(me, foe);
+      me.vx = Math.cos(a) * 620;
+      me.vy = Math.sin(a) * 620 - 120;
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'melee') return;
+      const w = me.w;
+      w.bonus += 0.14;
+      if (!evolveStep(world, me, [3, 7, 12], PUPPY_NAMES)) return;
+      me.color = ['#e0b07a', '#9c6b3c', '#7f8c8d', '#3b2a3a'][w.stage];
+      if (w.stage === 1) {
+        me.blades[0].rOut = me.r + 26;
+      } else if (w.stage === 2) {
+        me.r = BALL_R * 1.1;
+        fitBlades(me);
+        me.blades[0].rOut = me.r + 32;
+      } else {
+        // 頭が3つ
+        me.r = BALL_R * 1.2;
+        me.blades = [-0.6, 0, 0.6].map((off) => makeBlade({ sprite: 'jaw', off, rIn: me.r - 6, rOut: me.r + 30, w: 16, damage: (world, me) => puppyDamage(me) * 0.6, cd: 0.5, knock: 150, parry: false }));
+      }
+    },
+  },
+  {
+    id: 'ninjaKid',
+    kind: 'ranged',
+    bloom: true,
+    name: '見習い忍者',
+    en: 'Ninja Kid',
+    color: '#4a4e69',
+    grow: '当てるたびに 修行。下忍(手裏剣1枚) → 中忍(2枚) → 上忍(3枚・背後へ瞬間移動) → 影(分身も投げる)',
+    init(b) {
+      b.w = { stage: 0, xp: 0, bonus: 0, timer: 1, warp: 4 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['すがた', NINJA_NAMES[b.w.stage]],
+      ['手裏剣', fmt(Math.round(ninjaDamage(b) * 10) / 10)],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 8);
+      if (w.stage >= 2) {
+        w.warp -= dt;
+        if (w.warp <= 0) {
+          // 相手の背後へ瞬間移動
+          w.warp = 4;
+          const sp = Math.hypot(foe.vx, foe.vy) || 1;
+          world.events.push({ type: 'shock', x: me.x, y: me.y, r: 40, color: '#4a4e69' });
+          me.x = Math.max(me.r, Math.min(ARENA - me.r, foe.x - (foe.vx / sp) * 110));
+          me.y = Math.max(me.r, Math.min(ARENA - me.r, foe.y - (foe.vy / sp) * 110));
+          me.angle = aimAt(me, foe);
+          w.timer = Math.min(w.timer, 0.1);
+        }
+      }
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 1.3;
+      const n = [1, 2, 3, 2][w.stage];
+      const throwFrom = (x, y) => {
+        const a = Math.atan2(foe.y - y, foe.x - x);
+        for (let i = 0; i < n; i++) {
+          const aa = a + (i - (n - 1) / 2) * 0.2;
+          spawnProjectile(world, me, { x, y, vx: Math.cos(aa) * 560, vy: Math.sin(aa) * 560, angle: aa, kind: 'shuriken', r: 7, life: 1.4, damage: ninjaDamage(me), onTouch: hitOnce() });
+        }
+      };
+      throwFrom(me.x, me.y);
+      // 影: 反対側にいる分身も投げる(弾が多くなりすぎないよう、本体の投げる数を減らす)
+      if (w.stage >= 3) throwFrom(ARENA - me.x, me.y);
+    },
+    onHit(world, me) {
+      me.w.bonus += 0.1;
+      evolveStep(world, me, [3, 7, 12], NINJA_NAMES);
+    },
+  },
+  {
+    id: 'hermit',
+    kind: 'melee',
+    bloom: true,
+    name: 'ヤドカリ',
+    en: 'Hermit Crab',
+    color: '#e8734a',
+    grow: 'はさむたびに 成長して 大きな殻に引っこす。貝殻 → 空き缶 → ヘルメット → お城(受けるダメージ半分)',
+    init(b) {
+      b.w = { stage: 0, xp: 0, bonus: 0 };
+      setSpin(b, 0);
+      b.blades = [makeBlade({ sprite: 'claw', rIn: b.r - 6, rOut: b.r + 26, w: 16, damage: (world, me) => hermitDamage(me), cd: 0.45, knock: 150, parry: false })];
+    },
+    stats: (b) => [
+      ['殻', HERMIT_NAMES[b.w.stage]],
+      ['はさみ', fmt(Math.round(hermitDamage(b) * 10) / 10)],
+    ],
+    update(world, me, foe, dt) {
+      turnTo(me, aimAt(me, foe), dt, 8);
+    },
+    onTakeDamage: (world, me, src, amount) => amount * HERMIT_GUARD[me.w.stage],
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'melee') return;
+      const w = me.w;
+      w.bonus += 0.15;
+      if (!evolveStep(world, me, [3, 7, 12], HERMIT_NAMES)) return;
+      me.speedMul = [1, 0.96, 0.92, 0.88][w.stage];
+      if (w.stage === 3) {
+        me.r = BALL_R * 1.15;
+        fitBlades(me);
+      }
+      me.blades[0].rOut = me.r + 26 + w.stage * 6;
+    },
+  },
+  {
+    id: 'pawn',
+    kind: 'body',
+    bloom: true,
+    name: 'チェスの駒',
+    en: 'Chess Pawn',
+    color: '#f0e6d2',
+    grow: '当てるたびに 成り上がる。ポーン(前を突く) → ナイト(はねる) → ビショップ(ななめ突進) → ルーク(たて・よこ突進) → クイーン(どこへでも突進)',
+    init(b) {
+      b.w = { stage: 0, xp: 0, bonus: 0, dash: 1.8, dashT: 0, flip: 1, cd: 0 };
+      setSpin(b, 0);
+      b.blades = [makeBlade({ sprite: 'lance', rIn: b.r - 6, rOut: b.r + 34, w: 8, damage: (world, me) => pawnDamage(me), cd: 0.45, knock: 130, parry: false })];
+    },
+    stats: (b) => [
+      ['駒', PAWN_NAMES[b.w.stage]],
+      ['ダメージ', fmt(Math.round(pawnDamage(b) * 10) / 10)],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      if (w.dashT > 0) w.dashT -= dt;
+      if (w.stage === 0) {
+        turnTo(me, aimAt(me, foe), dt, 8);
+        return;
+      }
+      me.angle = Math.atan2(me.vy, me.vx);
+      w.dash -= dt;
+      if (w.dash > 0) return;
+      w.dash = [0, 1.8, 1.7, 1.6, 1.25][w.stage];
+      let a = aimAt(me, foe);
+      if (w.stage === 1) {
+        // ナイト: 少し横にずれた L 字のはね
+        w.flip = -w.flip;
+        a += w.flip * 0.45;
+      } else if (w.stage === 2) a = snapAngle(a, Math.PI / 4);
+      else if (w.stage === 3) a = snapAngle(a, 0);
+      const sp = w.stage === 1 ? 640 : 820;
+      me.vx = Math.cos(a) * sp;
+      me.vy = Math.sin(a) * sp - (w.stage === 1 ? 260 : 0);
+      w.dashT = 0.5;
+    },
+    onContact(world, me, foe) {
+      const w = me.w;
+      if (w.stage === 0 || w.dashT <= 0 || w.cd > world.t) return;
+      w.cd = world.t + 0.4;
+      if (landHit(world, me, foe, pawnDamage(me), { kind: 'pawn', x: (me.x + foe.x) / 2, y: (me.y + foe.y) / 2 }) <= 0) return;
+      knockback(me, foe, w.stage >= 3 ? 420 : 260);
+      if (w.stage >= 3) {
+        foe.slamT = 0.6;
+        foe.slamBy = me.id;
+      }
+    },
+    onHit(world, me) {
+      const w = me.w;
+      w.bonus += 0.15;
+      if (!evolveStep(world, me, [2, 5, 9, 14], PAWN_NAMES)) return;
+      me.color = ['#f0e6d2', '#e8d8b0', '#d9c27a', '#c9a227', '#f2c230'][w.stage];
+      // ナイトからは槍を置いて、体ごと突っこむ
+      if (w.stage === 1) me.blades = [];
+      if (w.stage === 4) me.r = BALL_R * 1.12;
+    },
+  },
+  {
+    id: 'muscle',
+    kind: 'body',
+    bloom: true,
+    name: 'マッチョ',
+    en: 'Muscle',
+    color: '#f1c9a5',
+    grow: 'なぐるたびに 鍛えられる。ガリガリ → 細マッチョ → マッチョ → 筋肉の神(ポーズで衝撃波)。体も拳も大きくなる',
+    init(b) {
+      b.w = { stage: 0, xp: 0, bonus: 0, pose: 4, t: 0 };
+      b.r = BALL_R * 0.9;
+      setSpin(b, 0);
+      b.blades = [-0.55, 0.55].map((off) => makeBlade({ sprite: 'arm', off, rIn: b.r - 6, rOut: b.r + 20, w: 14, damage: (world, me) => muscleDamage(me), cd: 0.55, knock: 160, parry: false }));
+    },
+    stats: (b) => [
+      ['すがた', MUSCLE_NAMES[b.w.stage]],
+      ['パンチ', fmt(Math.round(muscleDamage(b) * 10) / 10)],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 8);
+      // 左右の拳を交互にのばす
+      w.t += dt;
+      me.blades.forEach((bl, i) => (bl.rOut = me.r + 14 + (6 + w.stage * 4) * (1 + Math.sin(w.t * 9 + i * Math.PI))));
+      if (w.stage < 3) return;
+      w.pose -= dt;
+      if (w.pose > 0) return;
+      w.pose = 4;
+      const R = me.r + 130;
+      world.events.push({ type: 'shock', x: me.x, y: me.y, r: R, color: '#f1c9a5' });
+      for (const o of world.balls) {
+        if (o === me || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        if (landHit(world, me, o, 3 + w.bonus, { kind: 'pose', x: o.x, y: o.y }) > 0) knockback(me, o, 380);
+      }
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'melee' && info.kind !== 'pose') return;
+      const w = me.w;
+      w.bonus += 0.14;
+      if (!evolveStep(world, me, [3, 7, 12], MUSCLE_NAMES)) return;
+      me.r = BALL_R * [0.9, 1, 1.1, 1.25][w.stage];
+      fitBlades(me);
+      for (const bl of me.blades) bl.w = 14 + w.stage * 3;
+    },
+  },
+  {
+    id: 'snowman',
+    kind: 'body',
+    bloom: true,
+    name: '雪だるま',
+    en: 'Snowman',
+    color: '#f4fbff',
+    grow: 'ぶつかるたびに 雪が集まって大きくなる。雪玉(体当たり) → 雪だるま(雪玉を投げる) → 雪の巨人(地面をたたいて凍らせる)',
+    init(b) {
+      b.w = { stage: 0, xp: 0, bonus: 0, size: 0.75, timer: 1.6, pound: 4, cd: 0 };
+      b.r = BALL_R * 0.75;
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['すがた', SNOWMAN_NAMES[b.w.stage]],
+      ['大きさ', '×' + fmt(Math.round(b.w.size * 100) / 100)],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      me.angle = aimAt(me, foe);
+      if (w.stage === 0) return;
+      w.timer -= dt;
+      if (w.timer <= 0) {
+        w.timer = w.stage >= 2 ? 1.1 : 1.3;
+        const big = w.stage >= 2;
+        shoot(world, me, aimAt(me, foe) - 0.12, 470, {
+          kind: 'snow',
+          r: big ? 14 : 9,
+          life: 2,
+          gravity: 0.25,
+          damage: (big ? 4.2 : 2.6) + w.bonus,
+          onTouch(world, p, owner, o) {
+            p.dead = true;
+            if (landHit(world, owner, o, p.damage, { kind: 'snowball', x: p.x, y: p.y }) <= 0) return;
+            o.slow = Math.max(o.slow, 0.3);
+            o.slowT = Math.max(o.slowT, 1);
+          },
+        });
+      }
+      if (w.stage < 2) return;
+      // 雪の巨人: 床にいるとき、ときどき地面をたたく
+      w.pound -= dt;
+      if (w.pound > 0 || me.y < ARENA - me.r - 6) return;
+      w.pound = 4;
+      world.events.push({ type: 'quake', x: me.x, y: ARENA });
+      for (const o of world.balls) {
+        if (o === me || o.dead || Math.abs(o.x - me.x) > 240 || o.y < ARENA - 180) continue;
+        if (landHit(world, me, o, 4 + w.bonus, { kind: 'pound', x: o.x, y: o.y }) <= 0) continue;
+        o.freeze = Math.max(o.freeze, 0.5);
+      }
+    },
+    onContact(world, me, foe) {
+      if (me.w.cd > world.t) return;
+      me.w.cd = world.t + 0.6;
+      const dmg = (me.w.stage === 0 ? 1.3 : 2) * me.w.size;
+      if (landHit(world, me, foe, dmg, { kind: 'snowbody', x: (me.x + foe.x) / 2, y: (me.y + foe.y) / 2 }) > 0) knockback(me, foe, 160 * me.w.size);
+    },
+    onHit(world, me) {
+      const w = me.w;
+      w.bonus += 0.12;
+      w.size = Math.min(1.45, w.size + 0.025);
+      me.r = BALL_R * w.size;
+      evolveStep(world, me, [3, 8], SNOWMAN_NAMES);
+    },
+  },
+  {
+    id: 'statue',
+    kind: 'body',
+    bloom: true,
+    name: '石像',
+    en: 'Statue',
+    color: '#9a9a8e',
+    grow: '攻撃を受けても 当てても 目覚めが進む。眠る石像(硬い・受けるダメージ半分) → 目覚め(石の拳) → 石の魔神(大きな拳と足ぶみ)',
+    init(b) {
+      b.w = { stage: 0, wake: 0, bonus: 0, stomp: 3, cd: 0 };
+      b.speedMul = 0.75;
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['すがた', STATUE_NAMES[b.w.stage]],
+      ['目覚め', b.w.stage >= 2 ? '完全' : `${Math.floor(b.w.wake)}/${STATUE_NEED[b.w.stage]}`],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      if (w.stage === 0) {
+        me.angle = -Math.PI / 2;
+        return;
+      }
+      turnTo(me, aimAt(me, foe), dt, 7);
+      if (w.stage < 2) return;
+      w.stomp -= dt;
+      if (w.stomp > 0) return;
+      w.stomp = 3;
+      const R = me.r + 120;
+      world.events.push({ type: 'shock', x: me.x, y: me.y, r: R, color: '#9a9a8e' });
+      for (const o of world.balls) {
+        if (o === me || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        if (landHit(world, me, o, 3.5 + w.bonus, { kind: 'stomp', x: o.x, y: o.y }) > 0) knockback(me, o, 300);
+      }
+    },
+    onContact(world, me, foe) {
+      if (me.w.stage > 0 || me.w.cd > world.t) return;
+      me.w.cd = world.t + 0.7;
+      landHit(world, me, foe, 0.8, { kind: 'stone', x: (me.x + foe.x) / 2, y: (me.y + foe.y) / 2 });
+    },
+    onTakeDamage(world, me, src, amount) {
+      const w = me.w;
+      const out = amount * [0.65, 0.95, 0.85][w.stage];
+      if (src && src !== me) statueWake(world, me, out);
+      return out;
+    },
+    onHit(world, me) {
+      me.w.bonus += 0.15;
+      statueWake(world, me, 3);
+    },
+  },
+  {
+    id: 'bulb',
+    kind: 'ranged',
+    bloom: true,
+    name: '電球',
+    en: 'Light Bulb',
+    color: '#fff3a0',
+    grow: '照らすたびに 明るくなる。豆電球(まわりがピカッ) → 懐中電灯(光をあてる) → サーチライト(長い光) → 灯台(回る2本の光)',
+    init(b) {
+      b.w = { stage: 0, xp: 0, bonus: 0, tick: 1, beamA: 0, on: 0 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['すがた', BULB_NAMES[b.w.stage]],
+      ['光', fmt(Math.round(bulbDamage(b) * 10) / 10)],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      if (w.on > 0) w.on -= dt;
+      if (w.stage === 3) w.beamA += dt * 1.2;
+      else w.beamA += ((((aimAt(me, foe) - w.beamA + Math.PI) % TAU) + TAU) % TAU - Math.PI) * Math.min(1, dt * (w.stage === 2 ? 3 : 6));
+      me.angle = w.beamA;
+      const d = bulbDamage(me);
+      if (w.stage > 0) {
+        const len = [0, 170, 320, 1200][w.stage];
+        const cd = [0, 0.45, 0.4, 0.4][w.stage];
+        beamHit(world, me, w.beamA, len, 14, d, 'light', cd);
+        if (w.stage === 3) beamHit(world, me, w.beamA + Math.PI, len, 14, d, 'light', cd);
+        return;
+      }
+      // 豆電球: まわりがピカッと光る
+      w.tick -= dt;
+      if (w.tick > 0) return;
+      w.tick = 0.9;
+      w.on = 0.15;
+      for (const o of world.balls) {
+        if (o === me || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > me.r + 95 + o.r) continue;
+        landHit(world, me, o, d, { kind: 'light', x: o.x, y: o.y });
+      }
+    },
+    onHit(world, me) {
+      me.w.bonus += 0.06;
+      evolveStep(world, me, [3, 7, 12], BULB_NAMES);
+    },
+  },
+  {
+    id: 'vehicle',
+    kind: 'body',
+    bloom: true,
+    name: '乗り物',
+    en: 'Vehicle',
+    color: '#4aa3df',
+    grow: 'ぶつかるたびに 乗りかえる。三輪車 → 自転車 → バイク(ときどき加速) → 戦車(大砲も撃つ)。速いほど痛い',
+    init(b) {
+      b.w = { stage: 0, xp: 0, bonus: 0, cd: 0, boost: 2.5, timer: 2.5 };
+      b.speedMul = 0.9;
+    },
+    stats: (b) => [
+      ['乗り物', VEHICLE_NAMES[b.w.stage]],
+      ['体当たり', fmt(Math.round(([1, 1.8, 3, 4][b.w.stage] + b.w.bonus) * 10) / 10)],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      me.angle = w.stage === 3 ? aimAt(me, foe) : Math.atan2(me.vy, me.vx);
+      if (w.stage >= 2) {
+        w.boost -= dt;
+        if (w.boost <= 0) {
+          w.boost = 2.5;
+          const a = aimAt(me, foe);
+          me.vx = Math.cos(a) * 760;
+          me.vy = Math.sin(a) * 760;
+        }
+      }
+      if (w.stage < 3) return;
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 2.5;
+      shoot(world, me, aimAt(me, foe), 520, { kind: 'cannonball', r: 11, life: 2, damage: 4.5 + w.bonus, onTouch: hitOnce() });
+    },
+    onContact(world, me, foe, rel) {
+      const w = me.w;
+      if (w.cd > world.t) return;
+      w.cd = world.t + 0.5;
+      const sp = Math.min(2, (rel || 300) / 400);
+      const dmg = ([1, 1.8, 3, 4][w.stage] + w.bonus) * (0.5 + sp * 0.5);
+      if (landHit(world, me, foe, dmg, { kind: 'ram', x: (me.x + foe.x) / 2, y: (me.y + foe.y) / 2 }) > 0) knockback(me, foe, 200 + w.stage * 60);
+    },
+    onHit(world, me) {
+      const w = me.w;
+      w.bonus += 0.15;
+      if (!evolveStep(world, me, [3, 7, 12], VEHICLE_NAMES)) return;
+      me.speedMul = [0.9, 1.1, 1.3, 1][w.stage];
+      if (w.stage === 3) {
+        me.r = BALL_R * 1.2;
+        me.color = '#5d6d3c';
+      }
+    },
+  },
+  // ===== 2026-10-27 遊び道具・日用品(ごちゃつかない) =====
+  {
+    ...melee('harisen', {
+      spin: 3.4,
+      state: { dmg: 1.2, knock: 420 },
+      blade: { rIn: 20, rOut: 70, w: 22 },
+      damage: (w, me) => me.w.dmg,
+    }),
+    name: 'ハリセン',
+    en: 'Paper Fan',
+    color: '#f5f0e1',
+    grow: '当たるたびに ダメージ +0.5・ふっとばし +25(スパーン！と大きくふっとばして壁ドン)',
+    stats: (b) => [
+      ['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)],
+      ['ふっとばし', fmt(Math.round(b.w.knock))],
+    ],
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'melee') return;
+      me.w.dmg += 0.5;
+      me.w.knock += 25;
+      knockback(me, foe, me.w.knock);
+      foe.slamT = 0.6;
+      foe.slamBy = me.id;
+      world.events.push({ type: 'say', x: foe.x, y: foe.y, text: 'スパーン！', color: '#e8484d' });
+    },
+  },
+  {
+    id: 'vacuum',
+    kind: 'ranged',
+    name: '掃除機',
+    en: 'Vacuum',
+    color: '#8e44ad',
+    grow: '当たるたびに ダメージ +0.6・吸う力アップ(相手を吸いこんで、近くまで来たら勢いよくはき出す)',
+    init(b) {
+      b.w = { dmg: 3, pull: 900, suck: 0, timer: 1.5 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['はき出し', fmt(Math.round(b.w.dmg * 10) / 10)],
+      ['吸う力', fmt(Math.round(shown(b, 'pull')))],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 8);
+      if (w.suck > 0) {
+        w.suck -= dt;
+        const d = Math.hypot(foe.x - me.x, foe.y - me.y);
+        if (d < 300) {
+          // 吸いこむ
+          const a = Math.atan2(me.y - foe.y, me.x - foe.x);
+          foe.vx += Math.cos(a) * w.pull * dt * (foe.knockMul ?? 1);
+          foe.vy += Math.sin(a) * w.pull * dt * (foe.knockMul ?? 1);
+        }
+        if (d < me.r + foe.r + 24) {
+          // はき出す
+          w.suck = 0;
+          w.timer = 2.2;
+          world.events.push({ type: 'shock', x: foe.x, y: foe.y, r: 60, color: '#d7bde2' });
+          if (landHit(world, me, foe, w.dmg, { kind: 'vacuum', x: foe.x, y: foe.y }) > 0) {
+            knockback(me, foe, 760);
+            foe.slamT = 0.7;
+            foe.slamBy = me.id;
+          }
+        } else if (w.suck <= 0) w.timer = 1.2;
+        return;
+      }
+      w.timer -= dt;
+      if (w.timer <= 0) w.suck = 1.6;
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'vacuum') return;
+      me.w.dmg += 0.6;
+      growStat(me, 'pull', 60, 1800, 0.4);
+    },
+  },
+  {
+    id: 'trampoline',
+    kind: 'ranged',
+    name: 'トランポリン',
+    en: 'Trampoline',
+    color: '#27ae60',
+    grow: '当たるたびに ダメージ +0.7・はね上げる力アップ(相手の下の床にトランポリンを置き、天井まではね上げて壁ドン)',
+    init(b) {
+      b.w = { dmg: 3, boing: 950, timer: 0.8, alive: false };
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)],
+      ['はね上げ', fmt(Math.round(shown(b, 'boing')))],
+    ],
+    update(world, me, foe, dt) {
+      me.angle = Math.PI / 2;
+      const w = me.w;
+      if (w.alive) return;
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.alive = true;
+      spawnProjectile(world, me, {
+        x: Math.max(50, Math.min(ARENA - 50, foe.x + foe.vx * 0.3)),
+        y: ARENA - 10,
+        kind: 'trampoline',
+        r: 10,
+        life: 5,
+        wall: 'stop',
+        blockable: false,
+        hitCd: 0,
+        update(world, p, owner, foe, dt) {
+          p.y = ARENA - 10;
+          p.hitCd -= dt;
+          if (p.hitCd > 0) return;
+          for (const o of world.balls) {
+            if (o === owner || o.dead) continue;
+            // 床近くでトランポリンの上(横幅 ±50)にいる相手をはね上げる
+            if (Math.abs(o.x - p.x) > 60 + o.r * 0.5 || o.y < ARENA - o.r - 30) continue;
+            p.hitCd = 0.6;
+            p.boing = 0.25;
+            if (landHit(world, owner, o, owner.w.dmg, { kind: 'trampoline', x: o.x, y: o.y }) <= 0) continue;
+            o.vy = -owner.w.boing * (o.knockMul ?? 1);
+            o.slamT = 1.2;
+            o.slamBy = owner.id;
+          }
+          if (p.boing > 0) p.boing -= dt;
+        },
+        onExpire(world, p, owner) {
+          owner.w.alive = false;
+          owner.w.timer = 0.6;
+        },
+      });
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'trampoline') return;
+      me.w.dmg += 0.7;
+      growStat(me, 'boing', 35, 1500, 0.4);
+    },
+  },
+  {
+    ...melee('eraser', {
+      spin: 3.6,
+      state: { dmg: 2, erase: 0 },
+      blade: { rIn: 20, rOut: 62, w: 20 },
+      damage: (w, me) => me.w.dmg,
+    }),
+    name: '消しゴム',
+    en: 'Eraser',
+    color: '#ff9eb5',
+    grow: '当たるたびに ダメージ +0.8。当てた相手の威力を 3%ずつ消していく(最大 -40%)',
+    stats: (b) => [
+      ['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)],
+      ['消した', b.w.erase + '回'],
+    ],
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'melee') return;
+      me.w.dmg += 0.8;
+      me.w.erase++;
+      // 相手の成長を少し消す(engine の dealDamage が与えるダメージを減らす)
+      foe.erased = Math.min(0.4, (foe.erased || 0) + 0.03);
+    },
+  },
+  {
+    ...melee('bat', {
+      spin: 3.8,
+      state: { dmg: 2.5, n: 0 },
+      blade: { rIn: 22, rOut: 84, w: 12 },
+      damage: (w, me) => me.w.dmg,
+    }),
+    name: 'バット',
+    en: 'Bat',
+    color: '#c0392b',
+    grow: '当たるたびに ダメージ +0.8。4回に1回は ホームラン(大きくふっとばして壁ドン)',
+    stats: (b) => [
+      ['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)],
+      ['次のホームラン', `あと${3 - (b.w.n % 4) + 1}回`],
+    ],
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'melee') return;
+      me.w.dmg += 0.8;
+      me.w.n++;
+      if (me.w.n % 4 !== 0) return;
+      const a = Math.atan2(foe.y - me.y, foe.x - me.x);
+      foe.vx = Math.cos(a) * 900 * (foe.knockMul ?? 1);
+      foe.vy = (Math.sin(a) * 900 - 300) * (foe.knockMul ?? 1);
+      foe.slamT = 1;
+      foe.slamBy = me.id;
+      world.events.push({ type: 'say', x: foe.x, y: foe.y, text: 'ホームラン！', color: '#c0392b' });
+    },
+  },
+  {
+    id: 'soccer',
+    kind: 'ranged',
+    name: 'サッカー',
+    en: 'Soccer',
+    color: '#2ecc71',
+    grow: '当たるたびに ダメージ +0.5・キックが強くなる(1つのボールをけり、はね返ってきたらまたける。5回目はシュート！)',
+    init(b) {
+      b.w = { dmg: 2.4, kick: 520, n: 0, timer: 0.5, ball: null };
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)],
+      ['キック', fmt(Math.round(shown(b, 'kick')))],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 8);
+      const kick = (p) => {
+        w.n++;
+        const shot = w.n % 5 === 0;
+        const a = aimAt({ x: p.x, y: p.y }, foe);
+        const sp = w.kick * (shot ? 1.5 : 1);
+        p.vx = Math.cos(a) * sp;
+        p.vy = Math.sin(a) * sp;
+        p.shot = shot;
+        p.kickCd = 0.4;
+        if (shot) world.events.push({ type: 'say', x: me.x, y: me.y, text: 'シュート！', color: '#27ae60' });
+      };
+      if (w.ball && !w.ball.dead) {
+        const p = w.ball;
+        // 近くに来たボールをけり返す
+        if (p.kickCd <= 0 && Math.hypot(p.x - me.x, p.y - me.y) < me.r + p.r + 16) kick(p);
+        return;
+      }
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 0.6;
+      spawnProjectile(world, me, {
+        x: me.x + Math.cos(me.angle) * (me.r + 14),
+        y: me.y + Math.sin(me.angle) * (me.r + 14),
+        kind: 'soccerball',
+        r: 12,
+        life: 7,
+        wall: 'bounce',
+        gravity: 0.5,
+        blockable: false,
+        kickCd: 0,
+        hitCd: 0,
+        update(world, p, owner, foe, dt) {
+          p.kickCd -= dt;
+          p.hitCd -= dt;
+          // 少しずつ持ち主の方へ転がって戻る
+          const a = Math.atan2(owner.y - p.y, owner.x - p.x);
+          p.vx += Math.cos(a) * 260 * dt;
+          p.vy += Math.sin(a) * 260 * dt;
+        },
+        onTouch(world, p, owner, o) {
+          if (p.hitCd > 0) return;
+          p.hitCd = 0.5;
+          if (landHit(world, owner, o, owner.w.dmg * (p.shot ? 2.2 : 1), { kind: 'soccer', x: p.x, y: p.y }) > 0) knockback(p, o, p.shot ? 420 : 200);
+          p.vx = -p.vx * 0.6;
+          p.vy = -Math.abs(p.vy) * 0.6 - 200;
+          p.shot = false;
+        },
+      });
+      w.ball = world.projectiles[world.projectiles.length - 1];
+      kick(w.ball);
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'soccer') return;
+      me.w.dmg += 0.5;
+      growStat(me, 'kick', 15, 900, 0.4);
+    },
+  },
+  {
+    id: 'taketombo',
+    kind: 'ranged',
+    name: '竹とんぼ',
+    en: 'Bamboo Copter',
+    color: '#d4a017',
+    grow: '当たるたびに ダメージ +0.6。4回当たるたびに 竹とんぼ +1(最大4つ)。相手の上まで飛んでいって、上から落ちてくる',
+    init(b) {
+      b.w = { dmg: 2, n: 1, hits: 0, timer: 0.6 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)],
+      ['竹とんぼ', fmt(shown(b, 'n')) + 'つ'],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      me.angle = -Math.PI / 2;
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      const mine = world.projectiles.filter((p) => p.owner === me.id && p.kind === 'copter').length;
+      if (mine >= w.n) return;
+      w.timer = 0.8;
+      spawnProjectile(world, me, {
+        x: me.x,
+        y: me.y - me.r - 8,
+        vx: 0,
+        vy: -360,
+        kind: 'copter',
+        r: 12,
+        life: 4,
+        wall: 'stop',
+        blockable: true,
+        phase: 0,
+        update(world, p, owner, foe, dt) {
+          // 上がる → 相手の真上へ → 落ちる
+          if (p.phase === 0) {
+            p.vx += (foe.x - p.x) * 3 * dt;
+            p.vx *= 0.96;
+            if (p.y < 90 || (Math.abs(p.x - foe.x) < 30 && p.age > 0.6)) {
+              p.phase = 1;
+              p.vx = (foe.x + foe.vx * 0.3 - p.x) * 1.2;
+              p.vy = 520;
+            }
+          } else {
+            p.vy += 600 * dt;
+          }
+        },
+        onTouch(world, p, owner, o) {
+          p.dead = true;
+          landHit(world, owner, o, owner.w.dmg * (p.phase ? 1.3 : 0.6), { kind: 'copter', x: p.x, y: p.y });
+        },
+      });
+    },
+    onHit(world, me) {
+      const w = me.w;
+      w.dmg += 0.6;
+      w.hits++;
+      if (w.hits % 4 === 0) growStat(me, 'n', 1, 4, 0.4);
+    },
+  },
+  {
+    id: 'paperPlane',
+    kind: 'ranged',
+    name: '紙飛行機',
+    en: 'Paper Plane',
+    color: '#5dade2',
+    grow: '当たるたびに ダメージ +0.2。4回当たるたびに 紙飛行機 +1(最大4つ)。ふわっと曲がりながら相手を追いかける',
+    init(b) {
+      b.w = { dmg: 1.1, n: 1, hits: 0, timer: 0.5 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)],
+      ['紙飛行機', fmt(shown(b, 'n')) + '機'],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 6);
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      const mine = world.projectiles.filter((p) => p.owner === me.id && p.kind === 'plane').length;
+      if (mine >= w.n) return;
+      w.timer = 0.7;
+      shoot(world, me, me.angle + (world.rng() - 0.5) * 1.2, 300, {
+        kind: 'plane',
+        r: 9,
+        life: 4.5,
+        wall: 'bounce',
+        damage: 0,
+        update(world, p, owner, foe, dt) {
+          homing(p, foe, 1.6, dt, 300);
+          // ふわふわ上下にゆれる
+          p.vy += Math.sin(p.age * 6) * 120 * dt;
+        },
+        onTouch(world, p, owner, o) {
+          p.dead = true;
+          landHit(world, owner, o, owner.w.dmg, { kind: 'plane', x: p.x, y: p.y });
+        },
+      });
+    },
+    onHit(world, me) {
+      const w = me.w;
+      w.dmg += 0.2;
+      w.hits++;
+      if (w.hits % 4 === 0) growStat(me, 'n', 1, 4, 0.4);
+    },
+  },
+  {
+    id: 'waterBalloon',
+    kind: 'ranged',
+    name: '水風船',
+    en: 'Water Balloon',
+    color: '#48c9b0',
+    grow: '当たるたびに ダメージ +0.6・しぶきが広がる(山なりに投げて、割れたところの相手をぬらして遅くする)',
+    init(b) {
+      b.w = { dmg: 3.2, splash: 85, timer: 1 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)],
+      ['しぶき', fmt(Math.round(shown(b, 'splash')))],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 6);
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 1.3;
+      // 相手が動く先へ山なりに投げる
+      const T = 0.8;
+      const tx = foe.x + foe.vx * T * 0.5;
+      const ty = foe.y + foe.vy * T * 0.3;
+      const splash = (world, p, owner) => {
+        p.dead = true;
+        world.events.push({ type: 'boom', x: p.x, y: p.y, radius: owner.w.splash, kind: 'water' });
+        for (const o of world.balls) {
+          if (o === owner || o.dead || Math.hypot(o.x - p.x, o.y - p.y) > owner.w.splash + o.r) continue;
+          if (landHit(world, owner, o, owner.w.dmg, { kind: 'water', x: o.x, y: o.y }) <= 0) continue;
+          o.slow = Math.max(o.slow, 0.4);
+          o.slowT = Math.max(o.slowT, 1.5);
+        }
+      };
+      spawnProjectile(world, me, {
+        x: me.x,
+        y: me.y - me.r,
+        vx: (tx - me.x) / T,
+        vy: (ty - me.y + me.r) / T - (GRAVITY * T) / 2,
+        kind: 'waterballoon',
+        r: 11,
+        life: 3,
+        gravity: 1,
+        wall: 'die',
+        onTouch: splash,
+        onExpire: splash,
+      });
+    },
+    onHit(world, me) {
+      me.w.dmg += 0.6;
+      growStat(me, 'splash', 3, 130, 0.4);
+    },
+  },
+  {
+    id: 'ringToss',
+    kind: 'ranged',
+    name: '輪投げ',
+    en: 'Ring Toss',
+    color: '#e67e22',
+    grow: '当たるたびに ダメージ +0.6。はまった輪は相手を遅くし、輪が多いほど相手は受けるダメージが増える(最大 +30%)',
+    init(b) {
+      b.w = { dmg: 2.2, timer: 0.7 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 8);
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 0.9;
+      shoot(world, me, aimAt(me, foe), 480, {
+        kind: 'ring',
+        r: 12,
+        life: 1.8,
+        onTouch(world, p, owner, o) {
+          p.dead = true;
+          if (landHit(world, owner, o, owner.w.dmg, { kind: 'ring', x: p.x, y: p.y }) <= 0) return;
+          // 輪がはまる(5秒で1つずつ外れる)
+          o.rings = Math.min(6, (o.rings || 0) + 1);
+          o.ringT = 5;
+          o.slow = Math.max(o.slow, 0.25);
+          o.slowT = Math.max(o.slowT, 1);
+        },
+      });
+    },
+    onHit(world, me) {
+      me.w.dmg += 0.6;
     },
   },
 ];
@@ -7130,6 +8193,26 @@ export const TUNE = {
   ember: 1.12,
   seed: 1.68,
   hero: 0.93,
+  beetle: 0.73,
+  puppy: 0.87,
+  ninjaKid: 1.18,
+  hermit: 0.77,
+  pawn: 1.29,
+  muscle: 0.64,
+  snowman: 1.22,
+  statue: 0.65,
+  bulb: 0.93,
+  vehicle: 0.86,
+  harisen: 1.07,
+  vacuum: 0.92,
+  trampoline: 1.76,
+  eraser: 1.61,
+  bat: 1.12,
+  soccer: 1.38,
+  taketombo: 1.19,
+  paperPlane: 0.55,
+  waterBalloon: 1.53,
+  ringToss: 0.81,
 };
 
 // 3人以上の試合だけで掛ける倍率。4人バトルロイヤルの1位率が25%に近づくように決めた
@@ -7299,6 +8382,26 @@ export const TUNE_FFA = {
   ember: 1.12,
   seed: 0.85,
   hero: 1.25,
+  beetle: 0.92,
+  puppy: 0.72,
+  ninjaKid: 1.14,
+  hermit: 0.60,
+  pawn: 1.98,
+  muscle: 0.83,
+  snowman: 1.24,
+  statue: 0.75,
+  bulb: 0.53,
+  vehicle: 1.33,
+  harisen: 0.74,
+  vacuum: 1.33,
+  trampoline: 0.94,
+  eraser: 0.85,
+  bat: 0.81,
+  soccer: 1.17,
+  taketombo: 0.72,
+  paperPlane: 1.40,
+  waterBalloon: 1.09,
+  ringToss: 1.09,
 };
 
 for (const w of WEAPONS) {

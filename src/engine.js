@@ -219,7 +219,9 @@ export function aliveOthers(world, ball) {
 
 export function dealDamage(world, src, target, amount, opts = {}) {
   if (target.dead || world.over || !(amount > 0)) return 0;
-  amount *= world.dmgMul * (src && src !== target ? src.power * (src.outMul ?? 1) : 1);
+  // erased: 消しゴムで消された分だけ与えるダメージが減る / rings: 輪投げの輪がはまっているほど受けるダメージが増える
+  amount *= world.dmgMul * (src && src !== target ? src.power * (src.outMul ?? 1) * (1 - (src.erased || 0)) : 1);
+  if (target.rings) amount *= 1 + target.rings * 0.05;
   // 武器ごとのバランス調整の倍率(weapons.js の TUNE。スキルのダメージには掛けない)
   // 3人以上の試合では、全員を巻き込める武器が強く、1人しかねらえない武器が弱くなるので別の倍率(TUNE_FFA)も掛ける
   if (src && src !== target && opts.kind !== 'skill') amount *= (src.def.tune ?? 1) * (world.balls.length > 2 ? (src.def.tuneFfa ?? 1) : 1);
@@ -342,6 +344,11 @@ export function spawnProjectile(world, owner, p) {
 }
 
 function stepStatus(world, b, dt) {
+  if (b.ringT > 0) {
+    // 輪投げの輪は5秒ごとに1つ外れる
+    b.ringT -= dt;
+    if (b.ringT <= 0 && --b.rings > 0) b.ringT = 5;
+  }
   if (b.stun > 0) b.stun = Math.max(0, b.stun - dt);
   if (b.gravFlip > 0) b.gravFlip -= dt;
   if (b.slowT > 0) {
