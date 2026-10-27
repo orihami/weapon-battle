@@ -399,6 +399,19 @@ function statueWake(world, me, amount) {
   }
 }
 
+// 大器晩成 第3弾で使うもの
+const GOLDFISH_NAMES = ['金魚', 'コイ', '竜'];
+const goldfishDamage = (b) => [1, 2.4, 4][b.w.stage] + b.w.bonus;
+const ASHIGARU_NAMES = ['足軽', '侍', '将軍'];
+const ashigaruDamage = (b) => [1.4, 3.6, 5.4][b.w.stage] + b.w.bonus;
+const TYPHOON_NAMES = ['熱帯低気圧', '台風', '超大型台風'];
+const TYPHOON_R = [70, 110, 150];
+const VOLCANO_NAMES = ['小山', '火山', '大噴火'];
+const MIMIC_NAMES = ['宝箱', 'ミミック', '宝の王'];
+const mimicDamage = (b) => [1, 2.4, 3.6][b.w.stage] + b.w.bonus;
+const SPARKY_NAMES = ['静電気', '電撃', '雷神'];
+const sparkyDamage = (b) => [0.8, 1.8, 3][b.w.stage] + b.w.bonus;
+
 export const WEAPONS = [
   {
     ...melee('sword', {
@@ -8037,6 +8050,628 @@ export const WEAPONS = [
       me.w.dmg += 0.6;
     },
   },
+  // ===== 大器晩成 第3弾 =====
+  {
+    id: 'goldfish',
+    kind: 'body',
+    bloom: true,
+    name: '金魚',
+    en: 'Goldfish',
+    color: '#ff8c42',
+    grow: 'ぶつかるたびに 成長。金魚 → コイ(滝のぼりで飛び上がる) → 竜(雷を落とす)',
+    init(b) {
+      b.w = { stage: 0, xp: 0, bonus: 0, cd: 0, timer: 2.5 };
+      b.r = BALL_R * 0.8;
+    },
+    stats: (b) => [
+      ['すがた', GOLDFISH_NAMES[b.w.stage]],
+      ['体当たり', fmt(Math.round(goldfishDamage(b) * 10) / 10)],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      me.angle = Math.atan2(me.vy, me.vx);
+      if (w.stage === 0) return;
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 2.5;
+      if (w.stage === 1) {
+        // 滝のぼり: 相手の方へ勢いよく飛び上がる
+        const a = aimAt(me, foe);
+        me.vx = Math.cos(a) * 520;
+        me.vy = Math.min(-420, Math.sin(a) * 620);
+      } else {
+        strike(world, me, foe.x + foe.vx * 0.3, foe.y + foe.vy * 0.3, 0.45, 1, true, 0.6 + w.bonus * 0.3);
+      }
+    },
+    onContact(world, me, foe) {
+      if (me.w.cd > world.t) return;
+      me.w.cd = world.t + 0.55;
+      if (landHit(world, me, foe, goldfishDamage(me), { kind: 'fish', x: (me.x + foe.x) / 2, y: (me.y + foe.y) / 2 }) > 0) knockback(me, foe, 180 + me.w.stage * 60);
+    },
+    onHit(world, me) {
+      const w = me.w;
+      w.bonus += 0.15;
+      if (!evolveStep(world, me, [4, 10], GOLDFISH_NAMES)) return;
+      me.r = BALL_R * [0.8, 1, 1.15][w.stage];
+      me.color = ['#ff8c42', '#f4f4f4', '#1f8a70'][w.stage];
+    },
+  },
+  {
+    id: 'ashigaru',
+    kind: 'melee',
+    bloom: true,
+    name: '足軽',
+    en: 'Foot Soldier',
+    color: '#8d6e63',
+    grow: '当てるたびに 手柄。足軽(槍) → 侍(刀) → 将軍(刀と、空から矢の雨)',
+    init(b) {
+      b.w = { stage: 0, xp: 0, bonus: 0, timer: 3 };
+      setSpin(b, 3);
+      b.blades = [makeBlade({ sprite: 'spear', rIn: 22, rOut: 100, w: 8, damage: (world, me) => ashigaruDamage(me), cd: 0.35 })];
+    },
+    stats: (b) => [
+      ['身分', ASHIGARU_NAMES[b.w.stage]],
+      ['ダメージ', fmt(Math.round(ashigaruDamage(b) * 10) / 10)],
+    ],
+    update(world, me, foe, dt) {
+      if (me.w.stage < 2) return;
+      // 将軍: 3秒ごとに矢の雨(3本)
+      me.w.timer -= dt;
+      if (me.w.timer > 0) return;
+      me.w.timer = 3;
+      for (let i = -1; i <= 1; i++) {
+        spawnProjectile(world, me, {
+          x: Math.max(20, Math.min(ARENA - 20, foe.x + i * 45)),
+          y: 24,
+          vx: 0,
+          vy: 640,
+          angle: Math.PI / 2,
+          kind: 'arrow',
+          r: 6,
+          life: 2,
+          damage: 1.8 + me.w.bonus * 0.5,
+          onTouch: hitOnce(),
+        });
+      }
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'melee') return;
+      const w = me.w;
+      w.bonus += 0.2;
+      if (!evolveStep(world, me, [3, 8], ASHIGARU_NAMES)) return;
+      const bl = me.blades[0];
+      bl.sprite = 'katana';
+      bl.rOut = w.stage >= 2 ? 112 : 104;
+      bl.w = 10;
+      setSpin(me, w.stage >= 2 ? 4.4 : 4);
+    },
+  },
+  {
+    id: 'typhoon',
+    kind: 'body',
+    bloom: true,
+    name: '台風',
+    en: 'Typhoon',
+    color: '#5dade2',
+    grow: '巻きこむたびに 発達。熱帯低気圧 → 台風 → 超大型台風。まわりの相手を渦でぐるぐる回して、風で削る',
+    init(b) {
+      b.w = { stage: 0, xp: 0, bonus: 0, tick: 0.4, gust: 3 };
+    },
+    stats: (b) => [
+      ['すがた', TYPHOON_NAMES[b.w.stage]],
+      ['風', fmt(Math.round(([1, 1.6, 2.4][b.w.stage] + b.w.bonus) * 10) / 10)],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      me.angle += dt * (3 + w.stage * 2);
+      const R = me.r + TYPHOON_R[w.stage];
+      // 渦: 近くの相手をぐるぐる回して、少し外へはじく(目には入れない)
+      for (const o of world.balls) {
+        if (o === me || o.dead) continue;
+        const d = Math.hypot(o.x - me.x, o.y - me.y);
+        if (d > R + 60 || d < 1) continue;
+        const nx = (o.x - me.x) / d;
+        const ny = (o.y - me.y) / d;
+        const f = (500 + w.stage * 200) * dt * (o.knockMul ?? 1);
+        o.vx += (-ny + nx * 0.4) * f;
+        o.vy += (nx + ny * 0.4) * f;
+      }
+      w.tick -= dt;
+      if (w.tick <= 0) {
+        w.tick = 0.4;
+        for (const o of world.balls) {
+          if (o === me || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+          landHit(world, me, o, [1, 1.6, 2.4][w.stage] + w.bonus, { kind: 'wind', x: o.x, y: o.y });
+        }
+      }
+      if (w.stage < 2) return;
+      // 超大型: ときどき強い突風で吹き飛ばす
+      w.gust -= dt;
+      if (w.gust > 0) return;
+      w.gust = 3;
+      world.events.push({ type: 'shock', x: me.x, y: me.y, r: R, color: '#aed6f1' });
+      for (const o of world.balls) {
+        if (o === me || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        knockback(me, o, 560);
+        o.slamT = 0.6;
+        o.slamBy = me.id;
+      }
+    },
+    onHit(world, me) {
+      me.w.bonus += 0.03;
+      evolveStep(world, me, [6, 16], TYPHOON_NAMES);
+    },
+  },
+  {
+    id: 'volcano',
+    kind: 'ranged',
+    bloom: true,
+    name: '火山',
+    en: 'Volcano',
+    color: '#8b5a2b',
+    grow: '当たるたびに 噴火が強くなる。小山(石1つ) → 火山(2つ) → 大噴火(3つ・燃える)。噴石は相手の真上から落ちてくる',
+    init(b) {
+      b.w = { stage: 0, xp: 0, bonus: 0, timer: 1.5 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['すがた', VOLCANO_NAMES[b.w.stage]],
+      ['噴石', fmt(Math.round(([2.6, 3.8, 5][b.w.stage] + b.w.bonus) * 10) / 10)],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      me.angle = -Math.PI / 2;
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 1.7;
+      const n = w.stage + 1;
+      world.events.push({ type: 'shock', x: me.x, y: me.y - me.r, r: 40, color: '#e8481a' });
+      for (let i = 0; i < n; i++) {
+        // 噴石: 火口から真上へ飛び出し、天井から相手の真上に落ちてくる
+        spawnProjectile(world, me, {
+          x: me.x + (i - (n - 1) / 2) * 12,
+          y: me.y - me.r,
+          vx: 0,
+          vy: -900,
+          kind: 'magma',
+          r: 10,
+          life: 3.5,
+          wall: 'stop',
+          blockable: false,
+          off: (i - (n - 1) / 2) * 70,
+          update(world, p, owner, foe) {
+            // 床に落ちたら消える
+            if (p.fall && p.y >= ARENA - p.r - 2) p.dead = true;
+            if (p.fall || p.y > 30) return;
+            p.fall = true;
+            p.x = Math.max(20, Math.min(ARENA - 20, foe.x + foe.vx * 0.5 + p.off));
+            p.vy = 260;
+            p.gravity = 0.8;
+          },
+          damage: [2.6, 3.8, 5][w.stage] + w.bonus,
+          onTouch(world, p, owner, o) {
+            if (!p.fall) return;
+            p.dead = true;
+            if (landHit(world, owner, o, p.damage, { kind: 'magma', x: p.x, y: p.y }) <= 0 || owner.w.stage < 2) return;
+            o.burnT = Math.max(o.burnT, 2);
+            o.burnDps = Math.max(o.burnDps, 1);
+            o.burnSrc = owner.id;
+          },
+        });
+      }
+    },
+    onHit(world, me) {
+      me.w.bonus += 0.15;
+      evolveStep(world, me, [3, 8], VOLCANO_NAMES);
+    },
+  },
+  {
+    id: 'mimic',
+    kind: 'body',
+    bloom: true,
+    name: '宝箱',
+    en: 'Mimic',
+    color: '#c69c3a',
+    grow: 'かむたびに 正体をあらわす。宝箱(硬い) → ミミック(大きな口で飛びかかる) → 宝の王(金貨も投げる)',
+    init(b) {
+      b.w = { stage: 0, xp: 0, bonus: 0, cd: 0, lunge: 2.2, timer: 2.5 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['すがた', MIMIC_NAMES[b.w.stage]],
+      ['かみつき', fmt(Math.round(mimicDamage(b) * 10) / 10)],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      if (w.stage === 0) {
+        me.angle = 0;
+        return;
+      }
+      turnTo(me, aimAt(me, foe), dt, 8);
+      w.lunge -= dt;
+      if (w.lunge <= 0) {
+        w.lunge = 2.2;
+        const a = aimAt(me, foe);
+        me.vx = Math.cos(a) * 600;
+        me.vy = Math.sin(a) * 600 - 150;
+      }
+      if (w.stage < 2) return;
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 2.5;
+      shoot(world, me, aimAt(me, foe), 480, { kind: 'coin', r: 9, life: 2, damage: 2.4 + w.bonus * 0.5, onTouch: hitOnce() });
+    },
+    onContact(world, me, foe) {
+      if (me.w.stage > 0 || me.w.cd > world.t) return;
+      me.w.cd = world.t + 0.6;
+      landHit(world, me, foe, mimicDamage(me), { kind: 'chest', x: (me.x + foe.x) / 2, y: (me.y + foe.y) / 2 });
+    },
+    onTakeDamage: (world, me, src, amount) => (me.w.stage === 0 ? amount * 0.75 : amount),
+    onHit(world, me) {
+      const w = me.w;
+      w.bonus += 0.15;
+      if (!evolveStep(world, me, [3, 9], MIMIC_NAMES)) return;
+      if (w.stage === 1) me.blades = [makeBlade({ sprite: 'jaw', rIn: me.r - 6, rOut: me.r + 28, w: 20, damage: (world, me) => mimicDamage(me), cd: 0.45, knock: 180, parry: false })];
+      else {
+        me.r = BALL_R * 1.15;
+        fitBlades(me);
+        me.blades[0].rOut = me.r + 34;
+      }
+    },
+  },
+  {
+    id: 'sparky',
+    kind: 'body',
+    bloom: true,
+    name: '静電気',
+    en: 'Static',
+    color: '#f7dc6f',
+    grow: 'ふれるたびに 電気がたまる。静電気(パチッ) → 電撃(まわりにも飛ぶ) → 雷神(雷を落とす)',
+    init(b) {
+      b.w = { stage: 0, xp: 0, bonus: 0, cd: 0, timer: 3 };
+    },
+    stats: (b) => [
+      ['すがた', SPARKY_NAMES[b.w.stage]],
+      ['電気', fmt(Math.round(sparkyDamage(b) * 10) / 10)],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      me.angle = Math.atan2(me.vy, me.vx);
+      if (w.stage < 2) return;
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 3;
+      strike(world, me, foe.x + foe.vx * 0.3, foe.y + foe.vy * 0.3, 0.4, 1, true, 0.7 + w.bonus * 0.25);
+    },
+    onContact(world, me, foe) {
+      const w = me.w;
+      if (w.cd > world.t) return;
+      w.cd = world.t + 0.45;
+      world.events.push({ type: 'zap', x: (me.x + foe.x) / 2, y: (me.y + foe.y) / 2, big: false });
+      if (landHit(world, me, foe, sparkyDamage(me), { kind: 'static', x: foe.x, y: foe.y }) <= 0) return;
+      knockback(me, foe, 200);
+      foe.stun = Math.max(foe.stun, 0.06);
+      if (w.stage < 1) return;
+      // 電撃: 近くのほかの相手にも飛ぶ
+      for (const o of world.balls) {
+        if (o === me || o === foe || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > 220) continue;
+        world.events.push({ type: 'zap', x: o.x, y: o.y, big: false });
+        dealDamage(world, me, o, sparkyDamage(me) * 0.5, { kind: 'static', x: o.x, y: o.y });
+      }
+    },
+    onHit(world, me) {
+      me.w.bonus += 0.18;
+      evolveStep(world, me, [4, 10], SPARKY_NAMES);
+    },
+  },
+  // ===== 2026-10-27 第3弾の遊び道具・体 =====
+  {
+    id: 'wrestler',
+    kind: 'body',
+    name: 'プロレス',
+    en: 'Wrestler',
+    color: '#c0392b',
+    grow: 'ドロップキックが当たるたびに ダメージ +0.8(飛び上がって相手へ両足から突っこみ、壁ドン)',
+    init(b) {
+      b.w = { dmg: 3.5, timer: 1.5, kick: 0, cd: 0 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [['ドロップキック', fmt(Math.round(b.w.dmg * 10) / 10)]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      if (w.kick > 0) {
+        w.kick -= dt;
+        return;
+      }
+      me.angle = Math.atan2(me.vy, me.vx);
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 2.4;
+      w.kick = 0.6;
+      const a = aimAt(me, foe);
+      me.vx = Math.cos(a) * 820;
+      me.vy = Math.sin(a) * 820 - 180;
+      me.angle = a;
+    },
+    onContact(world, me, foe) {
+      const w = me.w;
+      if (w.kick <= 0 || w.cd > world.t) return;
+      w.cd = world.t + 0.5;
+      if (landHit(world, me, foe, w.dmg, { kind: 'dropkick', x: (me.x + foe.x) / 2, y: (me.y + foe.y) / 2 }) <= 0) return;
+      knockback(me, foe, 480);
+      foe.slamT = 0.7;
+      foe.slamBy = me.id;
+      world.events.push({ type: 'say', x: foe.x, y: foe.y, text: 'ドロップキック！', color: '#c0392b' });
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind === 'dropkick') me.w.dmg += 0.8;
+    },
+  },
+  {
+    id: 'darts',
+    kind: 'ranged',
+    name: 'ダーツ',
+    en: 'Darts',
+    color: '#2c3e50',
+    grow: '当たるたびに ダメージ +0.5・ブルが広がる(相手のど真ん中に当たると ブル！で3倍)',
+    init(b) {
+      b.w = { dmg: 2.2, bull: 0.3, timer: 0.6 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)],
+      ['ブル', Math.round(shown(b, 'bull') * 100) + '%'],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 10);
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 0.85;
+      const T = Math.hypot(foe.x - me.x, foe.y - me.y) / 720;
+      const a = Math.atan2(foe.y + foe.vy * T - me.y, foe.x + foe.vx * T - me.x);
+      shoot(world, me, a, 720, {
+        kind: 'dart',
+        r: 5,
+        life: 1.4,
+        onTouch(world, p, owner, o) {
+          p.dead = true;
+          // ど真ん中(ボールの中心の近く)に当たるとブル
+          const bull = Math.hypot(p.x - o.x, p.y - o.y) < o.r * owner.w.bull;
+          if (bull) world.events.push({ type: 'say', x: o.x, y: o.y, text: 'ブル！', color: '#e74c3c' });
+          landHit(world, owner, o, owner.w.dmg * (bull ? 3 : 1), { kind: 'dart', x: p.x, y: p.y });
+        },
+      });
+    },
+    onHit(world, me) {
+      me.w.dmg += 0.5;
+      growStat(me, 'bull', 0.02, 0.7, 0.5);
+    },
+  },
+  {
+    ...melee('broom', {
+      spin: 3.4,
+      state: { dmg: 1.6 },
+      blade: { rIn: 20, rOut: 92, w: 22 },
+      damage: (w, me) => me.w.dmg,
+    }),
+    name: 'ほうき',
+    en: 'Broom',
+    color: '#b7950b',
+    grow: '当たるたびに ダメージ +0.5(相手を横へ はき飛ばして 壁ドン)',
+    stats: (b) => [['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)]],
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'melee') return;
+      me.w.dmg += 0.5;
+      // 横へはき飛ばす
+      foe.vx = Math.sign(foe.x - me.x || 1) * 600 * (foe.knockMul ?? 1);
+      foe.vy *= 0.3;
+      foe.slamT = 0.7;
+      foe.slamBy = me.id;
+    },
+  },
+  {
+    id: 'fan',
+    kind: 'ranged',
+    name: '扇風機',
+    en: 'Electric Fan',
+    color: '#85c1e9',
+    grow: '当たるたびに 風が強くなる・ダメージ +0.1(前の相手を風で押しやり、壁に押しつけて削る)',
+    init(b) {
+      b.w = { dmg: 1, wind: 900, tick: 0.5, t: 0 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['ダメージ', fmt(Math.round(b.w.dmg * 100) / 100)],
+      ['風', fmt(Math.round(shown(b, 'wind')))],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      w.t += dt;
+      // 首ふり
+      turnTo(me, aimAt(me, foe) + Math.sin(w.t * 1.5) * 0.3, dt, 5);
+      w.tick -= dt;
+      const hit = w.tick <= 0;
+      if (hit) w.tick = 0.5;
+      for (const o of world.balls) {
+        if (o === me || o.dead) continue;
+        const d = Math.hypot(o.x - me.x, o.y - me.y);
+        const diff = Math.abs(((aimAt(me, o) - me.angle + Math.PI) % TAU + TAU) % TAU - Math.PI);
+        if (d > 300 + o.r || diff > 0.5) continue;
+        o.vx += Math.cos(me.angle) * w.wind * dt * (o.knockMul ?? 1);
+        o.vy += Math.sin(me.angle) * w.wind * dt * (o.knockMul ?? 1);
+        if (hit) landHit(world, me, o, w.dmg, { kind: 'fanwind', x: o.x, y: o.y });
+      }
+    },
+    onHit(world, me) {
+      me.w.dmg += 0.1;
+      growStat(me, 'wind', 20, 2000, 0.3);
+    },
+  },
+  {
+    id: 'soapBubble',
+    kind: 'ranged',
+    name: 'シャボン玉',
+    en: 'Soap Bubble',
+    color: '#d2b4de',
+    grow: '当たるたびに ダメージ +0.4(ふわふわ飛ぶシャボン玉に相手を閉じこめて、パチン！)',
+    init(b) {
+      b.w = { dmg: 2, timer: 0.8 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [['パチン', fmt(Math.round(b.w.dmg * 10) / 10)]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 6);
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      if (world.projectiles.filter((p) => p.owner === me.id && p.kind === 'soapbubble').length >= 2) return;
+      w.timer = 1.9;
+      shoot(world, me, me.angle + (world.rng() - 0.5) * 0.6, 150, {
+        kind: 'soapbubble',
+        r: 16,
+        life: 6,
+        wall: 'bounce',
+        blockable: false,
+        trap: null,
+        update(world, p, owner, foe, dt) {
+          if (p.trap) {
+            // 閉じこめた相手と一緒にゆっくり浮く
+            const o = p.trap;
+            p.x = o.x;
+            p.y = o.y;
+            o.vy = -60;
+            o.vx *= 0.9;
+            p.hold -= dt;
+            if (p.hold <= 0 || o.dead) {
+              p.dead = true;
+              world.events.push({ type: 'say', x: o.x, y: o.y, text: 'パチン！', color: '#8e44ad' });
+              landHit(world, owner, o, owner.w.dmg, { kind: 'bubble', x: o.x, y: o.y });
+            }
+            return;
+          }
+          homing(p, foe, 1.2, dt, 150);
+        },
+        onTouch(world, p, owner, o) {
+          if (p.trap) return;
+          p.trap = o;
+          p.hold = 0.6;
+          p.r = o.r + 10;
+          p.vx = 0;
+          p.vy = 0;
+          o.stun = Math.max(o.stun, 0.6);
+        },
+      });
+    },
+    onHit(world, me) {
+      me.w.dmg += 0.4;
+    },
+  },
+  {
+    id: 'spinner',
+    kind: 'melee',
+    name: 'ハンドスピナー',
+    en: 'Fidget Spinner',
+    color: '#16a085',
+    grow: '当たるたびに 回転が速くなる。速く回るほど ダメージも上がる',
+    init(b) {
+      b.w = { spin: 3 };
+      setSpin(b, 3);
+      for (let i = 0; i < 3; i++) b.blades.push(makeBlade({ sprite: 'spinner', off: (i * TAU) / 3, rIn: b.r - 4, rOut: b.r + 30, w: 18, damage: (world, me) => 0.6 + shown(me, 'spin') * 0.2, cd: 0.4, knock: 140 }));
+    },
+    stats: (b) => [['回転', fmt(Math.round(shown(b, 'spin') * 10) / 10)]],
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'melee') return;
+      growStat(me, 'spin', 0.3, 11, 0.3);
+      setSpin(me, me.w.spin);
+    },
+  },
+  {
+    ...melee('fryingPan', {
+      spin: 3.2,
+      state: { dmg: 2.4 },
+      blade: { rIn: 20, rOut: 70, w: 28 },
+      damage: (w, me) => me.w.dmg,
+    }),
+    name: 'フライパン',
+    en: 'Frying Pan',
+    color: '#566573',
+    grow: '当たるたびに ダメージ +0.8(カーン！と相手を少ししびれさせる。平らな面で弾も防ぐ)',
+    stats: (b) => [['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)]],
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'melee') return;
+      me.w.dmg += 0.8;
+      foe.stun = Math.max(foe.stun, 0.15);
+      world.events.push({ type: 'say', x: foe.x, y: foe.y, text: 'カーン！', color: '#566573' });
+    },
+  },
+  {
+    id: 'slingshot',
+    kind: 'ranged',
+    name: 'パチンコ',
+    en: 'Slingshot',
+    color: '#a04000',
+    grow: '当たるたびに ダメージ +1(ゴムを引きしぼって、重くて速い石を1発)',
+    init(b) {
+      b.w = { dmg: 4.5, timer: 1, pull: 0 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [['石', fmt(Math.round(b.w.dmg * 10) / 10)]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 8);
+      w.timer -= dt;
+      w.pull = Math.max(0, 1 - w.timer / 1.8);
+      if (w.timer > 0) return;
+      w.timer = 1.8;
+      const T = Math.hypot(foe.x - me.x, foe.y - me.y) / 820;
+      const a = Math.atan2(foe.y + foe.vy * T - me.y, foe.x + foe.vx * T - me.x);
+      shoot(world, me, a, 820, {
+        kind: 'stone',
+        r: 8,
+        life: 1.5,
+        damage: w.dmg,
+        onTouch(world, p, owner, o) {
+          p.dead = true;
+          if (landHit(world, owner, o, p.damage, { kind: 'stone', x: p.x, y: p.y }) > 0) knockback(p, o, 260);
+        },
+      });
+    },
+    onHit(world, me) {
+      me.w.dmg += 1;
+    },
+  },
+  {
+    id: 'jumpRope',
+    kind: 'melee',
+    name: '縄跳び',
+    en: 'Jump Rope',
+    color: '#e91e63',
+    grow: '当たるたびに ダメージ +0.5・縄が長くなる(ぴょんぴょん跳びながら、ぐるぐる回る縄で打つ)',
+    init(b) {
+      b.w = { dmg: 1.4, len: 50, hop: 1 };
+      setSpin(b, 5.5);
+      b.blades = [makeBlade({ sprite: 'rope', rIn: b.r - 4, rOut: b.r + 50, w: 6, damage: (world, me) => me.w.dmg, cd: 0.3, knock: 120, parry: false })];
+    },
+    stats: (b) => [
+      ['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)],
+      ['縄', fmt(Math.round(shown(b, 'len')))],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      w.hop -= dt;
+      if (w.hop > 0 || me.y < ARENA - me.r - 8) return;
+      w.hop = 1.1;
+      me.vy = -620;
+      me.vx += Math.sign(foe.x - me.x || 1) * 120;
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'melee') return;
+      me.w.dmg += 0.5;
+      growStat(me, 'len', 3, 90, 0.4);
+      me.blades[0].rOut = me.r + me.w.len;
+    },
+  },
 ];
 
 function grow(me) {
@@ -8213,6 +8848,21 @@ export const TUNE = {
   paperPlane: 0.55,
   waterBalloon: 1.53,
   ringToss: 0.81,
+  goldfish: 1.16,
+  ashigaru: 1.80,
+  typhoon: 1.31,
+  volcano: 0.84,
+  mimic: 0.89,
+  sparky: 0.94,
+  wrestler: 1.14,
+  darts: 1.18,
+  broom: 0.82,
+  fan: 1.07,
+  soapBubble: 1.04,
+  spinner: 1.46,
+  fryingPan: 1.48,
+  slingshot: 1.31,
+  jumpRope: 1.49,
 };
 
 // 3人以上の試合だけで掛ける倍率。4人バトルロイヤルの1位率が25%に近づくように決めた
@@ -8402,6 +9052,21 @@ export const TUNE_FFA = {
   paperPlane: 1.40,
   waterBalloon: 1.09,
   ringToss: 1.09,
+  goldfish: 1.20,
+  ashigaru: 0.85,
+  typhoon: 0.89,
+  volcano: 1.44,
+  mimic: 1.09,
+  sparky: 0.89,
+  wrestler: 1.73,
+  darts: 1.44,
+  broom: 0.80,
+  fan: 1.33,
+  soapBubble: 1.41,
+  spinner: 0.75,
+  fryingPan: 0.61,
+  slingshot: 1.88,
+  jumpRope: 0.75,
 };
 
 for (const w of WEAPONS) {

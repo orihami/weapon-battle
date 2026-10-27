@@ -115,6 +115,43 @@ function sawShape(ctx, r) {
 }
 
 const BLADE_SPRITES = {
+  broom(ctx, b) {
+    // ほうき(柄と穂)
+    shaft(ctx, b.rIn, b.rOut - 26, WOOD, 6);
+    poly(ctx, [[b.rOut - 28, -6], [b.rOut, -b.w / 2 - 2], [b.rOut, b.w / 2 + 2], [b.rOut - 28, 6]], '#e3c16f');
+    ctx.save();
+    ctx.strokeStyle = '#b7950b';
+    ctx.lineWidth = 1.5;
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(b.rOut - 24, i * 2);
+      ctx.lineTo(b.rOut, i * (b.w / 5));
+      ctx.stroke();
+    }
+    ctx.restore();
+  },
+  fryingPan(ctx, b) {
+    shaft(ctx, b.rIn, b.rOut - 28, '#3b3b3b', 7);
+    circle(ctx, b.rOut - 16, 0, 16, '#566573');
+    circle(ctx, b.rOut - 16, 0, 11, '#2c3e50', false);
+  },
+  spinner(ctx, b) {
+    // ハンドスピナーの羽(先に丸いおもり)
+    rect(ctx, b.rIn, -7, b.rOut - b.rIn - 12, 14, '#16a085');
+    circle(ctx, b.rOut - 10, 0, 11, '#1abc9c');
+    circle(ctx, b.rOut - 10, 0, 4, '#bdc3c7', false);
+  },
+  rope(ctx, b) {
+    ctx.save();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#e91e63';
+    ctx.beginPath();
+    ctx.moveTo(b.rIn, 0);
+    ctx.quadraticCurveTo((b.rIn + b.rOut) / 2, 14, b.rOut, 0);
+    ctx.stroke();
+    ctx.restore();
+    rect(ctx, b.rOut - 4, -4, 10, 8, '#f8bbd0');
+  },
   harisen(ctx, b) {
     // 蛇腹に折った紙のハリセン
     rect(ctx, b.rIn, -4, 16, 8, '#c0392b');
@@ -521,6 +558,49 @@ const BLADE_SPRITES = {
 
 // 遠距離武器などの「手に持っている物」
 const HELD = {
+  darts(ctx) {
+    rect(ctx, -10, -2, 18, 4, '#2c3e50');
+    poly(ctx, [[8, -3], [16, 0], [8, 3]], '#bdc3c7');
+    poly(ctx, [[-12, -5], [-6, 0], [-12, 5]], '#e74c3c');
+  },
+  soapBubble(ctx) {
+    rect(ctx, -10, -1.5, 14, 3, '#d2b4de');
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#8e44ad';
+    ctx.beginPath();
+    ctx.arc(9, 0, 6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  },
+  slingshot(ctx, ball) {
+    // Y字のパチンコ。引きしぼるほどゴムがのびる
+    const pull = (ball.w.pull || 0) * 12;
+    rect(ctx, -10, -2.5, 12, 5, '#a04000');
+    poly(ctx, [[2, -2], [12, -10], [14, -8], [4, 0]], '#a04000');
+    poly(ctx, [[2, 2], [12, 10], [14, 8], [4, 0]], '#a04000');
+    ctx.save();
+    ctx.strokeStyle = '#7d6608';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(13, -9);
+    ctx.lineTo(6 - pull, 0);
+    ctx.lineTo(13, 9);
+    ctx.stroke();
+    ctx.restore();
+    circle(ctx, 6 - pull, 0, 4, '#7f8c8d');
+  },
+  fan(ctx, ball) {
+    circle(ctx, 4, 0, 13, '#d6eaf8');
+    ctx.save();
+    ctx.translate(4, 0);
+    ctx.rotate(ball.w.t * 25);
+    for (let i = 0; i < 3; i++) {
+      ctx.rotate((Math.PI * 2) / 3);
+      poly(ctx, [[0, 0], [11, -4], [11, 4]], '#5dade2');
+    }
+    ctx.restore();
+  },
   vacuum(ctx, ball) {
     rect(ctx, -10, -3, 22, 6, '#7d3c98');
     poly(ctx, [[12, -4], [22, -10], [22, 10], [12, 4]], '#5b2c6f');
@@ -1194,6 +1274,23 @@ const HELD = {
 };
 
 const PROJ = {
+  soapbubble(ctx, p) {
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    circle(ctx, 0, 0, p.r, '#e8daef', false);
+    ctx.globalAlpha = 0.8;
+    ctx.strokeStyle = '#bb8fce';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, p.r, 0, Math.PI * 2);
+    ctx.stroke();
+    circle(ctx, -p.r * 0.4, -p.r * 0.4, p.r * 0.18, '#ffffff', false);
+    ctx.restore();
+  },
+  stone(ctx, p) {
+    circle(ctx, 0, 0, p.r, '#7f8c8d');
+    circle(ctx, -2, -2, 2.5, '#bdc3c7', false);
+  },
   trampoline(ctx, p) {
     // 床のトランポリン(はね上げた直後はへこむ)
     const dip = p.boing > 0 ? 8 : 0;
@@ -2565,6 +2662,26 @@ export class Renderer {
       }
       ctx.fill();
       ctx.restore();
+    } else if (id === 'typhoon') {
+      // 台風の渦
+      const R = b.r + [70, 110, 150][b.w.stage];
+      ctx.save();
+      ctx.strokeStyle = 'rgba(93,173,226,0.35)';
+      ctx.lineWidth = 5;
+      for (let k = 0; k < 3; k++) {
+        ctx.beginPath();
+        for (let i = 0; i <= 30; i++) {
+          const f = i / 30;
+          const a = -t * 4 + k * 2.09 + f * 3.5;
+          const rr = b.r + f * (R - b.r);
+          const px = b.x + Math.cos(a) * rr;
+          const py = b.y + Math.sin(a) * rr;
+          if (i) ctx.lineTo(px, py);
+          else ctx.moveTo(px, py);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
     } else if (id === 'unarmed') {
       const sp = Math.hypot(b.vx, b.vy) || 1;
       for (let i = 1; i <= 3; i++) {
@@ -2589,7 +2706,26 @@ export class Renderer {
       fn(ctx, bl, t);
       ctx.restore();
     }
-    if (def.id === 'hermit') {
+    if (def.id === 'fan') {
+      // 扇風機の風
+      ctx.save();
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = '#aed6f1';
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y);
+      ctx.arc(b.x, b.y, 300, b.angle - 0.5, b.angle + 0.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    } else if (def.id === 'goldfish') {
+      // 尾びれ
+      const a = b.angle + Math.PI;
+      const tx = b.x + Math.cos(a) * b.r;
+      const ty = b.y + Math.sin(a) * b.r;
+      const L = b.w.stage >= 2 ? 50 : 26;
+      const c = ['#ff6b2c', '#e74c3c', '#1f8a70'][b.w.stage];
+      poly(ctx, [[tx, ty], [tx + Math.cos(a + 0.5) * L, ty + Math.sin(a + 0.5) * L], [tx + Math.cos(a - 0.5) * L, ty + Math.sin(a - 0.5) * L]], c);
+    } else if (def.id === 'hermit') {
       // 背中の殻(引っこすたびに大きくなる)
       const st = b.w.stage;
       const a = b.angle + Math.PI;
@@ -2973,6 +3109,74 @@ export class Renderer {
       if (w.on <= 0) {
         ctx.fillStyle = '#ffd23f';
         ctx.fillRect(x - r * 0.6, y + r * 0.55, r * 1.2 * Math.min(1, w.gauge / w.need), 5);
+      }
+    } else if (id === 'goldfish') {
+      circle(ctx, x + Math.cos(b.angle) * r * 0.45, y + Math.sin(b.angle) * r * 0.45 - 4, 4, OUT, false);
+      if (w.stage === 1) for (let i = 0; i < 3; i++) circle(ctx, x - r * 0.3 + i * r * 0.3, y + r * 0.2, r * 0.12, '#e74c3c', false);
+      if (w.stage >= 2) {
+        // 竜のひげと角
+        ctx.strokeStyle = '#f2c230';
+        for (const s of [-1, 1]) {
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.quadraticCurveTo(x + s * r * 1.2, y - r * 0.2, x + s * r * 1.5, y + r * 0.5);
+          ctx.stroke();
+          poly(ctx, [[x + s * r * 0.3, y - r * 0.85], [x + s * r * 0.55, y - r * 1.4], [x + s * r * 0.6, y - r * 0.7]], '#f2e6c8');
+        }
+      }
+    } else if (id === 'ashigaru') {
+      if (w.stage === 0) poly(ctx, [[x - r * 0.95, y - r * 0.55], [x, y - r * 1.25], [x + r * 0.95, y - r * 0.55]], '#2c3e50');
+      else {
+        ctx.fillStyle = w.stage >= 2 ? '#1a1a1a' : '#5d4037';
+        ctx.beginPath();
+        ctx.arc(x, y - r * 0.35, r * 0.8, Math.PI, 0);
+        ctx.fill();
+        ctx.stroke();
+        if (w.stage >= 2) {
+          // 将軍の兜の飾り
+          poly(ctx, [[x - 4, y - r * 1.1], [x - r * 0.7, y - r * 1.8], [x, y - r * 1.25], [x + r * 0.7, y - r * 1.8], [x + 4, y - r * 1.1]], '#f2c230');
+        }
+      }
+    } else if (id === 'volcano') {
+      // 頭の上の火口と煙
+      poly(ctx, [[x - r * 0.75, y - r * 0.5], [x - r * 0.3, y - r * 1.25], [x + r * 0.3, y - r * 1.25], [x + r * 0.75, y - r * 0.5]], '#6e4b2a');
+      rect(ctx, x - r * 0.3, y - r * 1.32, r * 0.6, 6, w.stage >= 2 ? '#ff5a1a' : '#e67e22');
+      if (w.stage >= 1) {
+        ctx.globalAlpha = 0.4;
+        circle(ctx, x + Math.sin(this.time * 2) * 6, y - r * 1.6, 8 + w.stage * 3, '#95a5a6', false);
+        ctx.globalAlpha = 1;
+      }
+    } else if (id === 'mimic') {
+      if (w.stage === 0) {
+        rect(ctx, x - r * 0.9, y - r * 0.15, r * 1.8, 6, '#6e4b1e');
+        rect(ctx, x - 5, y - r * 0.25, 10, 12, '#f2c230');
+      } else {
+        // 牙と目
+        for (let i = -2; i <= 2; i++) poly(ctx, [[x + i * r * 0.3 - 5, y - r * 0.05], [x + i * r * 0.3, y + r * 0.25], [x + i * r * 0.3 + 5, y - r * 0.05]], '#ffffff');
+        for (const s of [-1, 1]) circle(ctx, x + s * r * 0.4, y - r * 0.45, 5, w.stage >= 2 ? '#f2c230' : '#e74c3c', false);
+        if (w.stage >= 2) poly(ctx, [[x - 14, y - r + 4], [x - 16, y - r - 14], [x - 6, y - r - 4], [x, y - r - 18], [x + 6, y - r - 4], [x + 16, y - r - 14], [x + 14, y - r + 4]], '#f2c230');
+      }
+    } else if (id === 'sparky') {
+      // 体のまわりのパチパチ
+      ctx.strokeStyle = w.stage >= 2 ? '#f1c40f' : '#f9e79f';
+      ctx.lineWidth = 2 + w.stage;
+      const n = 3 + w.stage * 2;
+      for (let i = 0; i < n; i++) {
+        const a = this.time * 4 + (i * Math.PI * 2) / n;
+        ctx.beginPath();
+        ctx.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+        ctx.lineTo(x + Math.cos(a + 0.15) * (r + 8), y + Math.sin(a + 0.15) * (r + 8));
+        ctx.lineTo(x + Math.cos(a - 0.05) * (r + 16), y + Math.sin(a - 0.05) * (r + 16));
+        ctx.stroke();
+      }
+    } else if (id === 'wrestler') {
+      // 覆面
+      ctx.fillStyle = '#f2c230';
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.ellipse(x + s * r * 0.38, y - r * 0.2, r * 0.22, r * 0.14, s * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
       }
     } else if (id === 'beetle') {
       if (w.stage === 0) {

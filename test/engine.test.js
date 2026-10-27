@@ -676,3 +676,37 @@ test('第4弾のカード: 進化の石・ステップ・根っこ', () => {
   const floor = dealDamage(w3, r2, r1, 10);
   assert.ok(floor < air * 0.8, '床で減らない');
 });
+
+test('第3弾(200種まで): 金魚は竜に・足軽は将軍に・シャボン玉は閉じこめる・火山の石は真上から', () => {
+  assert.equal(WEAPONS.length, 200);
+  // 金魚 → コイ → 竜
+  const w1 = createBattle(W.goldfish, W.sword, 1);
+  const [gf, f1] = w1.balls;
+  for (let i = 0; i < 10; i++) W.goldfish.onHit(w1, gf, f1, {});
+  assert.equal(gf.w.stage, 2);
+  // 足軽: 将軍になると刀に持ちかえる
+  const w2 = createBattle(W.ashigaru, W.sword, 1);
+  const [as, f2] = w2.balls;
+  for (let i = 0; i < 8; i++) W.ashigaru.onHit(w2, as, f2, { kind: 'melee' });
+  assert.ok(as.w.stage === 2 && as.blades[0].sprite === 'katana');
+  // シャボン玉: 当たると相手を閉じこめてしびれさせ、少ししてパチン
+  const w3 = createBattle(W.soapBubble, W.sword, 1);
+  const [sb, f3] = w3.balls;
+  sb.w.timer = 0;
+  W.soapBubble.update(w3, sb, f3, 1 / 120);
+  const bub = w3.projectiles.find((p) => p.kind === 'soapbubble');
+  bub.onTouch(w3, bub, sb, f3);
+  assert.ok(f3.stun > 0.3 && bub.trap === f3);
+  const hp = f3.hp;
+  for (let i = 0; i < 120 && !bub.dead; i++) bub.update(w3, bub, sb, f3, 1 / 120);
+  assert.ok(bub.dead && f3.hp < hp, 'パチンしない');
+  // 火山: 噴石は上へ飛んでから、相手の真上へ落ちてくる
+  const w4 = createBattle(W.volcano, W.sword, 1);
+  const [vc, f4] = w4.balls;
+  vc.w.timer = 0;
+  W.volcano.update(w4, vc, f4, 1 / 120);
+  const rock = w4.projectiles.find((p) => p.kind === 'magma');
+  assert.ok(rock.vy < 0);
+  for (let i = 0; i < 240 && !rock.fall; i++) step(w4);
+  assert.ok(rock.fall && rock.vy > 0, '落ちてこない');
+});
