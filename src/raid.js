@@ -10,6 +10,7 @@ const TAU = Math.PI * 2;
 
 // ボスのHP(1人あたりの目安)と、強さの段階
 export const BOSS_HP = 260;
+export const TREASURE_EVERY = 3;
 export const DIFFICULTY = {
   easy: { name: 'かんたん', hp: 0.75, power: 0.8 },
   normal: { name: 'ふつう', hp: 1, power: 1 },
@@ -32,6 +33,18 @@ function stepPhase(world, me) {
   me.w.phase = p;
   if (p === 2) me.speedMul *= 1.3;
   world.events.push({ type: 'evolve', target: me.id, x: me.x, y: me.y, text: p === 1 ? '第2形態！' : '怒り！', color: '#c01f1f' });
+  // 怒ったとき、倒れた仲間がHP25%で1度だけ復活する(最後まで全員で戦えるように)
+  if (p < 2) return;
+  for (const o of world.balls) {
+    if (!o.dead || ally(o, me)) continue;
+    o.dead = false;
+    o.hp = o.maxHp * 0.25;
+    o.x = Math.max(o.r, Math.min(ARENA - o.r, ARENA / 2 + (world.rng() - 0.5) * ARENA * 0.6));
+    o.y = o.r + 20;
+    o.vx = 0;
+    o.vy = 0;
+    world.events.push({ type: 'evolve', target: o.id, x: o.x, y: o.y, text: '復活！', color: '#2fa84f' });
+  }
 }
 
 // 怒り中は技の間隔が短くなる
@@ -307,16 +320,374 @@ export const BOSSES = [
     },
     onContact: bossContact(3),
   },
+  {
+    id: 'shadowNinja',
+    kind: 'boss',
+    name: '影の忍者王',
+    en: 'Shadow Ninja King',
+    color: '#2c2c54',
+    grow: '相手の背後へ瞬間移動して斬る。第2形態で手裏剣、怒ると移動が速くなる',
+    init(b) {
+      bossBase(b, 1.6, 1);
+      b.w.warp = 2;
+      b.w.star = 3;
+    },
+    stats: (b) => [['形態', ['第1', '第2', '怒り'][b.w.phase]]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      stepPhase(world, me);
+      me.angle = aim(me, foe);
+      w.warp -= dt;
+      if (w.warp <= 0) {
+        w.warp = pace(me, 3.2);
+        // ねらう相手は毎回ちがう人(いちばん近いとはかぎらない)
+        const list = foes(world, me);
+        const t = list[Math.floor(world.rng() * list.length)] || foe;
+        const sp = Math.hypot(t.vx, t.vy) || 1;
+        world.events.push({ type: 'shock', x: me.x, y: me.y, r: 50, color: '#2c2c54' });
+        me.x = Math.max(me.r, Math.min(ARENA - me.r, t.x - (t.vx / sp) * (me.r + 50)));
+        me.y = Math.max(me.r, Math.min(ARENA - me.r, t.y - (t.vy / sp) * (me.r + 50)));
+        me.vx = 0;
+        me.vy = 0;
+        world.events.push({ type: 'iai', x: me.x, y: me.y });
+        shockwave(world, me, me.r + 50, 3.5, 300, '#6c5ce7');
+      }
+      if (w.phase < 1) return;
+      w.star -= dt;
+      if (w.star > 0) return;
+      w.star = pace(me, 3);
+      const a0 = aim(me, foe);
+      for (let i = -2; i <= 2; i++) {
+        const a = a0 + i * 0.22;
+        spawnProjectile(world, me, {
+          x: me.x + Math.cos(a) * me.r,
+          y: me.y + Math.sin(a) * me.r,
+          vx: Math.cos(a) * 520,
+          vy: Math.sin(a) * 520,
+          angle: a,
+          kind: 'shuriken',
+          r: 8,
+          life: 1.6,
+          onTouch(world, p, owner, o) {
+            p.dead = true;
+            landHit(world, owner, o, 2, { kind: 'boss', x: p.x, y: p.y });
+          },
+        });
+      }
+    },
+    onContact: bossContact(3),
+  },
+  {
+    id: 'iceQueen',
+    kind: 'boss',
+    name: '氷の女王',
+    en: 'Ice Queen',
+    color: '#85c1e9',
+    grow: '全員へ氷の矢。第2形態でまわりを凍らせる冷気、怒るとふぶきで全員が遅くなる',
+    init(b) {
+      bossBase(b, 1.8, 0.65);
+      b.w.shard = 1.5;
+      b.w.nova = 4;
+    },
+    stats: (b) => [['形態', ['第1', '第2', '怒り'][b.w.phase]]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      stepPhase(world, me);
+      me.angle = aim(me, foe);
+      // 怒り: ふぶきで全員が少し遅くなる
+      if (w.phase >= 2) for (const o of foes(world, me)) o.slow = Math.max(o.slow, 0.25);
+      w.shard -= dt;
+      if (w.shard <= 0) {
+        w.shard = pace(me, 3);
+        for (const o of foes(world, me)) {
+          const a = aim(me, o);
+          spawnProjectile(world, me, {
+            x: me.x + Math.cos(a) * me.r,
+            y: me.y + Math.sin(a) * me.r,
+            vx: Math.cos(a) * 560,
+            vy: Math.sin(a) * 560,
+            angle: a,
+            kind: 'icicle',
+            r: 9,
+            life: 2,
+            onTouch(world, p, owner, t) {
+              p.dead = true;
+              if (landHit(world, owner, t, 3, { kind: 'boss', x: p.x, y: p.y }) <= 0) return;
+              t.slow = Math.max(t.slow, 0.4);
+              t.slowT = Math.max(t.slowT, 1.2);
+            },
+          });
+        }
+      }
+      if (w.phase < 1) return;
+      w.nova -= dt;
+      if (w.nova > 0) return;
+      w.nova = pace(me, 5);
+      const R = me.r + 170;
+      world.events.push({ type: 'shock', x: me.x, y: me.y, r: R, color: '#d6eaf8' });
+      for (const o of foes(world, me)) {
+        if (Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        if (landHit(world, me, o, 3, { kind: 'boss', x: o.x, y: o.y }) > 0) o.freeze = Math.max(o.freeze, 0.7);
+      }
+    },
+    onContact: bossContact(2.5),
+  },
+  {
+    id: 'venomSerpent',
+    kind: 'boss',
+    name: '毒の大蛇',
+    en: 'Venom Serpent',
+    color: '#27ae60',
+    grow: 'かみついて毒。第2形態で毒の沼を作り、怒ると毒のつばも飛ばす',
+    init(b) {
+      bossBase(b, 1.8, 0.9);
+      b.w.bite = 2;
+      b.w.pool = 4;
+      b.w.spit = 3;
+    },
+    stats: (b) => [['形態', ['第1', '第2', '怒り'][b.w.phase]]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      stepPhase(world, me);
+      me.angle = Math.atan2(me.vy, me.vx);
+      w.bite -= dt;
+      if (w.bite <= 0) {
+        w.bite = pace(me, 3);
+        const a = aim(me, foe);
+        me.vx = Math.cos(a) * 720;
+        me.vy = Math.sin(a) * 720;
+      }
+      if (w.phase >= 1) {
+        w.pool -= dt;
+        if (w.pool <= 0) {
+          w.pool = pace(me, 5);
+          // 毒の沼: 相手のいる床に、しばらく残る
+          for (const o of foes(world, me).slice(0, 2)) {
+            spawnProjectile(world, me, {
+              x: Math.max(60, Math.min(ARENA - 60, o.x)),
+              y: ARENA - 30,
+              kind: 'gas',
+              r: 60,
+              life: 4,
+              wall: 'stop',
+              blockable: false,
+              tick: 0,
+              update(world, p, owner, t, dt) {
+                p.y = ARENA - 30;
+                p.tick -= dt;
+                if (p.tick > 0) return;
+                p.tick = 0.5;
+                for (const v of foes(world, owner)) {
+                  if (Math.hypot(v.x - p.x, v.y - p.y) > p.r + v.r) continue;
+                  v.poison = Math.min(4, v.poison + 0.3);
+                  v.poisonSrc = owner.id;
+                }
+              },
+            });
+          }
+        }
+      }
+      if (w.phase < 2) return;
+      w.spit -= dt;
+      if (w.spit > 0) return;
+      w.spit = 2.5;
+      for (let i = -1; i <= 1; i++) {
+        const a = aim(me, foe) + i * 0.3;
+        spawnProjectile(world, me, {
+          x: me.x + Math.cos(a) * me.r,
+          y: me.y + Math.sin(a) * me.r,
+          vx: Math.cos(a) * 420,
+          vy: Math.sin(a) * 420,
+          kind: 'slime',
+          r: 9,
+          life: 2,
+          onTouch(world, p, owner, t) {
+            p.dead = true;
+            if (landHit(world, owner, t, 2, { kind: 'boss', x: p.x, y: p.y }) > 0) t.poison = Math.min(4, t.poison + 0.5);
+          },
+        });
+      }
+    },
+    onContact(world, me, foe) {
+      if (me.w.cd > world.t) return;
+      me.w.cd = world.t + 0.6;
+      if (landHit(world, me, foe, 4, { kind: 'boss', x: foe.x, y: foe.y }) <= 0) return;
+      knockback(me, foe, 360);
+      foe.poison = Math.min(4, foe.poison + 0.8); // 毒は消えないので、大蛇の毒には上限
+      foe.poisonSrc = me.id;
+    },
+  },
+  {
+    id: 'demonLord',
+    kind: 'boss',
+    name: '魔王',
+    en: 'Demon Lord',
+    color: '#4a235a',
+    grow: '8レベルごとの大ボス。闇の玉の輪と全員への雷。第2形態で火の息、怒ると瞬間移動して衝撃波',
+    init(b) {
+      bossBase(b, 2.2, 0.6);
+      b.w.orbs = 2;
+      b.w.bolt = 3;
+      b.w.breath = 3;
+      b.w.fire = 0;
+      b.w.warp = 3;
+    },
+    stats: (b) => [['形態', ['第1', '第2', '怒り'][b.w.phase]]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      stepPhase(world, me);
+      if (w.fire > 0) w.fire -= dt;
+      else me.angle = aim(me, foe);
+      w.orbs -= dt;
+      if (w.orbs <= 0) {
+        w.orbs = pace(me, 4);
+        for (let i = 0; i < 6; i++) {
+          const a = (i * TAU) / 6 + world.t;
+          spawnProjectile(world, me, {
+            x: me.x + Math.cos(a) * me.r,
+            y: me.y + Math.sin(a) * me.r,
+            vx: Math.cos(a) * 240,
+            vy: Math.sin(a) * 240,
+            kind: 'gorb',
+            r: 12,
+            life: 2.6,
+            onTouch(world, p, owner, t) {
+              p.dead = true;
+              landHit(world, owner, t, 2.5, { kind: 'boss', x: p.x, y: p.y });
+            },
+          });
+        }
+      }
+      w.bolt -= dt;
+      if (w.bolt <= 0) {
+        w.bolt = pace(me, 3.5);
+        for (const o of foes(world, me)) bolt(world, me, o.x + o.vx * 0.3, o.y + o.vy * 0.3, 0.6, 3);
+      }
+      if (w.phase >= 1) {
+        w.breath -= dt;
+        if (w.breath <= 0) {
+          w.breath = pace(me, 3.5);
+          w.fire = 0.4;
+          for (const o of foes(world, me)) {
+            const d = Math.hypot(o.x - me.x, o.y - me.y);
+            const diff = Math.abs(((aim(me, o) - me.angle + Math.PI) % TAU + TAU) % TAU - Math.PI);
+            if (d > me.r + 230 + o.r || diff > 0.5) continue;
+            landHit(world, me, o, 5, { kind: 'breath', x: o.x, y: o.y });
+          }
+        }
+      }
+      if (w.phase < 2) return;
+      w.warp -= dt;
+      if (w.warp > 0) return;
+      w.warp = 3.5;
+      world.events.push({ type: 'shock', x: me.x, y: me.y, r: 60, color: '#4a235a' });
+      me.x = Math.max(me.r, Math.min(ARENA - me.r, foe.x + (world.rng() - 0.5) * 200));
+      me.y = Math.max(me.r, Math.min(ARENA - me.r, foe.y - 120));
+      shockwave(world, me, me.r + 140, 5, 420, '#8e44ad');
+    },
+    onContact: bossContact(3.5),
+  },
 ];
 
 export const BOSS_BY_ID = Object.fromEntries(BOSSES.map((b) => [b.id, b]));
 // ボスごとの強さの合わせ(HP・与ダメージ)。シミュレーションで、どのボスも同じくらいの勝率になるように決めた
 const BOSS_TUNE = {
-  slimeKing: { hp: 0.92, power: 1 },
-  fortress: { hp: 0.72, power: 0.85 },
-  dragonLord: { hp: 1, power: 1 },
-  thunderGiant: { hp: 1.1, power: 1 },
+  slimeKing: { hp: 0.71, power: 1 },
+  fortress: { hp: 0.63, power: 0.85 },
+  dragonLord: { hp: 0.83, power: 1 },
+  thunderGiant: { hp: 0.89, power: 1 },
+  shadowNinja: { hp: 0.65, power: 0.76 },
+  iceQueen: { hp: 1.11, power: 1 },
+  venomSerpent: { hp: 0.65, power: 0.65 },
+  demonLord: { hp: 1.00, power: 0.70 },
 };
+
+// ==== コンビ技: チームの武器の組み合わせで付くボーナス ====
+const FIRE = new Set(['wand', 'flame', 'fireworks', 'lava', 'phoenix', 'ember', 'volcano', 'firecracker', 'magma']);
+const ICE = new Set(['ice', 'blizzard', 'snowball', 'frostCircle', 'iceSpike', 'snowman']);
+const THUNDER = new Set(['lightning', 'tesla', 'thundercloud', 'sparky', 'plasma', 'storm']);
+const isNear = (d) => d.kind !== 'ranged';
+const count = (defs, f) => defs.filter(f).length;
+
+export const COMBOS = [
+  {
+    id: 'vanguard',
+    icon: '🛡️',
+    name: '前衛と後衛',
+    desc: '近接・体の武器と飛び道具がそろうと、全員の与ダメージ +10%',
+    test: (defs) => count(defs, isNear) >= 1 && count(defs, (d) => !isNear(d)) >= 1,
+    apply: (b) => (b.power *= 1.1),
+  },
+  {
+    id: 'bloomTeam',
+    icon: '🌱',
+    name: '大器晩成チーム',
+    desc: '大器晩成の武器が2つ以上で、大器晩成の武器は最初から3回分成長',
+    test: (defs) => count(defs, (d) => d.bloom) >= 2,
+    apply: (b, d) => d.bloom && (b.preGrow += 3),
+  },
+  {
+    id: 'fireTeam',
+    icon: '🔥',
+    name: '炎の仲間',
+    desc: '炎の武器が2つ以上で、炎の武器の与ダメージ +20%',
+    test: (defs) => count(defs, (d) => FIRE.has(d.id)) >= 2,
+    apply: (b, d) => FIRE.has(d.id) && (b.power *= 1.2),
+  },
+  {
+    id: 'iceTeam',
+    icon: '❄️',
+    name: '氷の仲間',
+    desc: '氷・雪の武器が2つ以上で、氷・雪の武器の与ダメージ +20%',
+    test: (defs) => count(defs, (d) => ICE.has(d.id)) >= 2,
+    apply: (b, d) => ICE.has(d.id) && (b.power *= 1.2),
+  },
+  {
+    id: 'thunderTeam',
+    icon: '⚡',
+    name: '雷の仲間',
+    desc: '雷の武器が2つ以上で、雷の武器の与ダメージ +20%',
+    test: (defs) => count(defs, (d) => THUNDER.has(d.id)) >= 2,
+    apply: (b, d) => THUNDER.has(d.id) && (b.power *= 1.2),
+  },
+  {
+    id: 'fighters',
+    icon: '👊',
+    name: '格闘家の集い',
+    desc: '体で戦う武器が2つ以上で、全員の最大HP +20',
+    test: (defs) => count(defs, (d) => d.kind === 'body') >= 2,
+    apply: (b) => (b.maxHp += 20),
+  },
+  {
+    id: 'twins',
+    icon: '👯',
+    name: '双子',
+    desc: '同じ武器が2つ以上で、その武器の与ダメージ +25%',
+    test: (defs) => defs.some((d, i) => defs.indexOf(d) !== i),
+    apply: (b, d, defs) => count(defs, (x) => x === d) >= 2 && (b.power *= 1.25),
+  },
+  {
+    id: 'rainbow',
+    icon: '🌈',
+    name: '個性ぞろい',
+    desc: '3人以上で、近接・飛び道具・体の武器が全部そろうと、全員の攻撃速度 +12%',
+    test: (defs) => defs.length >= 3 && ['melee', 'ranged', 'body'].every((k) => defs.some((d) => (d.kind === 'copy' ? 'melee' : d.kind) === k)),
+    apply: (b) => (b.haste *= 1.12),
+  },
+  {
+    id: 'fullTeam',
+    icon: '🤝',
+    name: '4人の絆',
+    desc: '4人そろうと、全員の最大HP +10',
+    test: (defs) => defs.length >= 4,
+    apply: (b) => (b.maxHp += 10),
+  },
+];
+
+// このチームで付くコンビ技
+export function combosOf(defs) {
+  return COMBOS.filter((c) => c.test(defs));
+}
 for (const b of BOSSES) b.tune = 1;
 
 // players: [{ name, weapon, cpu, color }]
@@ -340,8 +711,8 @@ export function bossOf(raid) {
   return {
     def,
     boost: {
-      maxHp: Math.round(BOSS_HP * (0.3 + 0.7 * n) * (1 + 0.28 * lv) * 1.07 ** lv * d.hp * BOSS_TUNE[def.id].hp),
-      power: (1 + 0.1 * lv) * 1.05 ** lv * d.power * (0.8 + 0.2 * n) * BOSS_TUNE[def.id].power,
+      maxHp: Math.round(BOSS_HP * (0.2 + 0.8 * n) * (1 + 0.28 * lv) * 1.12 ** lv * d.hp * BOSS_TUNE[def.id].hp),
+      power: (1 + 0.1 * lv) * 1.08 ** lv * d.power * (0.7 + 0.3 * n) * BOSS_TUNE[def.id].power,
     },
   };
 }
@@ -349,10 +720,14 @@ export function bossOf(raid) {
 // 試合の組み合わせ(createMelee にそのまま渡せる): 最後がボス。チームは 0(みんな) と 1(ボス)
 export function raidMatch(raid) {
   const boss = bossOf(raid);
+  const defs = raid.players.map((p) => p.weapon);
+  const combos = combosOf(defs);
   return {
-    defs: [...raid.players.map((p) => p.weapon), boss.def],
-    boosts: [...raid.players.map((p) => ({ skills: p.skills })), boss.boost],
+    defs: [...defs, boss.def],
+    // コンビ技は試合開始時にボールへかける(boost.combo)
+    boosts: [...raid.players.map((p) => ({ skills: p.skills, combo: (b) => combos.forEach((c) => c.apply(b, p.weapon, defs)) })), boss.boost],
     teams: [...raid.players.map(() => 0), 1],
+    combos,
   };
 }
 
@@ -363,7 +738,9 @@ export function reportRaid(raid, won, rng = Math.random) {
     return;
   }
   raid.level++;
-  const offers = raid.players.map((p) => ({ player: p.idx, cards: makeOffer(p.skills, 3, rng), choose: 1 }));
+  // 3体倒すごとに宝箱: 良いカードが出やすい4枚から2枚
+  const chest = (raid.level - 1) % TREASURE_EVERY === 0;
+  const offers = raid.players.map((p) => ({ player: p.idx, cards: makeOffer(p.skills, chest ? 4 : 3, rng, chest), choose: chest ? 2 : 1, chest }));
   raid.pending = offers.shift();
   raid.waiting = offers;
 }

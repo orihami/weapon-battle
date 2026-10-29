@@ -155,6 +155,7 @@ function createWorld(defs, seed, boosts, size, teams) {
     over: false,
     winner: null, // 勝ったボールの番号 / -1(引き分け)
     outOrder: [], // 倒れた順(ボールの番号)
+    dealt: {}, // ボールごとの与えたダメージの合計(ボス・レイドのランキング)
   };
   if (defs.length === 2) {
     const jy = (rng() - 0.5) * 200;
@@ -190,6 +191,13 @@ function applyBoost(world, b, o) {
   }
   if (o.power) b.power *= o.power;
   if (o.speedMul) b.speedMul *= o.speedMul;
+  if (o.combo) {
+    // ボス・レイドのコンビ技(power・maxHp・haste・preGrow を変える)
+    b.preGrow = 0;
+    o.combo(b);
+    b.hp = b.maxHp;
+    if (b.preGrow) o = { ...o, preGrow: (o.preGrow || 0) + b.preGrow };
+  }
   if (o.preGrow && b.def.onHit) {
     // 試合前の成長。相手に付く効果(毒・気絶など)は消しておく
     const foe = foeOf(world, b);
@@ -249,6 +257,7 @@ export function dealDamage(world, src, target, amount, opts = {}) {
   }
   if (!(amount > 0)) return 0;
   target.hp -= amount;
+  if (src && src !== target) world.dealt[src.id] = (world.dealt[src.id] || 0) + amount;
   target.flash = 0.12;
   world.events.push({
     type: 'hit',

@@ -21,7 +21,7 @@ for (let r = 0; r < runs; r++) {
     const won = w.winTeam === 0;
     if (won) { lvWins[lv] = (lvWins[lv] || 0) + 1; bossWins[b] = (bossWins[b] || 0) + 1; }
     reportRaid(raid, won, rnd);
-    while (raid.pending) pickRaidCards(raid, cpuPick(raid.pending.cards, 1));
+    while (raid.pending) pickRaidCards(raid, cpuPick(raid.pending.cards, raid.pending.choose));
   }
   reach.push(raid.level);
 }

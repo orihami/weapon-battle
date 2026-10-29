@@ -244,6 +244,8 @@ try {
   await page.click('[data-mode="raid"]');
   await page.click('#countSeg button[data-count="3"]');
   await page.click('#diffSeg button[data-diff="easy"]');
+  const comboText = await page.textContent('#slots .combo-box');
+  check(/コンビ技/.test(comboText), `レイドの準備にコンビ技の表示: ${comboText.slice(0, 40)}`);
   await page.click('#goBtn');
   await page.waitForTimeout(300);
   const raidInfo = await page.evaluate(() => {

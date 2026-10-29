@@ -2723,6 +2723,21 @@ export class Renderer {
         ctx.stroke();
       }
       ctx.restore();
+    } else if (def.id === 'demonLord') {
+      // 魔王のオーラと火の息
+      ctx.save();
+      ctx.globalAlpha = 0.25 + 0.1 * Math.sin(t * 5);
+      circle(ctx, b.x, b.y, b.r + 18, '#8e44ad', false);
+      if (b.w.fire > 0) {
+        ctx.globalAlpha = 0.7;
+        ctx.fillStyle = '#9b59b6';
+        ctx.beginPath();
+        ctx.moveTo(b.x + Math.cos(b.angle) * b.r, b.y + Math.sin(b.angle) * b.r);
+        ctx.arc(b.x, b.y, b.r + 230, b.angle - 0.5, b.angle + 0.5);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
     } else if (def.id === 'dragonLord') {
       // 竜王の翼と火の息
       ctx.save();
@@ -3167,6 +3182,26 @@ export class Renderer {
         for (let i = 0; i < 4; i++) rect(ctx, x - r * 0.75 + i * r * 0.42, y - r * 1.08, r * 0.24, r * 0.25, '#7f8c8d');
       } else if (id === 'dragonLord') {
         for (const s of [-1, 1]) poly(ctx, [[x + s * r * 0.3, y - r * 0.8], [x + s * r * 0.7, y - r * 1.45], [x + s * r * 0.6, y - r * 0.65]], '#f2e6c8');
+      } else if (id === 'shadowNinja') {
+        // 覆面と頭巾
+        rect(ctx, x - r * 0.95, y - r * 0.38, r * 1.9, r * 0.2, '#6c5ce7');
+        poly(ctx, [[x + r * 0.8, y - r * 0.35], [x + r * 1.4, y - r * 0.6], [x + r * 1.3, y - r * 0.2]], '#6c5ce7');
+      } else if (id === 'iceQueen') {
+        // 氷のティアラ
+        for (let i = -2; i <= 2; i++) poly(ctx, [[x + i * r * 0.2 - 6, y - r * 0.85], [x + i * r * 0.2, y - r * (1.2 + (i === 0 ? 0.25 : 0) - Math.abs(i) * 0.06)], [x + i * r * 0.2 + 6, y - r * 0.85]], '#e8f8ff');
+      } else if (id === 'venomSerpent') {
+        // 牙と舌
+        for (const s of [-1, 1]) poly(ctx, [[x + s * r * 0.18 - 4, y + r * 0.3], [x + s * r * 0.18, y + r * 0.55], [x + s * r * 0.18 + 4, y + r * 0.3]], '#ffffff');
+        ctx.strokeStyle = '#e74c3c';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(x + Math.cos(b.angle) * r, y + Math.sin(b.angle) * r);
+        ctx.lineTo(x + Math.cos(b.angle) * (r + 18 + Math.sin(this.time * 20) * 4), y + Math.sin(b.angle) * (r + 18));
+        ctx.stroke();
+      } else if (id === 'demonLord') {
+        // 大きな角とマント
+        for (const s of [-1, 1]) poly(ctx, [[x + s * r * 0.25, y - r * 0.85], [x + s * r * 0.95, y - r * 1.55], [x + s * r * 0.65, y - r * 0.6]], '#1a1a1a');
+        poly(ctx, [[x - r * 0.35, y - r * 0.95], [x - r * 0.2, y - r * 1.25], [x, y - r * 1.05], [x + r * 0.2, y - r * 1.25], [x + r * 0.35, y - r * 0.95]], '#f2c230');
       } else if (id === 'thunderGiant') {
         // 頭の上の雷雲
         ctx.globalAlpha = 0.85;

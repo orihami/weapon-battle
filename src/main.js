@@ -7,7 +7,7 @@ import { createTournament, nextMatch, reportWinner, pickEntries, roundName } fro
 import { newChallenge, enemyBoost, offerCards, takeCards, takeAwaken, isBoss } from './challenge.js';
 import { RARITY, SKILLS, SKILL_BY_ID, cpuPick, awakenSuffix, fusionsReady, fusionsNear } from './skills.js';
 import { createRounds, fighters, reportRound, pickSkills } from './rounds.js';
-import { createRaid, raidMatch, reportRaid, pickRaidCards, bossOf, DIFFICULTY } from './raid.js';
+import { createRaid, raidMatch, reportRaid, pickRaidCards, bossOf, combosOf, DIFFICULTY } from './raid.js';
 
 const $ = (id) => document.getElementById(id);
 const SPEEDS = [1, 2, 4];
@@ -369,6 +369,18 @@ function renderSetup() {
     slot.append(tag, pickBtn, side);
     box.append(slot);
   });
+  // ボス・レイド: このチームで付くコンビ技
+  if (mode === 'raid') {
+    const combos = combosOf(state.slots.slice(0, n).map((s) => s.weapon));
+    box.append(
+      el('div', {
+        className: 'combo-box',
+        innerHTML: combos.length
+          ? '<b>コンビ技</b>' + combos.map((c) => `<span>${c.icon} ${c.name}<small>${c.desc}</small></span>`).join('')
+          : '<b>コンビ技</b><small>なし(武器の組み合わせで付く: 近接と飛び道具・炎の仲間・同じ武器 など)</small>',
+      }),
+    );
+  }
 }
 
 function begin() {
@@ -780,7 +792,28 @@ function playRaid() {
     [...r.players.map((p) => ({ text: p.name, color: p.color })), { text: 'BOSS', color: '#c01f1f' }],
     m.teams,
   );
-  play();
+  // ボス登場の演出(少ししてから始まる)
+  const boss = bossOf(r).def;
+  const w = state.world;
+  $('resultText').textContent = `${boss.name} 出現！`;
+  $('resultText').style.color = boss.color;
+  $('resultSub').textContent = `Lv${r.level}  ${boss.grow}`;
+  setButtons([]);
+  $('overlay').hidden = false;
+  $('overlay').classList.add('intro');
+  setTimeout(() => {
+    if (state.world !== w) return;
+    $('overlay').hidden = true;
+    $('overlay').classList.remove('intro');
+    play();
+  }, 1800);
+}
+
+// 与えたダメージのランキング(ボス・レイドのMVP)
+function raidRanking(w, r) {
+  const list = r.players.map((p, i) => ({ p, dmg: Math.round(w.dealt[i] || 0) })).sort((a, b) => b.dmg - a.dmg);
+  r.lastRanking = list;
+  return list.map(({ p, dmg }, k) => `${k === 0 ? '👑' : ''}${p.name} ${p.weapon.name} ${dmg}`).join(' / ');
 }
 
 function raidResult(w) {
@@ -794,7 +827,7 @@ function raidResult(w) {
     saveRaidBest(best);
     text.textContent = `Lv${r.level} ${boss.name}に敗北…`;
     text.style.color = boss.color;
-    $('resultSub').textContent = `${cleared}体たおした / 最高記録 Lv${best}`;
+    $('resultSub').textContent = `${cleared}体たおした / 最高記録 Lv${best}\n与ダメージ: ${raidRanking(w, r)}`;
     reportRaid(r, false);
     setButtons([
       { text: 'もう一度(同じ設定)', primary: true, onClick: begin },
@@ -805,10 +838,11 @@ function raidResult(w) {
   text.textContent = `${boss.name}を倒した！`;
   text.style.color = '#2fa84f';
   saveRaidBest(Math.max(loadRaidBest(), r.level));
+  const ranking = raidRanking(w, r);
   reportRaid(r, true);
-  $('resultSub').textContent = `次は Lv${r.level} ${bossOf(r).def.name}`;
+  $('resultSub').textContent = `MVP: ${ranking}\n次は Lv${r.level} ${bossOf(r).def.name}${r.pending && r.pending.chest ? '  🎁 宝箱！' : ''}`;
   renderSideInfo();
-  setTimeout(() => state.raid === r && nextRaidPick(r), 1100);
+  setTimeout(() => state.raid === r && nextRaidPick(r), 2200);
 }
 
 // 勝ったら全員が順番にカードを1枚ずつ選ぶ
@@ -823,7 +857,7 @@ function nextRaidPick(r) {
   showCards({
     who: `${p.name}${p.cpu ? '(CPU)' : ''} のカード選び`,
     color: p.color,
-    sub: `${p.weapon.name} を強くするカードを1枚`,
+    sub: pend.chest ? '🎁 宝箱！ 良いカードが出やすい4枚から2枚選べる' : `${p.weapon.name} を強くするカードを1枚`,
     cards: pend.cards,
     choose: pend.choose,
     cpu: p.cpu,
@@ -916,6 +950,8 @@ function renderSideInfo() {
     box.innerHTML =
       `<h3>ボス・レイド(${DIFFICULTY[r.difficulty].name}・最高記録 Lv${loadRaidBest()})</h3>` +
       `<p>Lv${r.level} <b style="color:${b.def.color}">${b.def.name}</b>: HP${b.boost.maxHp}・${b.def.grow}</p>` +
+      (combosOf(r.players.map((p) => p.weapon)).length ? `<p>コンビ技: ${combosOf(r.players.map((p) => p.weapon)).map((c) => `${c.icon}${c.name}`).join('・')}</p>` : '') +
+      (r.lastRanking ? `<p>前回の与ダメージ: ${r.lastRanking.map(({ p, dmg }, k) => `${k === 0 ? '👑' : ''}${p.name} ${dmg}`).join(' / ')}</p>` : '') +
       r.players
         .map(
           (p) =>

@@ -751,11 +751,56 @@ test('ボス・レイド: 仲間には当たらない・ボスは形態が変わ
     picks++;
   }
   assert.equal(picks, 2);
-  assert.ok(raid.players.every((p) => p.skills.length === 1));
+  assert.ok(raid.players.every((p) => p.skills.length === 1)); // 1枚目は合体しない
   assert.equal(raid.level, 2);
   assert.ok(bossOf(raid).def !== BOSSES[0]);
   raid.boss = BOSSES[0].id;
   assert.ok(bossOf(raid).boost.maxHp > hp1, 'レベルが上がってもボスが強くならない');
   reportRaid(raid, false);
   assert.ok(raid.over);
+});
+
+test('ボス・レイド2: コンビ技・怒ったときの復活・3体ごとの宝箱・与ダメージの記録・8体のボス', async () => {
+  const { createRaid, raidMatch, reportRaid, pickRaidCards, combosOf, BOSSES, TREASURE_EVERY } = await import('../src/raid.js');
+  const { cpuPick } = await import('../src/skills.js');
+  assert.equal(BOSSES.length, 8);
+  // コンビ技: 炎の武器2つ+近接 → 前衛と後衛・炎の仲間。威力が上がる
+  const ids = combosOf([W.flame, W.lava, W.sumo]).map((c) => c.id);
+  assert.ok(ids.includes('fireTeam') && ids.includes('vanguard'), ids.join(','));
+  assert.ok(combosOf([W.sword, W.sword]).some((c) => c.id === 'twins'));
+  const raid = createRaid([{ weapon: W.flame }, { weapon: W.lava }, { weapon: W.sumo }]);
+  const m = raidMatch(raid);
+  const w = createMelee(m.defs, 1, { boosts: m.boosts, teams: m.teams });
+  assert.ok(w.balls[0].power > 1.3 && w.balls[2].power > 1.05 && w.balls[2].power < 1.2, `${w.balls[0].power} ${w.balls[2].power}`);
+  // 与ダメージの記録
+  dealDamage(w, w.balls[1], w.balls[3], 7);
+  assert.ok(w.dealt[1] >= 7);
+  // 怒ったとき、倒れた仲間が復活する
+  const boss = w.balls[3];
+  w.balls[0].dead = true;
+  w.balls[0].hp = 0;
+  boss.hp = boss.maxHp * 0.2;
+  step(w);
+  assert.ok(!w.balls[0].dead && w.balls[0].hp > 0, '復活しない');
+  // 3体倒すごとに宝箱(4枚から2枚)
+  let chests = 0;
+  for (let i = 0; i < TREASURE_EVERY; i++) {
+    reportRaid(raid, true);
+    if (raid.pending.chest) {
+      chests++;
+      assert.equal(raid.pending.choose, 2);
+      assert.equal(raid.pending.cards.length >= 4, true);
+    }
+    while (raid.pending) pickRaidCards(raid, cpuPick(raid.pending.cards, raid.pending.choose));
+  }
+  assert.equal(chests, 1);
+  // (カードが合体進化で1枚にまとまることがあるので、枚数ではなくレベルで見る)
+  assert.equal(raid.level, 1 + TREASURE_EVERY);
+  // 8体とも決着する
+  for (const def of BOSSES) {
+    const r2 = createRaid([{ weapon: W.katana }, { weapon: W.crossbow }]);
+    r2.boss = def.id;
+    const m2 = raidMatch(r2);
+    assert.ok(runToEnd(createMelee(m2.defs, 21, { boosts: m2.boosts, teams: m2.teams })).over, def.id);
+  }
 });
