@@ -3,6 +3,7 @@
 //
 //   node server/server.js              … ポート 8787 で待ち受け
 //   PORT=9000 node server/server.js    … ポートを変える
+//   HOST=127.0.0.1 node server/server.js … このマシンの中だけで待ち受ける(トンネル経由で公開するとき)
 //
 // しくみ: スマホ同士は WebSocket でこのサーバーにつなぎ、4文字の「部屋コード」で同じ部屋に入る。
 // サーバーは部屋の中のメッセージを全員に配るだけ(試合の計算は各スマホがする。同じ種なら同じ試合になる)。
@@ -17,6 +18,7 @@ import { createServer } from 'node:http';
 import { createHash, randomInt } from 'node:crypto';
 
 const PORT = Number(process.env.PORT || 8787);
+const HOST = process.env.HOST || undefined; // 指定がなければ全部のアドレスで待ち受け
 const MAX_MEMBERS = 8;
 const MAX_MESSAGE = 64 * 1024;
 const MAX_ROOMS = 500;
@@ -201,6 +203,6 @@ server.on('upgrade', (req, socket) => {
   socket.on('error', () => close(client));
 });
 
-server.listen(PORT, () => console.log(`weapon-battle server: port ${PORT}`));
+server.listen(PORT, HOST, () => console.log(`weapon-battle server: port ${PORT}`));
 
 export { server, rooms };

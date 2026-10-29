@@ -8,6 +8,7 @@ Node.js だけで動きます(追加のパッケージは要りません)。ラ�
 ```sh
 node server/server.js            # ポート 8787
 PORT=9000 node server/server.js  # ポートを変えるとき
+HOST=127.0.0.1 node server/server.js  # このマシンの中だけで待ち受ける(トンネル経由でだけ公開するとき)
 ```
 
 ブラウザで `http://<そのマシン>:8787/` を開いて `weapon-battle server: rooms 0` と出れば動いています。
