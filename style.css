@@ -240,6 +240,9 @@ input[type="search"], select {
 }
 
 .hud-card.out { opacity: 0.45; }
+/* ボス・レイドのボスは横いっぱいの大きなHPバー */
+.hud-card.boss-card { grid-column: 1 / -1; border-width: 3px; }
+.hud-card.boss-card .hp { height: 22px; }
 
 .hud-top { display: flex; align-items: center; gap: 5px; min-width: 0; }
 

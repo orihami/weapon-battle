@@ -2706,7 +2706,49 @@ export class Renderer {
       fn(ctx, bl, t);
       ctx.restore();
     }
-    if (def.id === 'fan') {
+    if (def.id === 'fortress') {
+      // 機械要塞の回る光線
+      const n = b.w.phase + 1;
+      ctx.save();
+      for (let k = 0; k < n; k++) {
+        const a = b.w.beamA + (k * Math.PI * 2) / n;
+        ctx.strokeStyle = 'rgba(255,80,80,0.35)';
+        ctx.lineWidth = 22;
+        ctx.beginPath();
+        ctx.moveTo(b.x, b.y);
+        ctx.lineTo(b.x + Math.cos(a) * 1300, b.y + Math.sin(a) * 1300);
+        ctx.stroke();
+        ctx.strokeStyle = '#ffd0d0';
+        ctx.lineWidth = 6;
+        ctx.stroke();
+      }
+      ctx.restore();
+    } else if (def.id === 'dragonLord') {
+      // 竜王の翼と火の息
+      ctx.save();
+      const flap = Math.sin(t * 6) * 0.2;
+      for (const s of [-1, 1]) {
+        const a = b.angle + Math.PI + s * (1.1 + flap);
+        const a1 = b.angle + Math.PI + s * 0.5;
+        poly(ctx, [[b.x, b.y], [b.x + Math.cos(a) * (b.r + 60), b.y + Math.sin(a) * (b.r + 60)], [b.x + Math.cos(a1) * (b.r + 30), b.y + Math.sin(a1) * (b.r + 30)]], '#7b241c');
+      }
+      if (b.w.fire > 0) {
+        ctx.globalAlpha = 0.7;
+        ctx.fillStyle = '#ff7a1a';
+        ctx.beginPath();
+        ctx.moveTo(b.x + Math.cos(b.angle) * b.r, b.y + Math.sin(b.angle) * b.r);
+        ctx.arc(b.x, b.y, b.r + 230, b.angle - 0.5, b.angle + 0.5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#ffd23f';
+        ctx.beginPath();
+        ctx.moveTo(b.x + Math.cos(b.angle) * b.r, b.y + Math.sin(b.angle) * b.r);
+        ctx.arc(b.x, b.y, b.r + 150, b.angle - 0.28, b.angle + 0.28);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    } else if (def.id === 'fan') {
       // 扇風機の風
       ctx.save();
       ctx.globalAlpha = 0.12;
@@ -3110,6 +3152,39 @@ export class Renderer {
         ctx.fillStyle = '#ffd23f';
         ctx.fillRect(x - r * 0.6, y + r * 0.55, r * 1.2 * Math.min(1, w.gauge / w.need), 5);
       }
+    } else if (b.def.kind === 'boss') {
+      // ボスの顔(怒ると目が赤く光る)
+      const eye = w.phase >= 2 ? '#ff2d2d' : '#ffffff';
+      for (const s of [-1, 1]) {
+        circle(ctx, x + s * r * 0.32, y - r * 0.15, r * 0.14, eye);
+        circle(ctx, x + s * r * 0.32 + Math.cos(b.angle) * r * 0.05, y - r * 0.15 + Math.sin(b.angle) * r * 0.05, r * 0.06, OUT, false);
+      }
+      if (id === 'slimeKing') {
+        // 王冠
+        poly(ctx, [[x - r * 0.45, y - r * 0.8], [x - r * 0.5, y - r * 1.25], [x - r * 0.22, y - r * 1.0], [x, y - r * 1.35], [x + r * 0.22, y - r * 1.0], [x + r * 0.5, y - r * 1.25], [x + r * 0.45, y - r * 0.8]], '#f2c230');
+      } else if (id === 'fortress') {
+        rect(ctx, x - r * 0.7, y + r * 0.25, r * 1.4, r * 0.18, '#566573');
+        for (let i = 0; i < 4; i++) rect(ctx, x - r * 0.75 + i * r * 0.42, y - r * 1.08, r * 0.24, r * 0.25, '#7f8c8d');
+      } else if (id === 'dragonLord') {
+        for (const s of [-1, 1]) poly(ctx, [[x + s * r * 0.3, y - r * 0.8], [x + s * r * 0.7, y - r * 1.45], [x + s * r * 0.6, y - r * 0.65]], '#f2e6c8');
+      } else if (id === 'thunderGiant') {
+        // 頭の上の雷雲
+        ctx.globalAlpha = 0.85;
+        for (let i = -1; i <= 1; i++) circle(ctx, x + i * r * 0.35, y - r * 1.05 + Math.abs(i) * 6, r * 0.3, '#5d6d7e');
+        ctx.globalAlpha = 1;
+        poly(ctx, [[x - 4, y - r * 0.85], [x + 8, y - r * 0.6], [x, y - r * 0.6], [x + 10, y - r * 0.3], [x - 8, y - r * 0.65], [x, y - r * 0.65]], '#f4d03f');
+      }
+      // 口
+      ctx.strokeStyle = OUT;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      if (w.phase >= 2) {
+        ctx.moveTo(x - r * 0.3, y + r * 0.3);
+        for (let i = 1; i <= 6; i++) ctx.lineTo(x - r * 0.3 + (i * r * 0.6) / 6, y + r * 0.3 + (i % 2 ? -6 : 0));
+      } else {
+        ctx.arc(x, y + r * 0.15, r * 0.25, 0.3, Math.PI - 0.3);
+      }
+      ctx.stroke();
     } else if (id === 'goldfish') {
       circle(ctx, x + Math.cos(b.angle) * r * 0.45, y + Math.sin(b.angle) * r * 0.45 - 4, 4, OUT, false);
       if (w.stage === 1) for (let i = 0; i < 3; i++) circle(ctx, x - r * 0.3 + i * r * 0.3, y + r * 0.2, r * 0.12, '#e74c3c', false);

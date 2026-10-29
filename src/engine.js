@@ -133,11 +133,13 @@ export function createBattle(defA, defB, seed = 1, opts = {}) {
 }
 
 // 3人以上の同時バトル(バトルロイヤル)。boosts[i] は i 番目のボールの強化
-export function createMelee(defs, seed = 1, { boosts = [], size } = {}) {
-  return createWorld(defs, seed, boosts, size ?? (defs.length > 2 ? 820 : BASE_ARENA));
+// teams: ボールごとのチーム番号(ボス・レイドなど)。同じチームどうしは攻撃が当たらず、残ったチームが勝ち
+export function createMelee(defs, seed = 1, { boosts = [], size, teams } = {}) {
+  const world = createWorld(defs, seed, boosts, size ?? (defs.length > 2 ? 820 : BASE_ARENA), teams);
+  return world;
 }
 
-function createWorld(defs, seed, boosts, size) {
+function createWorld(defs, seed, boosts, size, teams) {
   ARENA = size || BASE_ARENA;
   const rng = mulberry32(seed);
   const world = {
@@ -169,6 +171,10 @@ function createWorld(defs, seed, boosts, size) {
     });
   }
   world.balls.forEach((b) => b.id % 2 === 1 && (b.spin = -b.spin));
+  if (teams) {
+    world.teams = true;
+    world.balls.forEach((b, i) => (b.team = teams[i]));
+  }
   for (const b of world.balls) b.def.init(b, world);
   world.balls.forEach((b, i) => applyBoost(world, b, boosts[i] || {}));
   return world;
@@ -196,6 +202,11 @@ function applyBoost(world, b, o) {
   }
 }
 
+// 同じチームの仲間か(チームがない試合では、いつも false)
+export function ally(a, b) {
+  return a.team !== undefined && a.team === b.team;
+}
+
 // ball が狙う相手: 一番近い生きている相手(いなければ誰か)
 export function foeOf(world, ball) {
   const balls = world.balls;
@@ -203,28 +214,30 @@ export function foeOf(world, ball) {
   let best = null;
   let bestD = Infinity;
   for (const o of balls) {
-    if (o === ball || o.dead) continue;
+    if (o === ball || o.dead || ally(o, ball)) continue;
     const d = (o.x - ball.x) ** 2 + (o.y - ball.y) ** 2;
     if (d < bestD) {
       bestD = d;
       best = o;
     }
   }
-  return best || balls.find((o) => o !== ball);
+  return best || balls.find((o) => o !== ball && !ally(o, ball)) || balls.find((o) => o !== ball);
 }
 
 export function aliveOthers(world, ball) {
-  return world.balls.filter((o) => o !== ball && !o.dead);
+  return world.balls.filter((o) => o !== ball && !o.dead && !ally(o, ball));
 }
 
 export function dealDamage(world, src, target, amount, opts = {}) {
   if (target.dead || world.over || !(amount > 0)) return 0;
+  // 仲間には当たらない
+  if (src && src !== target && ally(src, target)) return 0;
   // erased: 消しゴムで消された分だけ与えるダメージが減る / rings: 輪投げの輪がはまっているほど受けるダメージが増える
   amount *= world.dmgMul * (src && src !== target ? src.power * (src.outMul ?? 1) * (1 - (src.erased || 0)) : 1);
   if (target.rings) amount *= 1 + target.rings * 0.05;
   // 武器ごとのバランス調整の倍率(weapons.js の TUNE。スキルのダメージには掛けない)
-  // 3人以上の試合では、全員を巻き込める武器が強く、1人しかねらえない武器が弱くなるので別の倍率(TUNE_FFA)も掛ける
-  if (src && src !== target && opts.kind !== 'skill') amount *= (src.def.tune ?? 1) * (world.balls.length > 2 ? (src.def.tuneFfa ?? 1) : 1);
+  // 3人以上の試合では、全員を巻き込める武器が強く、1人しかねらえない武器が弱くなるので別の倍率(TUNE_FFA)も掛ける(チーム戦はのぞく)
+  if (src && src !== target && opts.kind !== 'skill') amount *= (src.def.tune ?? 1) * (world.balls.length > 2 && !world.teams ? (src.def.tuneFfa ?? 1) : 1);
   // 呪い: 重ねがけされた分だけ、どこから受けるダメージも増える
   amount *= 1 + target.curse * CURSE_PER_STACK;
   // スキル: 与えるダメージ・受けるダメージの補正
@@ -447,6 +460,7 @@ function collideBalls(world, a, b) {
   b.vx += rel * nx;
   b.vy += rel * ny;
   world.events.push({ type: 'bump', x: a.x + nx * a.r, y: a.y + ny * a.r });
+  if (ally(a, b)) return; // 仲間どうしはぶつかるだけ
   for (const [me, foe] of [[a, b], [b, a]]) {
     if (me.def.onContact && me.contactCd <= 0 && me.stun <= 0) {
       me.contactCd = 0.3;
@@ -547,7 +561,7 @@ function projectileStep(world, dt) {
     if (p.blockable && p.age > (p.blockGrace ?? 0)) {
       let blocker = null;
       for (const o of world.balls) {
-        if (o === owner || o.dead) continue;
+        if (o === owner || o.dead || ally(o, owner)) continue;
         for (const bl of o.blades) {
           if (bl.block === false) continue; // スキルの追加の剣などは弾を防がない
           const s = bladeSegment(o, bl);
@@ -568,7 +582,7 @@ function projectileStep(world, dt) {
     }
     if (p.onTouch) {
       for (const o of world.balls) {
-        if (o === owner || o.dead) continue;
+        if (o === owner || o.dead || ally(o, owner)) continue;
         if (Math.hypot(o.x - p.x, o.y - p.y) < o.r + p.r) {
           p.onTouch(world, p, owner, o);
           if (p.dead) break;
@@ -613,6 +627,7 @@ export function step(world, dt = DT) {
       const b = balls[j];
       if (a.dead || b.dead) continue;
       collideBalls(world, a, b);
+      if (ally(a, b)) continue;
       parryStep(world, a, b);
       meleeStep(world, a, b, dt);
       meleeStep(world, b, a, dt);
@@ -627,7 +642,15 @@ export function step(world, dt = DT) {
     }
   }
   const alive = balls.filter((b) => !b.dead);
-  if (alive.length <= 1) {
+  if (world.teams) {
+    // チーム戦: 生き残ったチームが1つになったら決着(時間切れは引き分け)
+    const left = new Set(alive.map((b) => b.team));
+    if (left.size <= 1 || world.t >= HARD_LIMIT) {
+      world.over = true;
+      world.winTeam = left.size === 1 ? alive[0].team : -1;
+      world.winner = left.size === 1 ? alive[0].id : -1;
+    }
+  } else if (alive.length <= 1) {
     world.over = true;
     world.winner = alive.length === 1 ? alive[0].id : -1;
   } else if (world.t >= HARD_LIMIT) {

@@ -59,7 +59,7 @@ try {
   // 1) ホーム
   await page.goto(base + '?speed=4');
   const modes = await page.locator('[data-mode]').count();
-  check(modes === 6, `ホームの遊び方: ${modes}個`);
+  check(modes === 7, `ホームの遊び方: ${modes}個`);
   await page.screenshot({ path: join(outDir, '0-home.png') });
 
   // 2) 共有URL(剣 vs 短剣)を4倍速で自動スタートし、決着まで見る
@@ -238,6 +238,30 @@ try {
   await page.waitForTimeout(1200);
   const hudName = await page.textContent('#hud .hud-card .hud-name');
   check(/弓・改/.test(hudName) && /ステージ 6/.test(await page.textContent('#battleTitle')), `武器進化した名前: ${hudName}`);
+
+  // 6.8) ボス・レイド: みんな(チーム0)でボス(チーム1)と戦い、勝つと全員がカードを選んで次のレベルへ
+  await page.goto(base + '?speed=4');
+  await page.click('[data-mode="raid"]');
+  await page.click('#countSeg button[data-count="3"]');
+  await page.click('#diffSeg button[data-diff="easy"]');
+  await page.click('#goBtn');
+  await page.waitForTimeout(300);
+  const raidInfo = await page.evaluate(() => {
+    const w = window.__weaponBattle.state.world;
+    return { n: w.balls.length, teams: w.balls.map((b) => b.team).join(','), boss: w.balls[3].def.name, title: document.querySelector('#battleTitle').textContent, bossCard: !!document.querySelector('#hud .boss-card') };
+  });
+  check(raidInfo.n === 4 && raidInfo.teams === '0,0,0,1' && raidInfo.bossCard && /Lv1/.test(raidInfo.title), `ボス・レイド開始: ${raidInfo.title}(チーム ${raidInfo.teams})`);
+  await page.evaluate(() => {
+    const s = window.__weaponBattle.state;
+    const boss = s.world.balls[3];
+    boss.skills = [];
+    boss.hp = 0.01;
+    for (const p of s.raid.players) p.cpu = true; // カード選びはCPUにまかせる
+  });
+  await page.waitForFunction(() => /Lv2/.test(document.querySelector('#battleTitle').textContent), null, { timeout: 120000 });
+  const raidCards = await page.evaluate(() => window.__weaponBattle.state.raid.players.map((p) => p.skills.length).join(','));
+  check(raidCards === '1,1,1', `ボスを倒すと全員がカードを1枚: ${raidCards} → ${await page.textContent('#battleTitle')}`);
+  await page.screenshot({ path: join(outDir, '6d-raid.png') });
 
   // 7) トーナメント(8人)を4倍速で最後まで
   await page.goto(base + '?speed=4');

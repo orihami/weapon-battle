@@ -11,7 +11,7 @@
 //   lethal(world, me, st) → true なら倒れない
 //   contact(world, me, foe, st)              ボールどうしがぶつかったとき
 
-import { ARENA, dealDamage, foeOf, heal, knockback, spawnProjectile } from './engine.js';
+import { ARENA, ally, dealDamage, foeOf, heal, knockback, spawnProjectile } from './engine.js';
 
 export const RARITY = {
   common: { name: 'ふつう', color: '#9aa0a6', weight: 55 },
@@ -94,7 +94,7 @@ function addBlade(me, dmg) {
 const isWeaponHit = (opts) => !['poison', 'burn', 'skill', 'reflect'].includes(opts.kind);
 
 function enemiesNear(world, me, range) {
-  return world.balls.filter((o) => o !== me && !o.dead && Math.hypot(o.x - me.x, o.y - me.y) < range + o.r);
+  return world.balls.filter((o) => o !== me && !o.dead && !ally(o, me) && Math.hypot(o.x - me.x, o.y - me.y) < range + o.r);
 }
 
 function dodge(rate) {
@@ -776,7 +776,7 @@ export const SKILLS = [
       st.cd = world.t + 0.3;
       world.events.push({ type: 'boom', x: foe.x, y: foe.y, radius: 80, kind: 'bomb' });
       for (const o of world.balls) {
-        if (o === me || o.dead || Math.hypot(o.x - foe.x, o.y - foe.y) > 80 + o.r) continue;
+        if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - foe.x, o.y - foe.y) > 80 + o.r) continue;
         skillDamage(world, me, o, 4);
         o.burnT = 3;
         o.burnDps = Math.max(o.burnDps, 2.5);

@@ -15,6 +15,7 @@ import {
   spawnProjectile,
   segPointDist,
   bladeSegment,
+  ally,
 } from './engine.js';
 
 const TAU = Math.PI * 2;
@@ -92,7 +93,7 @@ function strike(world, me, x, y, delay, chain, big = true, mul = 1) {
       world.events.push({ type: 'zap', x: p.x, y: p.y, big });
       // 落ちた所にいる相手全員に当たる(3人以上の試合で、ねらった相手以外にも)
       for (const foe of world.balls) {
-        if (foe === owner || foe.dead || Math.hypot(foe.x - p.x, foe.y - p.y) >= p.r + foe.r) continue;
+        if (foe === owner || foe.dead || ally(foe, owner) || Math.hypot(foe.x - p.x, foe.y - p.y) >= p.r + foe.r) continue;
         landHit(world, owner, foe, (big ? 4 : 2) * mul, { kind: 'zap', x: foe.x, y: foe.y });
         foe.stun = Math.max(foe.stun, 0.08);
         knockback(p, foe, 150);
@@ -183,7 +184,7 @@ function explode(world, p, owner, foe, radius, damage, kind) {
   world.events.push({ type: 'boom', x: p.x, y: p.y, radius, kind });
   // 範囲に入った相手全員に当たる(1対1では相手1人だけ)
   for (const o of world.balls) {
-    if (o === owner || o.dead) continue;
+    if (o === owner || o.dead || ally(o, owner)) continue;
     if (Math.hypot(o.x - p.x, o.y - p.y) < radius + o.r) {
       landHit(world, owner, o, damage, { kind, x: o.x, y: o.y });
       knockback(p, o, 140);
@@ -369,7 +370,7 @@ function beamHit(world, me, angle, len, wid, dmg, kind, cd) {
   const ey = me.y + Math.sin(angle) * len;
   const next = me.w.next || (me.w.next = {});
   for (const o of world.balls) {
-    if (o === me || o.dead || (next[o.id] ?? 0) > world.t) continue;
+    if (o === me || o.dead || ally(o, me) || (next[o.id] ?? 0) > world.t) continue;
     if (segPointDist(me.x, me.y, ex, ey, o.x, o.y) > o.r + wid) continue;
     next[o.id] = world.t + cd;
     landHit(world, me, o, dmg, { kind, x: o.x, y: o.y });
@@ -4187,7 +4188,7 @@ export const WEAPONS = [
           if (p.tick > 0) return;
           p.tick = 0.5;
           for (const o of world.balls) {
-            if (o === owner || o.dead) continue;
+            if (o === owner || o.dead || ally(o, owner)) continue;
             if (Math.hypot(o.x - p.x, o.y - p.y) < p.reach + o.r) {
               landHit(world, owner, o, 1.7, { kind: 'plasma', x: o.x, y: o.y });
             }
@@ -4646,7 +4647,7 @@ export const WEAPONS = [
         const a = w.posts[i];
         const b = w.posts[i + 1];
         for (const o of world.balls) {
-          if (o === me || o.dead) continue;
+          if (o === me || o.dead || ally(o, me)) continue;
           if (segPointDist(a.x, a.y, b.x, b.y, o.x, o.y) < o.r + 5) {
             landHit(world, me, o, w.dmg, { kind: 'tesla', x: o.x, y: o.y });
             o.stun = Math.max(o.stun, 0.06);
@@ -4824,7 +4825,7 @@ export const WEAPONS = [
       const r = big ? 230 : 140;
       world.events.push({ type: 'shock', x: me.x, y: me.y, r, color: big ? '#ff7a1a' : '#f2c230' });
       for (const o of world.balls) {
-        if (o === me || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > r + o.r) continue;
+        if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > r + o.r) continue;
         if (landHit(world, me, o, big ? 5 : 1.5, { kind: 'drum', x: o.x, y: o.y }) > 0 && big) knockback(me, o, 420);
       }
     },
@@ -5168,7 +5169,7 @@ export const WEAPONS = [
       const s = Math.sin(me.angle);
       world.events.push({ type: 'shock', x: me.x + c * (me.r + 30), y: me.y + s * (me.r + 30), r: 70, color: '#ffd9a8' });
       for (const o of world.balls) {
-        if (o === me || o.dead) continue;
+        if (o === me || o.dead || ally(o, me)) continue;
         const dx = o.x - me.x;
         const dy = o.y - me.y;
         const d = Math.hypot(dx, dy);
@@ -5557,7 +5558,7 @@ export const WEAPONS = [
         onExpire(world, p, owner) {
           world.events.push({ type: 'shock', x: p.x, y: p.y, r: p.r, color: '#bfe6ff' });
           for (const o of world.balls) {
-            if (o === owner || o.dead || Math.hypot(o.x - p.x, o.y - p.y) > p.r + o.r) continue;
+            if (o === owner || o.dead || ally(o, owner) || Math.hypot(o.x - p.x, o.y - p.y) > p.r + o.r) continue;
             if (landHit(world, owner, o, owner.w.dmg, { kind: 'frostcircle', x: o.x, y: o.y }) > 0) {
               o.freeze = Math.max(o.freeze, 0.9);
               o.stun = Math.max(o.stun, 0.9);
@@ -5607,7 +5608,7 @@ export const WEAPONS = [
       const ex = me.x + Math.cos(me.angle) * 1400;
       const ey = me.y + Math.sin(me.angle) * 1400;
       for (const o of world.balls) {
-        if (o === me || o.dead || segPointDist(me.x, me.y, ex, ey, o.x, o.y) > o.r + 8) continue;
+        if (o === me || o.dead || ally(o, me) || segPointDist(me.x, me.y, ex, ey, o.x, o.y) > o.r + 8) continue;
         if (landHit(world, me, o, w.dmg, { kind: 'shrink', x: o.x, y: o.y }) <= 0) continue;
         const s = w.shrunk.find((x) => x.ball === o);
         if (s) s.t = 3;
@@ -5652,7 +5653,7 @@ export const WEAPONS = [
           onExpire(world, p, owner) {
             world.events.push({ type: 'pillar', x: p.x });
             for (const o of world.balls) {
-              if (o === owner || o.dead || Math.abs(o.x - p.x) > p.r + o.r * 0.6) continue;
+              if (o === owner || o.dead || ally(o, owner) || Math.abs(o.x - p.x) > p.r + o.r * 0.6) continue;
               landHit(world, owner, o, owner.w.dmg, { kind: 'pillar', x: o.x, y: o.y });
             }
           },
@@ -5704,7 +5705,7 @@ export const WEAPONS = [
           if (p.hitCd > 0) return;
           // 近くの相手を殴る(少し上まで届く)
           for (const o of world.balls) {
-            if (o === owner || o.dead) continue;
+            if (o === owner || o.dead || ally(o, owner)) continue;
             if (Math.abs(o.x - p.x) < p.r + o.r + 30 && o.y > ARENA - 200) {
               p.hitCd = 1;
               p.punch = 0.25;
@@ -5749,7 +5750,7 @@ export const WEAPONS = [
       w.cd -= dt;
       if (w.cd > 0) return;
       for (const o of world.balls) {
-        if (o === me || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
         w.cd = 0.5;
         if (landHit(world, me, o, w.dmg, { kind: 'wind', x: o.x, y: o.y }) > 0) knockback(me, o, 360);
       }
@@ -5953,7 +5954,7 @@ export const WEAPONS = [
         const v = w.wave;
         v.x += v.dir * 430 * dt;
         for (const o of world.balls) {
-          if (o === me || o.dead || v.hit.has(o) || Math.abs(o.x - v.x) > 30 + o.r || o.y < ARENA - v.h - o.r) continue;
+          if (o === me || o.dead || ally(o, me) || v.hit.has(o) || Math.abs(o.x - v.x) > 30 + o.r || o.y < ARENA - v.h - o.r) continue;
           v.hit.add(o);
           if (landHit(world, me, o, w.dmg, { kind: 'wave', x: o.x, y: o.y }) > 0) {
             o.vx = v.dir * 700 * (o.knockMul ?? 1);
@@ -6058,7 +6059,7 @@ export const WEAPONS = [
           const h = (owner.w.h * ARENA) / 600;
           world.events.push({ type: 'icespike', x: p.x, h });
           for (const o of world.balls) {
-            if (o === owner || o.dead || Math.abs(o.x - p.x) > p.r + o.r * 0.8 || o.y < ARENA - h - o.r) continue;
+            if (o === owner || o.dead || ally(o, owner) || Math.abs(o.x - p.x) > p.r + o.r * 0.8 || o.y < ARENA - h - o.r) continue;
             if (landHit(world, owner, o, owner.w.dmg, { kind: 'icespike', x: o.x, y: o.y }) > 0) {
               o.vy = -800 * (o.knockMul ?? 1);
               o.slow = Math.max(o.slow, 0.3);
@@ -6104,7 +6105,7 @@ export const WEAPONS = [
         if (n === 3) {
           // 大当たり: 相手全員に雷
           world.events.push({ type: 'jackpot', x: me.x, y: me.y });
-          for (const o of world.balls) if (o !== me && !o.dead) {
+          for (const o of world.balls) if (o !== me && !o.dead && !ally(o, me)) {
             world.events.push({ type: 'zap', x: o.x, y: o.y, big: true });
             landHit(world, me, o, 10, { kind: 'slot', x: o.x, y: o.y });
           }
@@ -6260,13 +6261,13 @@ export const WEAPONS = [
         const by = me.y + Math.sin(me.angle) * (me.r + w.size);
         w.bx = bx;
         w.by = by;
-        const touch = world.balls.some((o) => o !== me && !o.dead && Math.hypot(o.x - bx, o.y - by) < o.r + w.size);
+        const touch = world.balls.some((o) => o !== me && !o.dead && !ally(o, me) && Math.hypot(o.x - bx, o.y - by) < o.r + w.size);
         if (touch || w.size >= w.max) {
           // パン！ ふくらんだ大きさほど広く痛い
           const R = w.size * 2;
           world.events.push({ type: 'shock', x: bx, y: by, r: R, color: '#ff8fc8' });
           for (const o of world.balls) {
-            if (o === me || o.dead || Math.hypot(o.x - bx, o.y - by) > R + o.r) continue;
+            if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - bx, o.y - by) > R + o.r) continue;
             if (landHit(world, me, o, 1 + w.size / 8, { kind: 'gum', x: o.x, y: o.y }) > 0) {
               knockback({ x: bx, y: by }, o, 300 + w.size * 6);
               o.slow = Math.max(o.slow, 0.3);
@@ -6534,7 +6535,7 @@ export const WEAPONS = [
         // パフッ！ まわりの相手をしびれさせる
         world.events.push({ type: 'shock', x: me.x, y: me.y, r: 160, color: '#f9e79f' });
         for (const o of world.balls) {
-          if (o === me || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > 160 + o.r) continue;
+          if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > 160 + o.r) continue;
           if (landHit(world, me, o, 1, { kind: 'honk', x: o.x, y: o.y }) > 0) o.stun = Math.max(o.stun, 0.4);
         }
         return;
@@ -6584,7 +6585,7 @@ export const WEAPONS = [
       w.timer = 2.2;
       w.breath = 0.35;
       for (const o of world.balls) {
-        if (o === me || o.dead) continue;
+        if (o === me || o.dead || ally(o, me)) continue;
         const d = Math.hypot(o.x - me.x, o.y - me.y);
         const diff = Math.abs(((aimAt(me, o) - me.angle + Math.PI) % TAU + TAU) % TAU - Math.PI);
         if (d > me.r + 170 + o.r || diff > 0.5) continue;
@@ -6912,7 +6913,7 @@ export const WEAPONS = [
       const R = me.r + 140;
       world.events.push({ type: 'shock', x: me.x, y: me.y, r: R, color: '#f7dc6f' });
       for (const o of world.balls) {
-        if (o === me || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
         if (landHit(world, me, o, me.w.dmg * 1.5, { kind: 'moonlight', x: o.x, y: o.y }) > 0) knockback(me, o, 260);
       }
     },
@@ -6953,7 +6954,7 @@ export const WEAPONS = [
       w.tick = 0.4;
       const R = me.r + w.rad;
       for (const o of world.balls) {
-        if (o === me || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
         // 炎が大きいほど熱い
         landHit(world, me, o, w.dmg * (0.6 + shown(me, 'rad') / 75), { kind: 'ember', x: o.x, y: o.y });
       }
@@ -7362,7 +7363,7 @@ export const WEAPONS = [
       const R = me.r + 130;
       world.events.push({ type: 'shock', x: me.x, y: me.y, r: R, color: '#f1c9a5' });
       for (const o of world.balls) {
-        if (o === me || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
         if (landHit(world, me, o, 3 + w.bonus, { kind: 'pose', x: o.x, y: o.y }) > 0) knockback(me, o, 380);
       }
     },
@@ -7422,7 +7423,7 @@ export const WEAPONS = [
       w.pound = 4;
       world.events.push({ type: 'quake', x: me.x, y: ARENA });
       for (const o of world.balls) {
-        if (o === me || o.dead || Math.abs(o.x - me.x) > 240 || o.y < ARENA - 180) continue;
+        if (o === me || o.dead || ally(o, me) || Math.abs(o.x - me.x) > 240 || o.y < ARENA - 180) continue;
         if (landHit(world, me, o, 4 + w.bonus, { kind: 'pound', x: o.x, y: o.y }) <= 0) continue;
         o.freeze = Math.max(o.freeze, 0.5);
       }
@@ -7472,7 +7473,7 @@ export const WEAPONS = [
       const R = me.r + 120;
       world.events.push({ type: 'shock', x: me.x, y: me.y, r: R, color: '#9a9a8e' });
       for (const o of world.balls) {
-        if (o === me || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
         if (landHit(world, me, o, 3.5 + w.bonus, { kind: 'stomp', x: o.x, y: o.y }) > 0) knockback(me, o, 300);
       }
     },
@@ -7528,7 +7529,7 @@ export const WEAPONS = [
       w.tick = 0.9;
       w.on = 0.15;
       for (const o of world.balls) {
-        if (o === me || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > me.r + 95 + o.r) continue;
+        if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > me.r + 95 + o.r) continue;
         landHit(world, me, o, d, { kind: 'light', x: o.x, y: o.y });
       }
     },
@@ -7701,7 +7702,7 @@ export const WEAPONS = [
           p.hitCd -= dt;
           if (p.hitCd > 0) return;
           for (const o of world.balls) {
-            if (o === owner || o.dead) continue;
+            if (o === owner || o.dead || ally(o, owner)) continue;
             // 床近くでトランポリンの上(横幅 ±50)にいる相手をはね上げる
             if (Math.abs(o.x - p.x) > 60 + o.r * 0.5 || o.y < ARENA - o.r - 30) continue;
             p.hitCd = 0.6;
@@ -7988,7 +7989,7 @@ export const WEAPONS = [
         p.dead = true;
         world.events.push({ type: 'boom', x: p.x, y: p.y, radius: owner.w.splash, kind: 'water' });
         for (const o of world.balls) {
-          if (o === owner || o.dead || Math.hypot(o.x - p.x, o.y - p.y) > owner.w.splash + o.r) continue;
+          if (o === owner || o.dead || ally(o, owner) || Math.hypot(o.x - p.x, o.y - p.y) > owner.w.splash + o.r) continue;
           if (landHit(world, owner, o, owner.w.dmg, { kind: 'water', x: o.x, y: o.y }) <= 0) continue;
           o.slow = Math.max(o.slow, 0.4);
           o.slowT = Math.max(o.slowT, 1.5);
@@ -8167,7 +8168,7 @@ export const WEAPONS = [
       const R = me.r + TYPHOON_R[w.stage];
       // 渦: 近くの相手をぐるぐる回して、少し外へはじく(目には入れない)
       for (const o of world.balls) {
-        if (o === me || o.dead) continue;
+        if (o === me || o.dead || ally(o, me)) continue;
         const d = Math.hypot(o.x - me.x, o.y - me.y);
         if (d > R + 60 || d < 1) continue;
         const nx = (o.x - me.x) / d;
@@ -8180,7 +8181,7 @@ export const WEAPONS = [
       if (w.tick <= 0) {
         w.tick = 0.4;
         for (const o of world.balls) {
-          if (o === me || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+          if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
           landHit(world, me, o, [1, 1.6, 2.4][w.stage] + w.bonus, { kind: 'wind', x: o.x, y: o.y });
         }
       }
@@ -8191,7 +8192,7 @@ export const WEAPONS = [
       w.gust = 3;
       world.events.push({ type: 'shock', x: me.x, y: me.y, r: R, color: '#aed6f1' });
       for (const o of world.balls) {
-        if (o === me || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
         knockback(me, o, 560);
         o.slamT = 0.6;
         o.slamBy = me.id;
@@ -8354,7 +8355,7 @@ export const WEAPONS = [
       if (w.stage < 1) return;
       // 電撃: 近くのほかの相手にも飛ぶ
       for (const o of world.balls) {
-        if (o === me || o === foe || o.dead || Math.hypot(o.x - me.x, o.y - me.y) > 220) continue;
+        if (o === me || o === foe || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > 220) continue;
         world.events.push({ type: 'zap', x: o.x, y: o.y, big: false });
         dealDamage(world, me, o, sparkyDamage(me) * 0.5, { kind: 'static', x: o.x, y: o.y });
       }
@@ -8494,7 +8495,7 @@ export const WEAPONS = [
       const hit = w.tick <= 0;
       if (hit) w.tick = 0.5;
       for (const o of world.balls) {
-        if (o === me || o.dead) continue;
+        if (o === me || o.dead || ally(o, me)) continue;
         const d = Math.hypot(o.x - me.x, o.y - me.y);
         const diff = Math.abs(((aimAt(me, o) - me.angle + Math.PI) % TAU + TAU) % TAU - Math.PI);
         if (d > 300 + o.r || diff > 0.5) continue;

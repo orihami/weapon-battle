@@ -32,6 +32,9 @@
       <button type="button" class="mode" data-mode="chal" style="--c:#8b3fe0">
         <span class="m-icon">🗡️</span><b>チャレンジ</b><small>1人で連戦。勝つたびにスキル <span id="bestText"></span></small>
       </button>
+      <button type="button" class="mode" data-mode="raid" style="--c:#c01f1f">
+        <span class="m-icon">🐉</span><b>ボス・レイド</b><small>みんなで協力して巨大ボスに挑む <span id="raidBestText"></span></small>
+      </button>
       <button type="button" class="mode" data-mode="tour" style="--c:#e0a600">
         <span class="m-icon">🏆</span><b>トーナメント</b><small>8人・16人の勝ち抜き戦</small>
       </button>
@@ -61,6 +64,14 @@
         <button type="button" data-target="3">3勝</button>
         <button type="button" data-target="5">5勝</button>
         <button type="button" data-target="7">7勝</button>
+      </div>
+    </div>
+    <div class="opt-row" id="diffRow">
+      <span class="opt-label">強さ</span>
+      <div class="seg" id="diffSeg">
+        <button type="button" data-diff="easy">かんたん</button>
+        <button type="button" data-diff="normal">ふつう</button>
+        <button type="button" data-diff="hard">むずかしい</button>
       </div>
     </div>
     <div class="opt-row" id="sizeRow">

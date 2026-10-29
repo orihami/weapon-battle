@@ -7,11 +7,13 @@ import { createTournament, nextMatch, reportWinner, pickEntries, roundName } fro
 import { newChallenge, enemyBoost, offerCards, takeCards, takeAwaken, isBoss } from './challenge.js';
 import { RARITY, SKILLS, SKILL_BY_ID, cpuPick, awakenSuffix, fusionsReady, fusionsNear } from './skills.js';
 import { createRounds, fighters, reportRound, pickSkills } from './rounds.js';
+import { createRaid, raidMatch, reportRaid, pickRaidCards, bossOf, DIFFICULTY } from './raid.js';
 
 const $ = (id) => document.getElementById(id);
 const SPEEDS = [1, 2, 4];
 const RECORD_KEY = 'weapon-battle-records';
 const BEST_KEY = 'weapon-battle-challenge-best';
+const RAID_BEST_KEY = 'weapon-battle-raid-best';
 const PLAYER_COLORS = ['#e8484d', '#2f7de1', '#2fa84f', '#e0a600'];
 
 // 遊び方ごとの設定。counts: 選べる人数 / fixed: 人数が決まっている
@@ -25,6 +27,12 @@ const MODES = {
     hint: '全員同時に戦い、勝った人に★。負けた人はみんなスキルカードを選んで強くなる(3回目ごとは大進化で2枚)。1台を交代で操作します。',
   },
   chal: { title: '🗡️ チャレンジ', fixed: 1, go: '挑戦する！', hint: 'この武器で、だんだん強くなる敵と連戦。勝つたびにスキルカード、5ステージごとにボス(倒すと大進化)。負けたら終わり。' },
+  raid: {
+    title: '🐉 ボス・レイド',
+    counts: [2, 3, 4],
+    go: 'レイド開始！',
+    hint: 'みんなで協力して巨大なボスと戦います(仲間には攻撃が当たらない)。ボスはHPが減ると技が増え、最後は怒る。勝つと全員がカードを1枚選び、次のもっと強いボスへ。',
+  },
   tour: { title: '🏆 トーナメント', go: 'トーナメント開始！', hint: 'ランダムに選ばれた武器で勝ち抜き戦をします。試合は自動で次々に進みます。' },
 };
 
@@ -48,7 +56,8 @@ const state = {
   screen: 'home',
   mode: 'duel',
   slots: [], // 準備画面の各プレイヤー { weapon, cpu }
-  count: { duel: 2, royale: 4, rounds: 2, chal: 1 },
+  count: { duel: 2, royale: 4, rounds: 2, chal: 1, raid: 2 },
+  difficulty: 'normal',
   target: 5,
   tourSize: 8,
   fighters: [], // 今の試合で選ばれた武器(ものまねでも元の武器で記録する)
@@ -61,6 +70,8 @@ const state = {
   tour: null,
   chal: null,
   rounds: null,
+  raid: null,
+  teams: null, // チーム戦(ボス・レイド)のチーム番号
   auto: false,
   bookSort: 'no',
   bookQuery: '',
@@ -90,6 +101,22 @@ function loadBest() {
     return Number(localStorage.getItem(BEST_KEY)) || 0;
   } catch {
     return 0;
+  }
+}
+
+function loadRaidBest() {
+  try {
+    return Number(localStorage.getItem(RAID_BEST_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveRaidBest(n) {
+  try {
+    localStorage.setItem(RAID_BEST_KEY, String(n));
+  } catch {
+    // 保存できなくても遊べる
   }
 }
 
@@ -219,6 +246,8 @@ function leaveBattle() {
   state.tour = null;
   state.chal = null;
   state.rounds = null;
+  state.raid = null;
+  state.teams = null;
   state.auto = false;
   state.world = null;
   for (const d of document.querySelectorAll('dialog[open]')) d.close();
@@ -229,6 +258,8 @@ function leaveBattle() {
 function renderHome() {
   const best = loadBest();
   $('bestText').textContent = best ? `(最高 ${best}勝)` : '';
+  const rb = loadRaidBest();
+  $('raidBestText').textContent = rb ? `(最高 Lv${rb})` : '';
   $('bookCount').textContent = `全${WEAPONS.length}種`;
 }
 
@@ -284,6 +315,8 @@ function renderSetup() {
     );
   }
   $('targetRow').hidden = mode !== 'rounds';
+  $('diffRow').hidden = mode !== 'raid';
+  for (const b of $('diffSeg').children) b.classList.toggle('on', b.dataset.diff === state.difficulty);
   for (const b of $('targetSeg').children) b.classList.toggle('on', Number(b.dataset.target) === state.target);
   $('sizeRow').hidden = mode !== 'tour';
   for (const b of $('sizeSeg').children) b.classList.toggle('on', Number(b.dataset.size) === state.tourSize);
@@ -325,7 +358,7 @@ function renderSetup() {
       renderSetup();
     });
     const side = el('div', { className: 'slot-side' }, dice);
-    if (mode === 'rounds') {
+    if (mode === 'rounds' || mode === 'raid') {
       const who = el('button', { type: 'button', className: 'slot-who' + (s.cpu ? ' cpu' : ''), textContent: s.cpu ? '🤖 CPU' : '🙂 人' });
       who.addEventListener('click', () => {
         s.cpu = !s.cpu;
@@ -360,6 +393,12 @@ function begin() {
   } else if (mode === 'chal') {
     state.chal = newChallenge(slots[0].weapon);
     playChalStage();
+  } else if (mode === 'raid') {
+    state.raid = createRaid(
+      slots.map((s, i) => ({ name: `P${i + 1}`, weapon: s.weapon, cpu: s.cpu, color: PLAYER_COLORS[i] })),
+      state.difficulty,
+    );
+    playRaid();
   } else if (mode === 'tour') {
     state.tour = createTournament(pickEntries(WEAPONS, state.tourSize));
     playTourMatch();
@@ -368,15 +407,16 @@ function begin() {
 
 // ---- 試合 ----
 
-function setMatch(defs, boosts = [], labels = null) {
+function setMatch(defs, boosts = [], labels = null, teams = null) {
   state.fighters = defs;
   state.boosts = boosts;
   state.labels = labels;
+  state.teams = teams;
   newBattle();
 }
 
 function newBattle() {
-  state.world = createMelee(state.fighters, (Math.random() * 2 ** 32) >>> 0, { boosts: state.boosts });
+  state.world = createMelee(state.fighters, (Math.random() * 2 ** 32) >>> 0, { boosts: state.boosts, teams: state.teams || undefined });
   state.running = false;
   renderer.particles = [];
   renderer.texts = [];
@@ -423,6 +463,8 @@ function renderTitle() {
   if (state.rounds) {
     const r = state.rounds;
     html = `ラウンド ${r.round} <small>${r.target}勝で優勝</small>`;
+  } else if (state.raid) {
+    html = `レイド Lv${state.raid.level} <b class="boss">${bossOf(state.raid).def.name}</b>`;
   } else if (state.chal) {
     const st = state.chal.stage;
     html = `ステージ ${st}${isBoss(st) ? ' <b class="boss">BOSS</b>' : ''}`;
@@ -450,6 +492,7 @@ function renderHud() {
     const card = el('div', { className: 'hud-card' });
     card.style.setProperty('--c', readable(def.color));
     if (ball.awaken) card.classList.add('awakened');
+    if (def.kind === 'boss') card.classList.add('boss-card');
     const top = el('div', { className: 'hud-top' });
     if (tag) {
       const t = el('span', { className: 'ptag', textContent: tag.text });
@@ -521,6 +564,7 @@ function finish() {
     // モード中は同じ組み合わせでやり直し
     if (state.tour) setTimeout(() => state.world === w && playTourMatch(), 1500);
     else if (state.chal) setTimeout(() => state.world === w && playChalStage(), 1500);
+    else if (state.raid) setTimeout(() => state.world === w && playRaid(), 1500);
     else if (state.rounds) {
       reportRound(state.rounds, -1);
       setTimeout(() => state.world === w && playRound(), 1500);
@@ -529,6 +573,13 @@ function finish() {
   } else {
     const win = state.fighters[w.winner];
     text.textContent = `${nameOf(w.winner)}の勝ち！`;
+    if (state.raid) {
+      raidResult(w);
+      setTimeout(() => {
+        if (state.world === w) $('overlay').hidden = false;
+      }, 700);
+      return;
+    }
     text.style.color = (state.labels && state.labels[w.winner] && state.rounds ? state.labels[w.winner].color : null) || win.color;
     record(w.winner);
     if (state.rounds) roundResult(w);
@@ -717,6 +768,75 @@ function chalResult(won) {
   }, 1100);
 }
 
+// ---- ボス・レイド ----
+
+function playRaid() {
+  const r = state.raid;
+  if (!r) return;
+  const m = raidMatch(r);
+  setMatch(
+    m.defs,
+    m.boosts,
+    [...r.players.map((p) => ({ text: p.name, color: p.color })), { text: 'BOSS', color: '#c01f1f' }],
+    m.teams,
+  );
+  play();
+}
+
+function raidResult(w) {
+  const r = state.raid;
+  const boss = bossOf(r).def;
+  const won = w.winTeam === 0;
+  const text = $('resultText');
+  if (!won) {
+    const cleared = r.level - 1;
+    const best = Math.max(loadRaidBest(), cleared);
+    saveRaidBest(best);
+    text.textContent = `Lv${r.level} ${boss.name}に敗北…`;
+    text.style.color = boss.color;
+    $('resultSub').textContent = `${cleared}体たおした / 最高記録 Lv${best}`;
+    reportRaid(r, false);
+    setButtons([
+      { text: 'もう一度(同じ設定)', primary: true, onClick: begin },
+      { text: 'ホームへ', onClick: () => show('home') },
+    ]);
+    return;
+  }
+  text.textContent = `${boss.name}を倒した！`;
+  text.style.color = '#2fa84f';
+  saveRaidBest(Math.max(loadRaidBest(), r.level));
+  reportRaid(r, true);
+  $('resultSub').textContent = `次は Lv${r.level} ${bossOf(r).def.name}`;
+  renderSideInfo();
+  setTimeout(() => state.raid === r && nextRaidPick(r), 1100);
+}
+
+// 勝ったら全員が順番にカードを1枚ずつ選ぶ
+function nextRaidPick(r) {
+  if (state.raid !== r) return;
+  const pend = r.pending;
+  if (!pend) {
+    playRaid();
+    return;
+  }
+  const p = r.players[pend.player];
+  showCards({
+    who: `${p.name}${p.cpu ? '(CPU)' : ''} のカード選び`,
+    color: p.color,
+    sub: `${p.weapon.name} を強くするカードを1枚`,
+    cards: pend.cards,
+    choose: pend.choose,
+    cpu: p.cpu,
+    mine: p.skills,
+    weapon: p.weapon,
+    onDone(cards) {
+      pickRaidCards(r, cards);
+      renderSideInfo();
+      nextRaidPick(r);
+    },
+  });
+}
+
 // ---- トーナメント ----
 
 function playTourMatch() {
@@ -788,6 +908,18 @@ function renderSideInfo() {
         .map(
           (p) =>
             `<div class="board-row"><span class="ptag" style="background:${p.color}">${p.name}</span><span class="bname" style="color:${p.weapon.color}">${p.weapon.name}${p.cpu ? ' 🤖' : ''}</span><span class="stars">${'★'.repeat(p.wins)}${'☆'.repeat(Math.max(0, r.target - p.wins))}</span><span class="bskills">${skillIcons(p.skills)}</span></div>`,
+        )
+        .join('');
+  } else if (state.raid) {
+    const r = state.raid;
+    const b = bossOf(r);
+    box.innerHTML =
+      `<h3>ボス・レイド(${DIFFICULTY[r.difficulty].name}・最高記録 Lv${loadRaidBest()})</h3>` +
+      `<p>Lv${r.level} <b style="color:${b.def.color}">${b.def.name}</b>: HP${b.boost.maxHp}・${b.def.grow}</p>` +
+      r.players
+        .map(
+          (p) =>
+            `<div class="board-row"><span class="ptag" style="background:${p.color}">${p.name}</span><span class="bname" style="color:${p.weapon.color}">${p.weapon.name}${p.cpu ? ' 🤖' : ''}</span><span class="bskills">${skillIcons(p.skills)}</span></div>`,
         )
         .join('');
   } else if (state.chal) {
@@ -1054,6 +1186,12 @@ function init() {
       renderSetup();
     });
   }
+  for (const b of $('diffSeg').children) {
+    b.addEventListener('click', () => {
+      state.difficulty = b.dataset.diff;
+      renderSetup();
+    });
+  }
   for (const b of $('sizeSeg').children) {
     b.addEventListener('click', () => {
       state.tourSize = Number(b.dataset.size);
@@ -1129,6 +1267,6 @@ function init() {
 }
 
 // 自動テストから状態を見るための入り口
-window.__weaponBattle = { state };
+window.__weaponBattle = { state, playRaid };
 
 init();

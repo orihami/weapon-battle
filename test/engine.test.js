@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createBattle, createMelee, runToEnd, step, segSegDist, landHit, knockback, dealDamage, MAX_HP, HARD_LIMIT, bladeSegment } from '../src/engine.js';
+import { createBattle, createMelee, runToEnd, step, segSegDist, landHit, knockback, dealDamage, foeOf as foeOfBall, MAX_HP, HARD_LIMIT, bladeSegment } from '../src/engine.js';
 import { WEAPONS, WEAPON_BY_ID, validateWeapon } from '../src/weapons.js';
 import { SKILL_BY_ID } from '../src/skills.js';
 
@@ -709,4 +709,53 @@ test('第3弾(200種まで): 金魚は竜に・足軽は将軍に・シャボン
   assert.ok(rock.vy < 0);
   for (let i = 0; i < 240 && !rock.fall; i++) step(w4);
   assert.ok(rock.fall && rock.vy > 0, '落ちてこない');
+});
+
+test('ボス・レイド: 仲間には当たらない・ボスは形態が変わる・勝つと全員カードを選んで次のレベル', async () => {
+  const { createRaid, raidMatch, reportRaid, pickRaidCards, bossOf, BOSSES } = await import('../src/raid.js');
+  const { cpuPick } = await import('../src/skills.js');
+  // チーム戦: 仲間どうしはダメージが入らない。相手には入る
+  const raid = createRaid([{ weapon: W.sword }, { weapon: W.bomb }]);
+  const m = raidMatch(raid);
+  const w = createMelee(m.defs, 3, { boosts: m.boosts, teams: m.teams });
+  const [p1, p2, boss] = w.balls;
+  assert.equal(dealDamage(w, p1, p2, 10), 0, '仲間に当たった');
+  assert.ok(dealDamage(w, p1, boss, 10) > 0);
+  assert.ok(boss.maxHp > 300 && boss.r > 70, 'ボスが大きくない');
+  // 仲間ではなくボスをねらう
+  for (const b of [p1, p2]) assert.equal(foeOfBall(w, b), boss);
+  // 形態: HPが減ると第2形態 → 怒り
+  boss.hp = boss.maxHp * 0.5;
+  step(w);
+  assert.equal(boss.w.phase, 1);
+  boss.hp = boss.maxHp * 0.2;
+  step(w);
+  assert.equal(boss.w.phase, 2);
+  // 決着まで回すと、どちらかのチームが勝つ(引き分けは時間切れだけ)
+  const end = runToEnd(createMelee(m.defs, 5, { boosts: m.boosts, teams: m.teams }));
+  assert.ok([0, 1, -1].includes(end.winTeam));
+  // 4種類のボスがどれも決着する
+  for (const def of BOSSES) {
+    const r2 = createRaid([{ weapon: W.spear }, { weapon: W.bow }, { weapon: W.sumo }]);
+    r2.boss = def.id;
+    const m2 = raidMatch(r2);
+    const w2 = runToEnd(createMelee(m2.defs, 11, { boosts: m2.boosts, teams: m2.teams }));
+    assert.ok(w2.over, `${def.id} が終わらない`);
+  }
+  // 勝つと全員が1枚ずつ選び、レベルが上がってボスが強くなる
+  const hp1 = bossOf(raid).boost.maxHp;
+  reportRaid(raid, true);
+  let picks = 0;
+  while (raid.pending) {
+    pickRaidCards(raid, cpuPick(raid.pending.cards, 1));
+    picks++;
+  }
+  assert.equal(picks, 2);
+  assert.ok(raid.players.every((p) => p.skills.length === 1));
+  assert.equal(raid.level, 2);
+  assert.ok(bossOf(raid).def !== BOSSES[0]);
+  raid.boss = BOSSES[0].id;
+  assert.ok(bossOf(raid).boost.maxHp > hp1, 'レベルが上がってもボスが強くならない');
+  reportRaid(raid, false);
+  assert.ok(raid.over);
 });
