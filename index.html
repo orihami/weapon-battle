@@ -38,6 +38,9 @@
       <button type="button" class="mode" data-mode="tour" style="--c:#e0a600">
         <span class="m-icon">🏆</span><b>トーナメント</b><small>8人・16人の勝ち抜き戦</small>
       </button>
+      <button type="button" class="mode big" data-mode="online" style="--c:#1e8449">
+        <span class="m-icon">📡</span><b>みんなでバトル(オンライン)</b><small>別々のスマホで同じ部屋に入り、それぞれ武器を選んで同じ試合を見る</small>
+      </button>
       <button type="button" class="mode" data-mode="auto" style="--c:#16a3a3">
         <span class="m-icon">📺</span><b>連続観戦</b><small>ランダムな対戦をずっと流す</small>
       </button>
@@ -140,6 +143,38 @@
     <p class="hint" id="bookHint">数字は今までの勝敗です(このブラウザにだけ保存)。タップするとその武器で1対1の準備へ。</p>
     <div class="book-grid" id="bookGrid"></div>
     <div class="skill-book" id="skillBook" hidden></div>
+  </section>
+
+  <!-- オンライン: 部屋を作る・入る・武器を選ぶ -->
+  <section class="screen online" id="online" hidden>
+    <header class="bar">
+      <button type="button" class="icon-btn back" data-back aria-label="もどる">←</button>
+      <h2>📡 みんなでバトル</h2>
+      <span class="bar-space"></span>
+    </header>
+    <div class="online-join" id="onlineJoin">
+      <p class="setup-hint">別々のスマホで同じ部屋に入って、それぞれ武器を選びます。部屋を作った人が始めると、全員のスマホで同じ試合が流れます。</p>
+      <label class="field">名前 <input id="onlineName" maxlength="12" placeholder="ななし"></label>
+      <button type="button" class="primary" id="onlineCreate">部屋を作る</button>
+      <div class="join-row">
+        <input id="onlineCode" maxlength="4" placeholder="部屋コード" autocapitalize="characters">
+        <button type="button" id="onlineJoinBtn">入る</button>
+      </div>
+      <details class="server-box" id="serverBox">
+        <summary>サーバーの設定</summary>
+        <label class="field">サーバー <input id="onlineServer" placeholder="wss://〜"></label>
+        <small>サーバーのたて方は server/README.md を見てください。</small>
+      </details>
+      <p class="online-status" id="onlineStatus"></p>
+    </div>
+    <div class="online-lobby" id="onlineLobby" hidden>
+      <p class="room-code">部屋コード <b id="roomCode"></b></p>
+      <p class="hint">このコードを友だちに伝えて、同じ画面から「入る」</p>
+      <div class="lobby-list" id="lobbyList"></div>
+      <button type="button" id="onlinePick">🗡️ 自分の武器を選ぶ</button>
+      <button type="button" class="primary" id="onlineStart">バトル開始！(ホーム)</button>
+      <button type="button" id="onlineLeave">部屋から出る</button>
+    </div>
   </section>
 
   <!-- 武器を選ぶ(全画面) -->

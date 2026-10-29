@@ -50,6 +50,11 @@ function stepPhase(world, me) {
 // 怒り中は技の間隔が短くなる
 const pace = (me, t) => (me.w.phase >= 2 ? t * 0.7 : t);
 
+// ボスの刃の回る速さ(engine の spin と同じ向きのきまり)
+function setBossSpin(b, v) {
+  b.spin = Math.sign(b.spin || 1) * v;
+}
+
 function bossBase(b, r, speed) {
   b.r = BALL_R * r;
   b.speedMul = speed;
@@ -518,6 +523,215 @@ export const BOSSES = [
     },
   },
   {
+    id: 'kraken',
+    kind: 'boss',
+    name: 'クラーケン',
+    en: 'Kraken',
+    color: '#a93226',
+    grow: '長い触手を振りまわす。第2形態で墨をはいて全員を遅くし、怒ると床から触手が突き上がる',
+    init(b) {
+      bossBase(b, 1.9, 0.6);
+      b.w.ink = 4;
+      b.w.slam = 3;
+      setBossSpin(b, 1.2);
+      for (let i = 0; i < 4; i++) b.blades.push({ off: (i * TAU) / 4, rIn: b.r - 6, rOut: b.r + 70, w: 14, cd: 0.9, cdLeft: 0, knock: 260, parry: false, sprite: 'tentacle', damage: 1.2 });
+    },
+    stats: (b) => [['形態', ['第1', '第2', '怒り'][b.w.phase]]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      stepPhase(world, me);
+      if (w.phase >= 1) {
+        w.ink -= dt;
+        if (w.ink <= 0) {
+          w.ink = pace(me, 5);
+          world.events.push({ type: 'shock', x: me.x, y: me.y, r: me.r + 200, color: '#1a1a2e' });
+          for (const o of foes(world, me)) {
+            o.slow = Math.max(o.slow, 0.45);
+            o.slowT = Math.max(o.slowT, 2);
+          }
+        }
+      }
+      if (w.phase < 2) return;
+      w.slam -= dt;
+      if (w.slam > 0) return;
+      w.slam = 3;
+      // 床から触手: 全員の足元に柱
+      for (const o of foes(world, me)) {
+        world.events.push({ type: 'icespike', x: o.x, h: ARENA * 0.5 });
+        if (o.y > ARENA * 0.5 && landHit(world, me, o, 4, { kind: 'boss', x: o.x, y: o.y }) > 0) o.vy = -700 * (o.knockMul ?? 1);
+      }
+    },
+    onContact: bossContact(2.5),
+  },
+  {
+    id: 'sandworm',
+    kind: 'boss',
+    name: '砂の大ミミズ',
+    en: 'Sandworm',
+    color: '#c9a66b',
+    grow: '砂にもぐって(攻撃が効きにくい)、だれかの真下から飛び出す。第2形態で砂をはき、怒るともぐる時間が短くなる',
+    init(b) {
+      bossBase(b, 1.8, 0.8);
+      b.w.dig = 0;
+      b.w.next = 2.5;
+      b.w.spit = 3;
+    },
+    stats: (b) => [['形態', ['第1', '第2', '怒り'][b.w.phase]]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      stepPhase(world, me);
+      me.angle = Math.atan2(me.vy, me.vx);
+      if (w.dig > 0) {
+        // もぐっている: 床にはりつき、だれかの下へ近づく
+        w.dig -= dt;
+        me.alpha = 0.3;
+        me.y = ARENA - me.r;
+        me.vy = 0;
+        const t = w.target && !w.target.dead ? w.target : foe;
+        me.vx = Math.sign(t.x - me.x || 1) * 340;
+        if (w.dig <= 0) {
+          // 飛び出す
+          me.alpha = 1;
+          me.vy = -1100;
+          world.events.push({ type: 'quake', x: me.x, y: ARENA });
+          shockwave(world, me, me.r + 90, 4.5, 520, '#c9a66b');
+        }
+        return;
+      }
+      w.next -= dt;
+      if (w.next <= 0) {
+        w.next = pace(me, 4.5);
+        w.dig = w.phase >= 2 ? 1.2 : 1.8;
+        const list = foes(world, me);
+        w.target = list[Math.floor(world.rng() * list.length)];
+      }
+      if (w.phase < 1) return;
+      w.spit -= dt;
+      if (w.spit > 0) return;
+      w.spit = pace(me, 3.5);
+      for (let i = -1; i <= 1; i++) {
+        const a = aim(me, foe) + i * 0.25;
+        spawnProjectile(world, me, {
+          x: me.x + Math.cos(a) * me.r,
+          y: me.y + Math.sin(a) * me.r,
+          vx: Math.cos(a) * 450,
+          vy: Math.sin(a) * 450,
+          kind: 'stone',
+          r: 9,
+          life: 2,
+          onTouch(world, p, owner, t) {
+            p.dead = true;
+            landHit(world, owner, t, 2.5, { kind: 'boss', x: p.x, y: p.y });
+          },
+        });
+      }
+    },
+    onTakeDamage: (world, me, src, amount) => (me.w.dig > 0 ? amount * 0.3 : amount),
+    onContact: bossContact(3),
+  },
+  {
+    id: 'twinOni',
+    kind: 'boss',
+    name: '双子の鬼',
+    en: 'Twin Oni',
+    color: '#c0392b',
+    count: 2,
+    grow: '赤鬼と青鬼の2体。金棒を振りまわして突進する。片方を倒すと、残った方が怒って強くなる',
+    init(b) {
+      bossBase(b, 1.45, 0.85);
+      b.color = b.id % 2 ? '#2e86c1' : '#c0392b';
+      b.w.dash = 2 + (b.id % 2);
+      b.w.alone = false;
+      setBossSpin(b, 3);
+      b.blades.push({ off: 0, rIn: b.r - 6, rOut: b.r + 64, w: 16, cd: 0.7, cdLeft: 0, knock: 320, parry: false, sprite: 'club', damage: 1.6 });
+    },
+    stats: (b) => [['形態', b.w.alone ? '怒り(ひとり)' : ['第1', '第2', '怒り'][b.w.phase]]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      stepPhase(world, me);
+      // 相棒が倒れたら怒る
+      if (!w.alone && world.balls.some((o) => o !== me && ally(o, me) && o.dead)) {
+        w.alone = true;
+        me.power *= 1.4;
+        me.speedMul *= 1.25;
+        world.events.push({ type: 'evolve', target: me.id, x: me.x, y: me.y, text: '相棒のかたき！', color: '#c01f1f' });
+      }
+      w.dash -= dt;
+      if (w.dash > 0) return;
+      w.dash = pace(me, w.alone ? 2 : 3);
+      const a = aim(me, foe);
+      me.vx = Math.cos(a) * 700;
+      me.vy = Math.sin(a) * 700;
+    },
+    onContact: bossContact(2.5),
+  },
+  {
+    id: 'meteorGod',
+    kind: 'boss',
+    name: '隕石の神',
+    en: 'Meteor God',
+    color: '#34495e',
+    grow: '空から隕石の雨。第2形態で影の予告のあと大隕石、怒ると雨が激しくなる',
+    init(b) {
+      bossBase(b, 1.9, 0.55);
+      b.w.rain = 1.5;
+      b.w.big = 5;
+    },
+    stats: (b) => [['形態', ['第1', '第2', '怒り'][b.w.phase]]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      stepPhase(world, me);
+      me.angle = -Math.PI / 2;
+      w.rain -= dt;
+      if (w.rain <= 0) {
+        w.rain = pace(me, 1.6);
+        const n = w.phase >= 2 ? 3 : 2;
+        for (let i = 0; i < n; i++) {
+          spawnProjectile(world, me, {
+            x: 30 + world.rng() * (ARENA - 60),
+            y: 24,
+            vx: (world.rng() - 0.5) * 120,
+            vy: 380,
+            kind: 'meteor',
+            r: 12,
+            life: 3,
+            blockable: false,
+            onTouch(world, p, owner, t) {
+              p.dead = true;
+              world.events.push({ type: 'boom', x: p.x, y: p.y, radius: 40, kind: 'meteor' });
+              landHit(world, owner, t, 2, { kind: 'boss', x: p.x, y: p.y });
+            },
+          });
+        }
+      }
+      if (w.phase < 1) return;
+      w.big -= dt;
+      if (w.big > 0) return;
+      w.big = pace(me, 5);
+      // 大隕石: だれかの位置に影を出し、少しして落ちる
+      const list = foes(world, me);
+      const t = list[Math.floor(world.rng() * list.length)] || foe;
+      spawnProjectile(world, me, {
+        x: Math.max(60, Math.min(ARENA - 60, t.x)),
+        y: ARENA - 8,
+        kind: 'anvilShadow',
+        r: 60,
+        life: 1.1,
+        wall: 'stop',
+        blockable: false,
+        onExpire(world, p, owner) {
+          world.events.push({ type: 'boom', x: p.x, y: ARENA - 60, radius: 120, kind: 'meteor' });
+          world.events.push({ type: 'quake', x: p.x, y: ARENA });
+          for (const o of foes(world, owner)) {
+            if (Math.abs(o.x - p.x) > 120 + o.r || o.y < ARENA - 260) continue;
+            if (landHit(world, owner, o, 6, { kind: 'boss', x: o.x, y: o.y }) > 0) o.vy = -600 * (o.knockMul ?? 1);
+          }
+        },
+      });
+    },
+    onContact: bossContact(2.5),
+  },
+  {
     id: 'demonLord',
     kind: 'boss',
     name: '魔王',
@@ -600,6 +814,10 @@ const BOSS_TUNE = {
   iceQueen: { hp: 1.11, power: 1 },
   venomSerpent: { hp: 0.65, power: 0.65 },
   demonLord: { hp: 1.00, power: 0.70 },
+  kraken: { hp: 0.70, power: 0.68 },
+  sandworm: { hp: 0.70, power: 0.86 },
+  twinOni: { hp: 0.70, power: 0.67 },
+  meteorGod: { hp: 0.70, power: 0.82 },
 };
 
 // ==== コンビ技: チームの武器の組み合わせで付くボーナス ====
@@ -619,10 +837,26 @@ export const COMBOS = [
     apply: (b) => (b.power *= 1.1),
   },
   {
+    id: 'lateTeam',
+    icon: '📈',
+    name: '大器晩成チーム',
+    desc: '📈大器晩成の武器が2つ以上で、その武器は最初から2回分成長',
+    test: (defs) => count(defs, (d) => d.late) >= 2,
+    apply: (b, d) => d.late && (b.preGrow += 2),
+  },
+  {
+    id: 'genreBond',
+    icon: '🎌',
+    name: 'ジャンルの絆',
+    desc: '同じジャンルの武器が2つ以上で、そのジャンルの武器の与ダメージ +15%',
+    test: (defs) => defs.some((d) => count(defs, (x) => x.genre === d.genre) >= 2),
+    apply: (b, d, defs) => count(defs, (x) => x.genre === d.genre) >= 2 && (b.power *= 1.15),
+  },
+  {
     id: 'bloomTeam',
     icon: '🌱',
-    name: '大器晩成チーム',
-    desc: '大器晩成の武器が2つ以上で、大器晩成の武器は最初から3回分成長',
+    name: '進化チーム',
+    desc: '🌱進化の武器が2つ以上で、その武器は最初から3回分成長',
     test: (defs) => count(defs, (d) => d.bloom) >= 2,
     apply: (b, d) => d.bloom && (b.preGrow += 3),
   },
@@ -703,8 +937,17 @@ export function createRaid(players, difficulty = 'normal') {
 }
 
 // 今のレベルのボスと強さ
+// レベルの順番: ふつうのボスを順に回し、8レベルごとに魔王
+export const DEMON_EVERY = 8;
+const REGULAR = () => BOSSES.filter((b) => b.id !== 'demonLord');
 export function bossOf(raid) {
-  const def = raid.boss ? BOSS_BY_ID[raid.boss] : BOSSES[(raid.level - 1) % BOSSES.length];
+  const lvl = raid.level;
+  const regular = REGULAR();
+  const def = raid.boss
+    ? BOSS_BY_ID[raid.boss]
+    : lvl % DEMON_EVERY === 0
+      ? BOSS_BY_ID.demonLord
+      : regular[(lvl - 1 - Math.floor(lvl / DEMON_EVERY)) % regular.length];
   const d = DIFFICULTY[raid.difficulty] || DIFFICULTY.normal;
   const n = raid.players.length;
   const lv = raid.level - 1;
@@ -722,11 +965,14 @@ export function raidMatch(raid) {
   const boss = bossOf(raid);
   const defs = raid.players.map((p) => p.weapon);
   const combos = combosOf(defs);
+  // 2体で出るボス(双子の鬼)は、1体あたりのHPを少なめにする
+  const n = boss.def.count || 1;
+  const bossBoost = n > 1 ? { ...boss.boost, maxHp: Math.round((boss.boost.maxHp * 0.6)) } : boss.boost;
   return {
-    defs: [...defs, boss.def],
+    defs: [...defs, ...Array(n).fill(boss.def)],
     // コンビ技は試合開始時にボールへかける(boost.combo)
-    boosts: [...raid.players.map((p) => ({ skills: p.skills, combo: (b) => combos.forEach((c) => c.apply(b, p.weapon, defs)) })), boss.boost],
-    teams: [...raid.players.map(() => 0), 1],
+    boosts: [...raid.players.map((p) => ({ skills: p.skills, combo: (b) => combos.forEach((c) => c.apply(b, p.weapon, defs)) })), ...Array(n).fill(bossBoost)],
+    teams: [...raid.players.map(() => 0), ...Array(n).fill(1)],
     combos,
   };
 }

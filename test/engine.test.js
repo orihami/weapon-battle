@@ -678,7 +678,7 @@ test('第4弾のカード: 進化の石・ステップ・根っこ', () => {
 });
 
 test('第3弾(200種まで): 金魚は竜に・足軽は将軍に・シャボン玉は閉じこめる・火山の石は真上から', () => {
-  assert.equal(WEAPONS.length, 200);
+  assert.ok(WEAPONS.length >= 200);
   // 金魚 → コイ → 竜
   const w1 = createBattle(W.goldfish, W.sword, 1);
   const [gf, f1] = w1.balls;
@@ -763,7 +763,7 @@ test('ボス・レイド: 仲間には当たらない・ボスは形態が変わ
 test('ボス・レイド2: コンビ技・怒ったときの復活・3体ごとの宝箱・与ダメージの記録・8体のボス', async () => {
   const { createRaid, raidMatch, reportRaid, pickRaidCards, combosOf, BOSSES, TREASURE_EVERY } = await import('../src/raid.js');
   const { cpuPick } = await import('../src/skills.js');
-  assert.equal(BOSSES.length, 8);
+  assert.equal(BOSSES.length, 12);
   // コンビ技: 炎の武器2つ+近接 → 前衛と後衛・炎の仲間。威力が上がる
   const ids = combosOf([W.flame, W.lava, W.sumo]).map((c) => c.id);
   assert.ok(ids.includes('fireTeam') && ids.includes('vanguard'), ids.join(','));
@@ -803,4 +803,51 @@ test('ボス・レイド2: コンビ技・怒ったときの復活・3体ごと�
     const m2 = raidMatch(r2);
     assert.ok(runToEnd(createMelee(m2.defs, 21, { boosts: m2.boosts, teams: m2.teams })).over, def.id);
   }
+});
+
+test('ジャンル: 全武器にジャンルがあり、📈大器晩成の武器は数値どおりに伸びて後半に化ける', async () => {
+  const { GENRES } = await import('../src/genres.js');
+  for (const w of WEAPONS) assert.ok(GENRES[w.genre], `${w.id} のジャンルがない`);
+  // 大器晩成: 雷・爆弾などと新しい8種
+  for (const id of ['lightning', 'bomb', 'compound', 'mice', 'cell', 'fission', 'wildfire', 'avalanche', 'comboFist', 'chainBolt']) assert.ok(W[id].late, `${id} が大器晩成になっていない`);
+  // 複利: 当てるほど、かけ算で強くなる(20回で7倍近く)
+  const w1 = createBattle(W.compound, W.sword, 1);
+  const [cp, f1] = w1.balls;
+  for (let i = 0; i < 20; i++) W.compound.onHit(w1, cp, f1, {});
+  assert.ok(cp.w.rate > 6, `利息 ${cp.w.rate}`);
+  // 細胞分裂: 8回ごとに増え、刃の数も増える
+  const w2 = createBattle(W.cell, W.sword, 1);
+  const [ce, f2] = w2.balls;
+  for (let i = 0; i < 24; i++) W.cell.onHit(w2, ce, f2, { kind: 'melee' });
+  assert.ok(ce.blades.length >= 3, `細胞 ${ce.blades.length}`);
+  // 稲妻の鎖: 鎖の回数だけ跳ねて当たる
+  const w3 = createBattle(W.chainBolt, W.sword, 1);
+  const [cb, f3] = w3.balls;
+  cb.w.chain = 4;
+  const hp = f3.hp;
+  cb.w.timer = 0;
+  W.chainBolt.update(w3, cb, f3, 1 / 120);
+  assert.equal(w3.events.filter((e) => e.type === 'zap').length, 5);
+  assert.ok(f3.hp < hp);
+});
+
+test('ボス・レイド3: ボス12体(双子の鬼は2体で出る)・8レベルごとに魔王', async () => {
+  const { createRaid, raidMatch, bossOf, BOSSES, DEMON_EVERY } = await import('../src/raid.js');
+  assert.equal(BOSSES.length, 12);
+  const raid = createRaid([{ weapon: W.sword }, { weapon: W.bow }]);
+  raid.level = DEMON_EVERY;
+  assert.equal(bossOf(raid).def.id, 'demonLord');
+  // 1〜7と9〜は、ふつうのボスが順番に出る(魔王はでない)
+  const seen = new Set();
+  for (let lv = 1; lv <= 12; lv++) {
+    raid.level = lv;
+    if (lv % DEMON_EVERY) seen.add(bossOf(raid).def.id);
+  }
+  assert.ok(!seen.has('demonLord') && seen.size === 11, [...seen].join(','));
+  raid.boss = 'twinOni';
+  const m = raidMatch(raid);
+  assert.equal(m.defs.length, 4);
+  assert.deepEqual(m.teams, [0, 0, 1, 1]);
+  const w = runToEnd(createMelee(m.defs, 3, { boosts: m.boosts, teams: m.teams }));
+  assert.ok(w.over);
 });

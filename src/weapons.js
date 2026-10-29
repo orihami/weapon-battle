@@ -17,6 +17,7 @@ import {
   bladeSegment,
   ally,
 } from './engine.js';
+import { GENRE_OF, LATE } from './genres.js';
 
 const TAU = Math.PI * 2;
 const BOMB_RADIUS = 70;
@@ -412,6 +413,56 @@ const MIMIC_NAMES = ['宝箱', 'ミミック', '宝の王'];
 const mimicDamage = (b) => [1, 2.4, 3.6][b.w.stage] + b.w.bonus;
 const SPARKY_NAMES = ['静電気', '電撃', '雷神'];
 const sparkyDamage = (b) => [0.8, 1.8, 3][b.w.stage] + b.w.bonus;
+
+// 📈 大器晩成の武器で使うもの
+
+// 細胞分裂: n こを等間隔に回す
+function cellBlades(b) {
+  const n = Math.round(b.w.n);
+  b.blades = [];
+  for (let i = 0; i < n; i++) b.blades.push(makeBlade({ sprite: 'cell', off: (i * TAU) / n, rIn: b.r + 6, rOut: b.r + 34, w: 18, damage: (world, me) => me.w.dmg, cd: 0.4, knock: 110, parry: false }));
+}
+
+// 連鎖反応の粒: 当たると分裂して、まわりへまた飛ぶ(gen が残っている間)
+function neutron(world, me, x, y, angle, gen) {
+  if (world.projectiles.filter((p) => p.owner === me.id && p.kind === 'neutron').length >= 12) return;
+  spawnProjectile(world, me, {
+    x,
+    y,
+    vx: Math.cos(angle) * 480,
+    vy: Math.sin(angle) * 480,
+    angle,
+    kind: 'neutron',
+    r: 6,
+    life: 1.2,
+    gen,
+    onTouch(world, p, owner, o) {
+      p.dead = true;
+      if (landHit(world, owner, o, 1, { kind: 'neutron', x: p.x, y: p.y }) <= 0 || p.gen <= 0) return;
+      world.events.push({ type: 'shock', x: p.x, y: p.y, r: 30, color: '#7dcea0' });
+      // 分裂: 数は split の整数部分 + 端数の確率
+      const s = owner.w.split;
+      const n = Math.floor(s) + (world.rng() < s - Math.floor(s) ? 1 : 0);
+      for (let i = 0; i < n; i++) {
+        const a = world.rng() * TAU;
+        neutron(world, owner, p.x + Math.cos(a) * (o.r + 10), p.y + Math.sin(a) * (o.r + 10), a + Math.PI * (0.6 + world.rng() * 0.8), p.gen - 1);
+      }
+    },
+  });
+}
+
+// 稲妻の鎖: (x, y) から target へ雷。残りの回数だけ、近くの相手か壁へ跳ねてまた当たる
+function chainZap(world, me, x, y, target, left, seen) {
+  if (!target || target.dead) return;
+  world.events.push({ type: 'zap', x: target.x, y: target.y, big: false });
+  landHit(world, me, target, 0.7, { kind: 'chain', x: target.x, y: target.y });
+  if (left <= 0) return;
+  seen.add(target);
+  // 次の相手: まだ当たっていない相手がいればそちら、いなければ壁で跳ねて同じ相手へ
+  const next = world.balls.find((o) => o !== me && !o.dead && !ally(o, me) && !seen.has(o)) || target;
+  if (next === target) seen.clear();
+  chainZap(world, me, target.x, target.y, next, left - 1, seen);
+}
 
 export const WEAPONS = [
   {
@@ -8673,6 +8724,297 @@ export const WEAPONS = [
       me.blades[0].rOut = me.r + me.w.len;
     },
   },
+  // ===== 📈 大器晩成(数値どおりに伸び、仕組みのせいで後半に化ける) =====
+  {
+    id: 'compound',
+    kind: 'ranged',
+    late: true,
+    name: '複利',
+    en: 'Compound Interest',
+    color: '#d4ac0d',
+    grow: '当たるたびに 金貨のダメージが ×1.1(かけ算で増える。最初は1.8だが、20回で約12、30回で約31)',
+    init(b) {
+      b.w = { base: 1.8, rate: 1, timer: 0.6 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['金貨', fmt(Math.round(b.w.base * b.w.rate * 10) / 10)],
+      ['利息', '×' + b.w.rate.toFixed(2)],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 8);
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 0.8;
+      shoot(world, me, aimAt(me, foe), 520, { kind: 'coin', r: 8, life: 1.6, damage: w.base * w.rate, onTouch: hitOnce() });
+    },
+    onHit(world, me) {
+      me.w.rate *= 1.1;
+    },
+  },
+  {
+    id: 'mice',
+    kind: 'ranged',
+    late: true,
+    name: 'ねずみ算',
+    en: 'Mouse Math',
+    color: '#95a5a6',
+    grow: 'かじるたびに ねずみが増える(今いる数の1/4ずつ増えるので、増えるほど速く増える)。16匹をこえた分は威力に',
+    init(b) {
+      b.w = { n: 1, total: 1, timer: 0.5 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [['ねずみ', fmt(Math.floor(b.w.total)) + '匹']],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      me.angle = Math.PI / 2;
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 0.35;
+      const mine = world.projectiles.filter((p) => p.owner === me.id && p.kind === 'mouse').length;
+      if (mine >= Math.min(16, Math.floor(w.total))) return;
+      // ねずみは床を走って相手へ向かい、かじって消える
+      spawnProjectile(world, me, {
+        x: Math.max(14, Math.min(ARENA - 14, me.x)),
+        y: ARENA - 10,
+        vx: Math.sign(foe.x - me.x || 1) * 260,
+        kind: 'mouse',
+        r: 9,
+        life: 5,
+        wall: 'stop',
+        blockable: false,
+        hop: world.rng(),
+        update(world, p, owner, foe, dt) {
+          p.y = ARENA - p.r - Math.abs(Math.sin((p.age + p.hop) * 9)) * 8;
+          p.vx = Math.sign(foe.x - p.x || 1) * 260;
+        },
+        onTouch(world, p, owner, o) {
+          p.dead = true;
+          // 広いフィールド(3人以上)では床を走る距離が長いので、1匹のダメージを大きくする
+          landHit(world, owner, o, world.balls.length > 2 ? 1.7 : 0.65, { kind: 'mouse', x: p.x, y: p.y });
+        },
+      });
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'mouse' && info.kind !== 'pre') return;
+      const w = me.w;
+      w.total += Math.max(0.34, w.total * 0.05);
+      // 16匹をこえた分は威力に(見た目の数は16匹まで)
+      if (w.total > 16) me.power = Math.max(me.power, 1 + (w.total - 16) / 16 * 0.5);
+    },
+  },
+  {
+    id: 'cell',
+    kind: 'melee',
+    late: true,
+    name: '細胞分裂',
+    en: 'Cell Division',
+    color: '#58d68d',
+    grow: '8回当たるたびに 細胞が1.5倍(1→2→3→5→8)。細胞の数だけ当たる回数も増えるので、増えるほど早く分裂する。8こをこえた分は威力に',
+    init(b) {
+      b.w = { n: 1, hits: 0, dmg: 0.7 };
+      setSpin(b, 3.2);
+      cellBlades(b);
+    },
+    stats: (b) => [
+      ['細胞', fmt(shown(b, 'n')) + 'こ'],
+      ['ダメージ', fmt(Math.round(b.w.dmg * 10) / 10)],
+    ],
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'melee' && info.kind !== 'pre') return;
+      const w = me.w;
+      w.dmg += 0.05;
+      w.hits++;
+      if (w.hits % 8 !== 0) return;
+      growStat(me, 'n', Math.ceil(shown(me, 'n') * 0.5), 8, 0.35);
+      cellBlades(me);
+      world.events.push({ type: 'shock', x: me.x, y: me.y, r: me.r + 30, color: '#58d68d' });
+    },
+  },
+  {
+    id: 'fission',
+    kind: 'ranged',
+    late: true,
+    name: '連鎖反応',
+    en: 'Chain Reaction',
+    color: '#7dcea0',
+    grow: '当たった粒が 分裂して また飛ぶ。当たるたびに 分裂する数が増えていく(0.1ずつ)。一度に飛ぶ粒は12こまで',
+    init(b) {
+      b.w = { split: 1.2, timer: 0.6 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [['分裂', fmt(Math.round(shown(b, 'split') * 10) / 10)]],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 8);
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 1.2;
+      neutron(world, me, me.x + Math.cos(me.angle) * (me.r + 8), me.y + Math.sin(me.angle) * (me.r + 8), aimAt(me, foe), 3);
+    },
+    onHit(world, me) {
+      growStat(me, 'split', 0.1, 4, 0.3);
+    },
+  },
+  {
+    id: 'wildfire',
+    kind: 'ranged',
+    late: true,
+    name: '山火事',
+    en: 'Wildfire',
+    color: '#e74c3c',
+    grow: '当たるたびに 火の粉が +0.22こ・1つのダメージ +0.035(数とダメージの両方が伸びるので、かけ算で強くなる)。10こをこえた分は威力に',
+    init(b) {
+      b.w = { n: 1, dmg: 0.9, timer: 0.6 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['火の粉', fmt(Math.floor(shown(b, 'n'))) + 'こ'],
+      ['1つ', fmt(Math.round(b.w.dmg * 100) / 100)],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 8);
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 1.1;
+      const n = Math.floor(w.n);
+      for (let i = 0; i < n; i++) {
+        const a = aimAt(me, foe) + (i - (n - 1) / 2) * 0.12;
+        shoot(world, me, a, 430 + (i % 3) * 30, {
+          kind: 'flame',
+          r: 7,
+          life: 0.9,
+          damage: w.dmg,
+          onTouch(world, p, owner, o) {
+            p.dead = true;
+            if (landHit(world, owner, o, p.damage, { kind: 'wildfire', x: p.x, y: p.y }) <= 0) return;
+            o.burnT = Math.max(o.burnT, 1.5);
+            o.burnDps = Math.max(o.burnDps, 0.5);
+            o.burnSrc = owner.id;
+          },
+        });
+      }
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 0.22, 10, 0.4);
+      me.w.dmg += 0.035;
+    },
+  },
+  {
+    id: 'avalanche',
+    kind: 'ranged',
+    late: true,
+    name: '雪崩',
+    en: 'Avalanche',
+    color: '#d6eaf8',
+    grow: '当たるたびに 雪玉が +0.35こ・大きくなる(大きいほど痛い)。数と大きさの両方が伸びる。6こをこえた分は威力に',
+    init(b) {
+      b.w = { n: 1, size: 8, timer: 0.8 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [
+      ['雪玉', fmt(Math.floor(shown(b, 'n'))) + 'こ'],
+      ['大きさ', fmt(Math.round(shown(b, 'size')))],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      me.angle = Math.sign(foe.x - me.x || 1) > 0 ? 0 : Math.PI;
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 1.1;
+      const n = Math.floor(w.n);
+      for (let i = 0; i < n; i++) {
+        // 床をころがる雪玉(はしから相手へ)
+        const dir = Math.sign(foe.x - me.x || 1);
+        spawnProjectile(world, me, {
+          x: Math.max(w.size, Math.min(ARENA - w.size, me.x - dir * i * (w.size * 2.5))),
+          y: ARENA - w.size,
+          vx: dir * (300 + i * 20),
+          vy: 0,
+          kind: 'snow',
+          r: w.size,
+          life: 3,
+          wall: 'die',
+          blockable: false,
+          damage: 1.4 + w.size * 0.15,
+          update(world, p) {
+            p.y = ARENA - p.r;
+          },
+          onTouch(world, p, owner, o) {
+            p.dead = true;
+            if (landHit(world, owner, o, p.damage, { kind: 'avalanche', x: p.x, y: p.y }) > 0) o.vy -= 200 * (o.knockMul ?? 1);
+          },
+        });
+      }
+    },
+    onHit(world, me) {
+      growStat(me, 'n', 0.35, 6, 0.3);
+      growStat(me, 'size', 0.6, 30, 0.3);
+    },
+  },
+  {
+    id: 'comboFist',
+    kind: 'body',
+    late: true,
+    name: '連打の鬼',
+    en: 'Combo Demon',
+    color: '#cb4335',
+    grow: '続けて当てるほど コンボで威力アップ(1コンボ +12%)。コンボが続くほど拳も速くなる。1.3秒当てないとコンボが切れる。土台のダメージも +0.08ずつ',
+    init(b) {
+      b.w = { base: 0.8, combo: 0, last: -9 };
+      setSpin(b, 0);
+      b.blades = [-0.4, 0.4].map((off) => makeBlade({ sprite: 'glove', off, rIn: b.r - 4, rOut: b.r + 22, w: 14, damage: (world, me) => me.w.base * (1 + me.w.combo * 0.12), cd: 0.5, knock: 120, parry: false }));
+    },
+    stats: (b) => [
+      ['コンボ', fmt(b.w.combo)],
+      ['土台', fmt(Math.round(b.w.base * 10) / 10)],
+    ],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 10);
+      if (w.combo > 0 && world.t - w.last > 1.3) w.combo = 0;
+      const cd = Math.max(0.12, 0.5 - w.combo * 0.02);
+      me.blades.forEach((bl, i) => {
+        bl.cd = cd;
+        bl.rOut = me.r + 16 + Math.abs(Math.sin(world.t * (8 + w.combo * 0.5) + i * 1.6)) * 14;
+      });
+    },
+    onHit(world, me, foe, info) {
+      if (info.kind !== 'melee' && info.kind !== 'pre') return;
+      const w = me.w;
+      w.base += 0.08;
+      w.combo++;
+      w.last = world.t;
+      if (w.combo >= 5 && w.combo % 5 === 0) world.events.push({ type: 'combo', x: me.x, y: me.y, n: w.combo });
+    },
+  },
+  {
+    id: 'chainBolt',
+    kind: 'ranged',
+    late: true,
+    name: '稲妻の鎖',
+    en: 'Chain Bolt',
+    color: '#5dade2',
+    grow: '当たるたびに 鎖が +0.12回(雷が当たった相手から、壁や相手へ跳ねて何度も当たる。跳ねた分も当たりなので、鎖が長いほど早く伸びる)',
+    init(b) {
+      b.w = { chain: 1, timer: 0.8 };
+      setSpin(b, 0);
+    },
+    stats: (b) => [['鎖', fmt(Math.floor(shown(b, 'chain'))) + '回']],
+    update(world, me, foe, dt) {
+      const w = me.w;
+      turnTo(me, aimAt(me, foe), dt, 8);
+      w.timer -= dt;
+      if (w.timer > 0) return;
+      w.timer = 1.9;
+      chainZap(world, me, me.x, me.y, foe, Math.floor(w.chain), new Set());
+    },
+    onHit(world, me) {
+      growStat(me, 'chain', 0.12, 10, 0.3);
+    },
+  },
 ];
 
 function grow(me) {
@@ -8864,6 +9206,14 @@ export const TUNE = {
   fryingPan: 1.48,
   slingshot: 1.31,
   jumpRope: 1.49,
+  compound: 1.40,
+  mice: 1.08,
+  cell: 0.80,
+  fission: 0.65,
+  wildfire: 0.91,
+  avalanche: 1.80,
+  comboFist: 1.04,
+  chainBolt: 1.08,
 };
 
 // 3人以上の試合だけで掛ける倍率。4人バトルロイヤルの1位率が25%に近づくように決めた
@@ -9068,11 +9418,23 @@ export const TUNE_FFA = {
   fryingPan: 0.61,
   slingshot: 1.88,
   jumpRope: 0.75,
+  compound: 1.11,
+  mice: 2.20,
+  cell: 1.63,
+  wildfire: 1.98,
+  avalanche: 0.53,
+  comboFist: 0.63,
+  chainBolt: 1.40,
 };
 
 for (const w of WEAPONS) {
   w.tune = TUNE[w.id] ?? 1;
   w.tuneFfa = TUNE_FFA[w.id] ?? 1;
+}
+// ジャンルと「📈 大器晩成」の印(genres.js)
+for (const w of WEAPONS) {
+  w.genre = GENRE_OF[w.id] ?? (w.kind === 'ranged' ? 'shoot' : w.kind === 'body' ? 'body' : 'slash');
+  if (LATE.has(w.id)) w.late = true;
 }
 
 export const WEAPON_BY_ID = Object.fromEntries(WEAPONS.map((w) => [w.id, w]));

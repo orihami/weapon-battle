@@ -115,6 +115,27 @@ function sawShape(ctx, r) {
 }
 
 const BLADE_SPRITES = {
+  cell(ctx, b) {
+    // 細胞(核のある丸)
+    const R = (b.rOut - b.rIn) / 2;
+    const c = b.rIn + R;
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    circle(ctx, c, 0, R, '#82e0aa');
+    ctx.restore();
+    circle(ctx, c + 2, -1, R * 0.4, '#1e8449', false);
+  },
+  club(ctx, b) {
+    // 鬼の金棒(トゲつき)
+    const L = b.rOut - b.rIn;
+    rect(ctx, b.rIn, -5, L * 0.4, 10, '#5d4037');
+    poly(ctx, [[b.rIn + L * 0.35, -7], [b.rOut, -12], [b.rOut, 12], [b.rIn + L * 0.35, 7]], '#7f8c8d');
+    for (let i = 0; i < 4; i++) {
+      const x = b.rIn + L * (0.45 + i * 0.14);
+      poly(ctx, [[x - 3, -9 - i], [x, -16 - i], [x + 3, -9 - i]], '#bdc3c7');
+      poly(ctx, [[x - 3, 9 + i], [x, 16 + i], [x + 3, 9 + i]], '#bdc3c7');
+    }
+  },
   broom(ctx, b) {
     // ほうき(柄と穂)
     shaft(ctx, b.rIn, b.rOut - 26, WOOD, 6);
@@ -1274,6 +1295,31 @@ const HELD = {
 };
 
 const PROJ = {
+  mouse(ctx, p) {
+    ctx.scale(p.vx < 0 ? -1 : 1, 1);
+    ctx.fillStyle = '#95a5a6';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, p.r + 3, p.r * 0.75, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    circle(ctx, p.r * 0.6, -p.r * 0.6, 3.5, '#f5b7b1');
+    circle(ctx, p.r * 0.9, -1, 1.5, OUT, false);
+    ctx.save();
+    ctx.strokeStyle = '#7f8c8d';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-p.r - 2, 0);
+    ctx.quadraticCurveTo(-p.r - 10, -6, -p.r - 14, 2);
+    ctx.stroke();
+    ctx.restore();
+  },
+  neutron(ctx, p) {
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    circle(ctx, 0, 0, p.r + 4, '#abebc6', false);
+    ctx.restore();
+    circle(ctx, 0, 0, p.r, '#27ae60');
+  },
   soapbubble(ctx, p) {
     ctx.save();
     ctx.globalAlpha = 0.35;

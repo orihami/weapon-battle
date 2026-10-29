@@ -575,3 +575,29 @@ dialog { color: var(--ink); }
 #resultSub { white-space: pre-line; }
 /* ボス登場のときは、ボタンなしで名前を大きく */
 .overlay.intro .result { font-size: 34px; }
+
+/* 武器のジャンルの札 */
+.gtags { display: inline-flex; gap: 3px; flex-wrap: wrap; align-items: center; }
+.gtag { display: inline-block; color: #fff; font-size: 11px; font-weight: bold; line-height: 1.5; padding: 0 5px; border-radius: 6px; border: 1.5px solid #1a1a1a; white-space: nowrap; }
+.gtag.late { background: #1e8449; }
+.gtag.bloom { background: #6ab04c; }
+.picker-grid .gtags { justify-content: center; }
+.hud-top .gtags { flex: none; }
+.slot-text .gtags { margin: 2px 0; }
+
+/* オンライン(みんなでバトル) */
+.online-join, .online-lobby { display: flex; flex-direction: column; gap: 10px; }
+.field { display: flex; flex-direction: column; gap: 4px; font-weight: bold; }
+.field input, .join-row input { font-size: 18px; padding: 10px; border: 3px solid var(--line); border-radius: 10px; }
+.join-row { display: flex; gap: 8px; }
+.join-row input { flex: 1; min-width: 0; text-transform: uppercase; letter-spacing: 4px; }
+.server-box { border: 2px dashed #999; border-radius: 10px; padding: 8px; }
+.server-box small { color: #666; }
+.online-status { color: #c01f1f; font-weight: bold; min-height: 1.2em; }
+.room-code { font-size: 18px; text-align: center; }
+.room-code b { font-family: var(--num); font-size: 44px; letter-spacing: 8px; display: block; }
+.lobby-list { display: flex; flex-direction: column; gap: 6px; }
+.lobby-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 3px solid var(--line); border-radius: 10px; background: #fff; flex-wrap: wrap; }
+.lobby-row.me { box-shadow: 0 0 0 3px #1e8449 inset; }
+.lobby-row canvas { width: 30px; height: 30px; }
+.lobby-row .host { font-size: 12px; font-weight: bold; }

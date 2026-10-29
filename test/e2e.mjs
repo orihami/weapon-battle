@@ -5,6 +5,7 @@ import { readFile, mkdir } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { spawn } from 'node:child_process';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const outDir = join(root, 'e2e-artifacts');
@@ -59,7 +60,7 @@ try {
   // 1) ホーム
   await page.goto(base + '?speed=4');
   const modes = await page.locator('[data-mode]').count();
-  check(modes === 7, `ホームの遊び方: ${modes}個`);
+  check(modes === 8, `ホームの遊び方: ${modes}個`);
   await page.screenshot({ path: join(outDir, '0-home.png') });
 
   // 2) 共有URL(剣 vs 短剣)を4倍速で自動スタートし、決着まで見る
@@ -311,6 +312,39 @@ try {
   await page.waitForTimeout(300);
   const toastText = await page.textContent('#toast');
   check(/a=bomb&b=lightning|コピー/.test(toastText), `共有: ${toastText}`);
+
+  // 10.5) オンライン: サーバーを立てて、2台(2つのページ)で同じ部屋に入り、同じ試合が流れるか
+  const port = 8700 + Math.floor(Math.random() * 200);
+  const game = spawn(process.execPath, [join(root, 'server/server.js')], { env: { ...process.env, PORT: String(port) }, stdio: 'ignore' });
+  try {
+    await new Promise((r) => setTimeout(r, 600));
+    const url = base + `?server=ws://127.0.0.1:${port}&speed=4`;
+    const page2 = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    page2.on('pageerror', (e) => errors.push('pageerror(2): ' + e.message));
+    await page2.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    for (const p of [page, page2]) {
+      await p.goto(url);
+      await p.click('[data-mode="online"]');
+    }
+    await page.fill('#onlineName', 'あお');
+    await page.click('#onlineCreate');
+    await page.waitForSelector('#onlineLobby:not([hidden])');
+    const code = (await page.textContent('#roomCode')).trim();
+    await page2.fill('#onlineName', 'あか');
+    await page2.fill('#onlineCode', code);
+    await page2.click('#onlineJoinBtn');
+    await page.waitForFunction(() => document.querySelectorAll('#lobbyList .lobby-row b').length === 2, null, { timeout: 10000 });
+    check(/^[A-Z0-9]{4}$/.test(code), `オンライン: 部屋 ${code} に2人(${(await page.textContent('#lobbyList')).slice(0, 30)})`);
+    await page.screenshot({ path: join(outDir, '8b-online-lobby.png') });
+    await page.click('#onlineStart');
+    const snap = (p) => p.evaluate(() => { const w = window.__weaponBattle.state.world; return w && `${w.seed}|${w.balls.map((b) => b.def.id).join(',')}`; });
+    await Promise.all([page, page2].map((p) => p.waitForFunction(() => window.__weaponBattle.state.world && window.__weaponBattle.state.world.t > 1, null, { timeout: 15000 })));
+    const [s1, s2] = [await snap(page), await snap(page2)];
+    check(s1 && s1 === s2, `オンライン: 2台で同じ試合 ${s1} / ${s2}`);
+    await page2.close();
+  } finally {
+    game.kill();
+  }
 
   // 11) 全武器を1対1と4人で少しずつ動かして、描画でエラーが出ないか
   const all = await page.evaluate(async () => (await import('./src/weapons.js')).WEAPONS.map((w) => w.id));
