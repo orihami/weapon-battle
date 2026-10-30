@@ -601,3 +601,21 @@ dialog { color: var(--ink); }
 .lobby-row.me { box-shadow: 0 0 0 3px #1e8449 inset; }
 .lobby-row canvas { width: 30px; height: 30px; }
 .lobby-row .host { font-size: 12px; font-weight: bold; }
+
+/* ⚡ 操作バトル */
+.online-lobby .live-start { background: #7b3fe0; }
+.live-pad { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.live-pad .hint { margin: 0; font-size: 12px; color: var(--muted); text-align: center; }
+.live-en { position: relative; height: 22px; border: 3px solid var(--line); border-radius: 11px; background: #fff; overflow: hidden; }
+.live-en i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #ffd23f, #ff9f1a); transition: width 0.1s linear; }
+.live-en span { position: relative; display: block; text-align: center; font-size: 13px; font-weight: bold; line-height: 16px; }
+.live-acts { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 6px; }
+.live-btn { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 64px; padding: 6px; background: var(--c); color: #fff; touch-action: manipulation; }
+.live-btn b { font-size: 17px; white-space: nowrap; }
+.live-btn small { font-size: 12px; opacity: 0.9; }
+.live-btn kbd { position: absolute; top: 3px; right: 6px; font: 11px var(--num); opacity: 0.6; }
+.live-btn.active { opacity: 1; box-shadow: 0 0 0 3px #ffd23f, 0 3px 0 var(--line); }
+.live-btn.cheer { min-height: 48px; font-size: 15px; }
+.live-emos { display: flex; justify-content: center; gap: 6px; }
+.live-emos .emo { min-height: 40px; min-width: 52px; padding: 2px 8px; font-size: 22px; touch-action: manipulation; }
+@media (hover: none) { .live-btn kbd { display: none; } }

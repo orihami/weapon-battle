@@ -2282,6 +2282,15 @@ export class Renderer {
           this.texts.push({ x: ball.x, y: ball.y - ball.r - 26, text: '逆境！', color: ball.def.color, life: 0.9, age: 0, size: 22, jp: true });
           this.rings.push({ x: ball.x, y: ball.y, r0: ball.r, r1: ball.r * 2.2, life: 0.35, age: 0, color: ball.def.color });
         }
+      } else if (e.type === 'live') {
+        // ⚡ 操作バトルの指示
+        const ball = world.balls[e.target];
+        const look = { dash: ['ダッシュ！', '#2f7de1'], guard: ['ガード！', '#2fa84f'], rage: ['覚醒！', '#e8484d'], cheer: ['⚡+', '#e0a600'] }[e.a];
+        if (ball && look) {
+          this.texts.push({ x: ball.x, y: ball.y - ball.r - 28, text: look[0], color: look[1], life: 0.8, age: 0, size: e.a === 'cheer' ? 18 : 24, jp: e.a !== 'cheer' });
+          if (e.a !== 'cheer') this.rings.push({ x: ball.x, y: ball.y, r0: ball.r, r1: ball.r * 2.4, life: 0.35, age: 0, color: look[1], strong: true });
+          if (e.a === 'rage') this.shake = Math.min(12, this.shake + 6);
+        }
       } else if (e.type === 'heal') {
         this.texts.push({ x: e.x, y: e.y - 40, text: '+' + Math.round(e.amount), color: '#2fc23a', life: 0.8, age: 0, size: 18 });
       } else if (e.type === 'parry' || e.type === 'block') {
@@ -2481,6 +2490,7 @@ export class Renderer {
         this.drawBall(ctx, b);
         this.drawOver(ctx, b);
         ctx.restore();
+        if (b.live) this.drawLive(ctx, b, t);
         if (b.pieT > 0) {
           // 顔にパイ
           b.pieT -= 1 / 60;
@@ -3152,6 +3162,34 @@ export class Renderer {
   }
 
   // ボールより上に描くもの(大器晩成の武器の今の姿など)
+  // ⚡ 操作バトル: ガード中は緑のバリア、覚醒中は赤いオーラ
+  drawLive(ctx, b, t) {
+    const st = b.live;
+    if (!(st.guard > 0 || st.rage > 0)) return;
+    ctx.save();
+    if (st.guard > 0) {
+      ctx.globalAlpha = 0.35 + 0.25 * Math.min(1, st.guard * 2);
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = '#2fa84f';
+      ctx.fillStyle = 'rgba(47,168,79,0.15)';
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r + 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    if (st.rage > 0) {
+      ctx.globalAlpha = 0.5 + 0.2 * Math.sin(t * 20);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#ff4a1a';
+      for (let k = 0; k < 2; k++) {
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.r + 6 + k * 7 + Math.sin(t * 14 + k) * 3, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
   drawOver(ctx, b) {
     const id = b.def.id;
     const w = b.w;

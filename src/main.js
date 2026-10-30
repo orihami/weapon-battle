@@ -1,5 +1,5 @@
 // 画面の操作。ホーム → 準備 → バトル の画面を切り替えて遊ぶ。
-import { createMelee, step, DT } from './engine.js';
+import { createMelee, step, DT, HARD_LIMIT } from './engine.js';
 import { WEAPONS, WEAPON_BY_ID } from './weapons.js';
 import { Renderer, drawIcon } from './render.js';
 import { Sound } from './sound.js';
@@ -9,6 +9,7 @@ import { RARITY, SKILLS, SKILL_BY_ID, cpuPick, awakenSuffix, fusionsReady, fusio
 import { createRounds, fighters, reportRound, pickSkills } from './rounds.js';
 import { GENRES, genreOf } from './genres.js';
 import { Net } from './net.js';
+import { ACTIONS, enableLive, LiveClock, LiveHost, liveLead, LIVE_MAX_EN, LIVE_TICK_MS } from './live.js';
 import { createRaid, raidMatch, reportRaid, pickRaidCards, bossOf, combosOf, DIFFICULTY } from './raid.js';
 
 const $ = (id) => document.getElementById(id);
@@ -273,6 +274,8 @@ function leaveBattle() {
   state.teams = null;
   state.auto = false;
   state.world = null;
+  state.live = null;
+  renderLivePad();
   for (const d of document.querySelectorAll('dialog[open]')) d.close();
 }
 
@@ -462,6 +465,7 @@ function newBattle() {
   state.seed = null;
   state.world = createMelee(state.fighters, seed, { boosts: state.boosts, teams: state.teams || undefined });
   state.running = false;
+  state.live = null;
   renderer.particles = [];
   renderer.texts = [];
   renderer.rings = [];
@@ -482,7 +486,7 @@ function newBattle() {
 function play() {
   sound.unlock();
   const w = state.world;
-  if (!w || w.over) return;
+  if (!w || w.over || state.live) return;
   state.running = !state.running;
   updatePlay();
 }
@@ -490,8 +494,9 @@ function play() {
 function updatePlay() {
   const btn = $('playBtn');
   const w = state.world;
-  btn.disabled = !w || w.over;
-  btn.textContent = !w || w.over ? '決着' : state.running ? '⏸ 一時停止' : w.t > 0 ? '▶ 再開' : '▶ スタート';
+  btn.disabled = !w || w.over || !!state.live;
+  $('speedBtn').disabled = !!state.live;
+  btn.textContent = !w || w.over ? '決着' : state.live ? '⚡ 操作バトル中' : state.running ? '⏸ 一時停止' : w.t > 0 ? '▶ 再開' : '▶ スタート';
 }
 
 function nameOf(i) {
@@ -569,8 +574,9 @@ function updateHud() {
     const rows = ball.def.stats(ball, w);
     // 上限を超えて成長した分は「威力」として表示する
     if (ball.power > 1.005) rows.push(['威力', '×' + ball.power.toFixed(2)]);
+    if (ball.live) rows.push(['⚡', ball.live.en.toFixed(1)]);
     const stats = rows.map(([k, v]) => `${k} <b>${v}</b>`).join('<em>・</em>');
-    const chips = ball.skills.map((sk) => `<span title="${sk.def.name}" style="border-color:${RARITY[sk.def.rarity].color}">${sk.def.icon}</span>`).join('');
+    const chips = ball.skills.filter((sk) => !sk.def.hidden).map((sk) => `<span title="${sk.def.name}" style="border-color:${RARITY[sk.def.rarity].color}">${sk.def.icon}</span>`).join('');
     const key = `${Math.ceil(ball.hp)}|${hpPct.toFixed(1)}|${stats}|${chips}|${ball.dead}`;
     if (hudCache[i] === key) return;
     hudCache[i] = key;
@@ -977,6 +983,8 @@ net.on((m) => {
       net.post({ kind: 'pick', weapon: online.picks[net.you] });
     }
     if (state.screen === 'online') renderOnline();
+    // 操作バトル中にホームが抜けたら、次のホームが時計を引きつぐ
+    if (state.live && net.isHost && !state.live.host) startLiveHost(state.live, state.live.clock.upto);
   }
   if (m.t === 'msg' && m.data) onlineMessage(m.from, m.data);
 });
@@ -1005,18 +1013,140 @@ function onlineMessage(from, d) {
       [],
       d.order.map((o, i) => ({ text: o.name, color: PLAYER_COLORS[i % PLAYER_COLORS.length] })),
     );
-    play();
+    online.lastLive = !!d.live;
+    stopLiveHost();
+    if (d.live) {
+      // ⚡ 操作バトル: ホームの時計に合わせて全員で進める
+      enableLive(state.world);
+      state.live = { clock: new LiveClock(state.world), order: d.order, me: d.order.findIndex((o) => o.id === net.you), host: null, lead: liveLead(state.speed) };
+      if (net.isHost) startLiveHost(state.live, 0);
+      sound.unlock();
+      state.running = true;
+      updatePlay();
+      renderLivePad();
+      resize();
+    } else play();
+  }
+  if (d.kind === 'tick' && state.live) state.live.clock.receive(d);
+  if (d.kind === 'act' && state.live) {
+    const lv = state.live;
+    const i = lv.order.findIndex((o) => o.id === from);
+    if (d.a === 'cheer') {
+      // 応援は見ている人(試合に出ていない人)だけ。全員のスマホに📣を出す
+      const to = Number(d.to);
+      const b = state.world && state.world.balls[to];
+      if (b && i < 0) renderer.texts.push({ x: b.x + (Math.random() - 0.5) * 40, y: b.y - b.r - 20, text: '📣', color: '#333333', life: 0.9, age: 0, size: 26 });
+      if (lv.host && i < 0) lv.host.add({ i: -1, a: 'cheer', to });
+    } else if (lv.host && i >= 0 && ACTIONS[d.a]) lv.host.add({ i, a: d.a });
+  }
+  if (d.kind === 'emo' && state.world && EMOS.includes(d.e)) {
+    // スタンプ(見た目だけ。試合には関係しない)
+    const w = state.world;
+    const i = state.live ? state.live.order.findIndex((o) => o.id === from) : -1;
+    const b = w.balls[i];
+    const x = b && !b.dead ? b.x : w.size * (0.2 + Math.random() * 0.6);
+    const y = b && !b.dead ? b.y - b.r - 30 : w.size * 0.15;
+    renderer.texts.push({ x, y, text: d.e, color: '#333333', life: 1.2, age: 0, size: 34 });
+  }
+}
+
+// ---- ⚡ 操作バトル ----
+
+const EMOS = ['👏', '🔥', '😱', '😂'];
+let liveTimer = null;
+
+// ホーム: 0.1秒ごとに「ここまで進めてよい」と操作を全員へ配る
+function startLiveHost(lv, from) {
+  stopLiveHost();
+  lv.host = new LiveHost(from, lv.lead);
+  const t0 = performance.now() - (from * DT * 1000) / state.speed;
+  const speed = state.speed;
+  const end = HARD_LIMIT / DT + lv.lead * 4;
+  const tick = () => {
+    const target = ((performance.now() - t0) / 1000) * speed / DT;
+    // 試合が終わったら止める(ホームがバトル画面から出ても、ほかの人の試合が止まらないよう時計は進める)
+    if (lv.clock.world.over || target > end || !net.connected) return stopLiveHost();
+    net.post({ kind: 'tick', ...lv.host.tick(target, lv.clock) });
+  };
+  tick();
+  liveTimer = setInterval(tick, LIVE_TICK_MS);
+}
+
+function stopLiveHost() {
+  clearInterval(liveTimer);
+  liveTimer = null;
+}
+
+function liveAct(a, to) {
+  sound.unlock();
+  net.post(a === 'cheer' ? { kind: 'act', a, to } : { kind: 'act', a });
+}
+
+// バトル画面の下の操作ボタン
+function renderLivePad() {
+  const pad = $('livePad');
+  const lv = state.live;
+  pad.hidden = !lv;
+  if (!lv) return;
+  const acts = $('liveActs');
+  if (lv.me >= 0) {
+    $('liveEn').hidden = false;
+    acts.replaceChildren(
+      ...Object.entries(ACTIONS).map(([key, a], k) => {
+        const b = el('button', { type: 'button', className: 'live-btn', title: a.desc });
+        b.dataset.act = key;
+        b.style.setProperty('--c', a.color);
+        b.append(el('b', { textContent: `${a.icon} ${a.name}` }), el('small', { textContent: `⚡${a.cost}` }), el('kbd', { textContent: String(k + 1) }));
+        b.addEventListener('click', () => liveAct(key));
+        return b;
+      }),
+    );
+  } else {
+    // 見ている人: 応援でエネルギーを送る
+    $('liveEn').hidden = true;
+    acts.replaceChildren(
+      ...lv.order.map((o, i) => {
+        const b = el('button', { type: 'button', className: 'live-btn cheer', textContent: `📣 ${o.name}` });
+        b.style.setProperty('--c', PLAYER_COLORS[i % PLAYER_COLORS.length]);
+        b.addEventListener('click', () => liveAct('cheer', i));
+        return b;
+      }),
+    );
+  }
+  $('liveEmos').replaceChildren(
+    ...EMOS.map((e) => {
+      const b = el('button', { type: 'button', className: 'emo', textContent: e });
+      b.addEventListener('click', () => net.post({ kind: 'emo', e }));
+      return b;
+    }),
+  );
+  $('liveHint').textContent = lv.me >= 0 ? '⚡がたまったら押す(時間・ダメージを受ける・応援でたまる)' : '見ている人は📣応援で選手に⚡を送れる';
+  updateLivePad();
+}
+
+function updateLivePad() {
+  const lv = state.live;
+  const ball = lv && state.world && state.world.balls[lv.me];
+  if (!ball) return;
+  const st = ball.live;
+  $('liveEnBar').style.width = (st.en / LIVE_MAX_EN) * 100 + '%';
+  $('liveEnText').textContent = ball.dead ? 'OUT' : `⚡ ${st.en.toFixed(1)} / ${LIVE_MAX_EN}`;
+  for (const b of $('liveActs').children) {
+    const key = b.dataset.act;
+    const on = (key === 'guard' && st.guard > 0) || (key === 'rage' && st.rage > 0);
+    b.disabled = ball.dead || state.world.over || on || st.en < ACTIONS[key].cost;
+    b.classList.toggle('active', on);
   }
 }
 
 function onlineButtons() {
   const list = [{ text: '部屋にもどる', primary: true, onClick: () => show('online') }];
-  if (net.isHost) list.unshift({ text: '同じ武器でもう一度', primary: true, onClick: onlineStart });
+  if (net.isHost) list.unshift({ text: '同じ武器でもう一度', primary: true, onClick: () => onlineStart(online.lastLive) });
   return list;
 }
 
-// ホーム: 全員の選んだ武器で試合を始める
-function onlineStart() {
+// ホーム: 全員の選んだ武器で試合を始める(live: ⚡ 操作バトル)
+function onlineStart(live = false) {
   if (!net.isHost || !net.room) return;
   const order = net.room.members
     .filter((x) => online.picks[x.id])
@@ -1026,7 +1156,7 @@ function onlineStart() {
     toast('2人以上そろうと始められます');
     return;
   }
-  net.post({ kind: 'start', order, seed: (Math.random() * 2 ** 32) >>> 0, speed: state.speed, version: $('version').textContent });
+  net.post({ kind: 'start', order, seed: (Math.random() * 2 ** 32) >>> 0, speed: state.speed, version: $('version').textContent, live: live === true });
 }
 
 function renderOnline() {
@@ -1053,8 +1183,12 @@ function renderOnline() {
       return row;
     }),
   );
+  const n = Math.min(ONLINE_MAX_FIGHTERS, r.members.length);
   $('onlineStart').hidden = !net.isHost;
-  $('onlineStart').textContent = net.isHost ? `バトル開始！(${Math.min(ONLINE_MAX_FIGHTERS, r.members.length)}人)` : '';
+  $('onlineStart').textContent = net.isHost ? `👀 見るバトル開始！(${n}人)` : '';
+  $('onlineLive').hidden = !net.isHost;
+  $('onlineLive').textContent = net.isHost ? `⚡ 操作バトル開始！(${n}人)` : '';
+  $('onlineWait').hidden = net.isHost;
 }
 
 // ---- トーナメント ----
@@ -1358,15 +1492,29 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   const w = state.world;
+  const lv = state.live;
   if (w && state.running && !w.over) {
     acc += dt * state.speed;
     let n = 0;
-    while (acc >= DT && n < 600) {
-      step(w);
-      acc -= DT;
-      n++;
-      if (w.over) break;
-    }
+    if (lv) {
+      // 操作バトル: ホームの時計(upto)より先へは進まない。遅れていたら追いつく
+      const want = Math.min(600, Math.floor(acc / DT) + Math.max(0, lv.clock.behind - lv.lead * 2));
+      while (n < want && lv.clock.canStep()) {
+        lv.clock.step();
+        n++;
+      }
+      acc = Math.min(Math.max(0, acc - n * DT), 0.5);
+      if (lv.clock.desync && !lv.warned) {
+        lv.warned = true;
+        toast('ほかのスマホと試合がずれました(版がちがうかもしれません。ページを再読み込みしてください)');
+      }
+    } else
+      while (acc >= DT && n < 600) {
+        step(w);
+        acc -= DT;
+        n++;
+        if (w.over) break;
+      }
   } else {
     acc = 0;
   }
@@ -1380,6 +1528,7 @@ function frame(now) {
     renderer.update(dt * (state.running ? state.speed : 1));
     if (w) renderer.draw(w);
     updateHud();
+    if (lv) updateLivePad();
   }
   requestAnimationFrame(frame);
 }
@@ -1388,7 +1537,7 @@ function frame(now) {
 function resize() {
   if (state.screen !== 'battle') return;
   const wrap = $('arenaWrap');
-  const used = document.querySelector('#battle .bar').offsetHeight + $('hud').offsetHeight + document.querySelector('#battle .controls').offsetHeight + 36;
+  const used = document.querySelector('#battle .bar').offsetHeight + $('hud').offsetHeight + document.querySelector('#battle .controls').offsetHeight + $('livePad').offsetHeight + 36;
   const byW = Math.min(window.innerWidth, 860) - 24;
   const byH = window.innerHeight - used;
   const size = Math.round(Math.max(260, Math.min(byW, byH, 860)));
@@ -1433,7 +1582,15 @@ function init() {
   $('goBtn').addEventListener('click', begin);
   $('onlineCreate').addEventListener('click', () => onlineGo('create'));
   $('onlineJoinBtn').addEventListener('click', () => onlineGo('join'));
-  $('onlineStart').addEventListener('click', onlineStart);
+  $('onlineStart').addEventListener('click', () => onlineStart(false));
+  $('onlineLive').addEventListener('click', () => onlineStart(true));
+  // 操作バトルはキーボードの 1/2/3 でも押せる
+  document.addEventListener('keydown', (e) => {
+    const lv = state.live;
+    if (!lv || lv.me < 0 || state.screen !== 'battle' || e.repeat) return;
+    const key = Object.keys(ACTIONS)[Number(e.key) - 1];
+    if (key) liveAct(key);
+  });
   $('onlineLeave').addEventListener('click', () => {
     net.close();
     online.picks = {};

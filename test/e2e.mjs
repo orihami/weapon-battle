@@ -341,6 +341,16 @@ try {
     await Promise.all([page, page2].map((p) => p.waitForFunction(() => window.__weaponBattle.state.world && window.__weaponBattle.state.world.t > 1, null, { timeout: 15000 })));
     const [s1, s2] = [await snap(page), await snap(page2)];
     check(s1 && s1 === s2, `オンライン: 2台で同じ試合 ${s1} / ${s2}`);
+    // ⚡ 操作バトル: あかが途中でダッシュを押しても、2台で最後まで同じ試合になるか
+    await page.evaluate(() => document.getElementById('onlineLive').click());
+    await Promise.all([page, page2].map((p) => p.waitForFunction(() => { const s = window.__weaponBattle.state; return s.live && s.world && s.world.t > 0.5; }, null, { timeout: 15000 })));
+    await page2.click('#liveActs [data-act="dash"]');
+    await page.screenshot({ path: join(outDir, '8c-online-live.png') });
+    const fin = (p) => p.evaluate(() => { const w = window.__weaponBattle.state.world; return `${w.winner}|${w.t.toFixed(4)}|${w.balls.map((b) => b.hp.toFixed(3) + ':' + b.live.used).join(',')}`; });
+    await Promise.all([page, page2].map((p) => p.waitForFunction(() => window.__weaponBattle.state.world && window.__weaponBattle.state.world.over, null, { timeout: 120000 })));
+    const [f1, f2] = [await fin(page), await fin(page2)];
+    check(f1 === f2 && /:1/.test(f2.split(',')[1]), `オンライン: 操作バトルで2台とも同じ結果(ダッシュ1回) ${f1} / ${f2}`);
+    await page2.screenshot({ path: join(outDir, '8d-online-live-end.png') });
     await page2.close();
   } finally {
     game.kill();

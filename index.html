@@ -116,6 +116,12 @@
       <button type="button" id="speedBtn" aria-label="再生速度">×1</button>
       <button type="button" id="shareBtn" aria-label="この対戦を共有">🔗 共有</button>
     </div>
+    <div class="live-pad" id="livePad" hidden>
+      <div class="live-en" id="liveEn"><i id="liveEnBar"></i><span id="liveEnText"></span></div>
+      <div class="live-acts" id="liveActs"></div>
+      <div class="live-emos" id="liveEmos"></div>
+      <p class="hint" id="liveHint"></p>
+    </div>
     <p class="toast" id="toast" hidden></p>
     <div class="side-info" id="sideInfo"></div>
     <div class="bracket" id="bracket"></div>
@@ -172,7 +178,10 @@
       <p class="hint">このコードを友だちに伝えて、同じ画面から「入る」</p>
       <div class="lobby-list" id="lobbyList"></div>
       <button type="button" id="onlinePick">🗡️ 自分の武器を選ぶ</button>
-      <button type="button" class="primary" id="onlineStart">バトル開始！(ホーム)</button>
+      <button type="button" class="primary live-start" id="onlineLive">⚡ 操作バトル開始！(ホーム)</button>
+      <p class="hint" id="onlineLiveHint">⚡ 操作バトル: 試合の途中で、自分のボールに 💨ダッシュ・🛡️ガード・🔥覚醒 を指示できる。見ている人は📣応援でエネルギーを送れる</p>
+      <button type="button" class="primary" id="onlineStart">👀 見るバトル開始！(ホーム)</button>
+      <p class="hint" id="onlineWait" hidden>ホーム(👑)が始めるのを待っています</p>
       <button type="button" id="onlineLeave">部屋から出る</button>
     </div>
   </section>
