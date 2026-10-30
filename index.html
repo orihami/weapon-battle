@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ウェポンバトル</title>
+  <meta name="description" content="武器を持ったボール同士が戦うシミュレーション。攻撃が当たるたびに武器が強くなる。">
+  <meta name="theme-color" content="#fbf2e4">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='55' r='40' fill='%23e8484d' stroke='%23111' stroke-width='6'/%3E%3Cpath d='M58 10 L90 6 L86 38 Z' fill='%23e9edf2' stroke='%23111' stroke-width='5'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=DotGothic16&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=57ad6f5">
+</head>
+<body>
+  <!-- ホーム: 遊び方を選ぶ -->
+  <section class="screen home" id="home">
+    <header class="logo">
+      <h1>WEAPON<br>BATTLE</h1>
+      <p>当てるほど強くなる、武器ボールの戦い</p>
+    </header>
+    <div class="modes">
+      <button type="button" class="mode big" data-mode="duel" style="--c:#e8484d">
+        <span class="m-icon">⚔️</span><b>1対1</b><small>2つの武器を選んで対戦</small>
+      </button>
+      <button type="button" class="mode big" data-mode="royale" style="--c:#2f7de1">
+        <span class="m-icon">💥</span><b>バトルロイヤル</b><small>3〜4人が同時に戦う。最後の1人が勝ち</small>
+      </button>
+      <button type="button" class="mode" data-mode="rounds" style="--c:#2fa84f">
+        <span class="m-icon">🃏</span><b>ラウンズ</b><small>2〜4人同時。負けた人がスキルカードで強くなる</small>
+      </button>
+      <button type="button" class="mode" data-mode="chal" style="--c:#8b3fe0">
+        <span class="m-icon">🗡️</span><b>チャレンジ</b><small>1人で連戦。勝つたびにスキル <span id="bestText"></span></small>
+      </button>
+      <button type="button" class="mode" data-mode="raid" style="--c:#c01f1f">
+        <span class="m-icon">🐉</span><b>ボス・レイド</b><small>みんなで協力して巨大ボスに挑む <span id="raidBestText"></span></small>
+      </button>
+      <button type="button" class="mode" data-mode="tour" style="--c:#e0a600">
+        <span class="m-icon">🏆</span><b>トーナメント</b><small>8人・16人の勝ち抜き戦</small>
+      </button>
+      <button type="button" class="mode big" data-mode="online" style="--c:#1e8449">
+        <span class="m-icon">📡</span><b>みんなでバトル(オンライン)</b><small>別々のスマホで同じ部屋に入り、それぞれ武器を選んで同じ試合を見る</small>
+      </button>
+      <button type="button" class="mode" data-mode="auto" style="--c:#16a3a3">
+        <span class="m-icon">📺</span><b>連続観戦</b><small>ランダムな対戦をずっと流す</small>
+      </button>
+    </div>
+    <button type="button" class="book-open" id="bookOpen">📖 武器ずかん・ランキング <small id="bookCount"></small></button>
+    <p class="version">版: <span id="version">57ad6f5</span></p>
+  </section>
+
+  <!-- 準備: 武器・人数などを決める -->
+  <section class="screen setup" id="setup" hidden>
+    <header class="bar">
+      <button type="button" class="icon-btn back" data-back aria-label="もどる">←</button>
+      <h2 id="setupTitle">準備</h2>
+      <span class="bar-space"></span>
+    </header>
+    <p class="setup-hint" id="setupHint"></p>
+    <div class="opt-row" id="countRow">
+      <span class="opt-label">人数</span>
+      <div class="seg" id="countSeg"></div>
+    </div>
+    <div class="opt-row" id="targetRow">
+      <span class="opt-label">優勝</span>
+      <div class="seg" id="targetSeg">
+        <button type="button" data-target="3">3勝</button>
+        <button type="button" data-target="5">5勝</button>
+        <button type="button" data-target="7">7勝</button>
+      </div>
+    </div>
+    <div class="opt-row" id="diffRow">
+      <span class="opt-label">強さ</span>
+      <div class="seg" id="diffSeg">
+        <button type="button" data-diff="easy">かんたん</button>
+        <button type="button" data-diff="normal">ふつう</button>
+        <button type="button" data-diff="hard">むずかしい</button>
+      </div>
+    </div>
+    <div class="opt-row" id="sizeRow">
+      <span class="opt-label">人数</span>
+      <div class="seg" id="sizeSeg">
+        <button type="button" data-size="8">8人</button>
+        <button type="button" data-size="16">16人</button>
+      </div>
+    </div>
+    <div class="slots" id="slots"></div>
+    <div class="setup-tools" id="setupTools">
+      <button type="button" id="randomAll">🎲 全員ランダム</button>
+      <button type="button" id="swapBtn">⇄ 入れ替え</button>
+    </div>
+    <div class="go-wrap">
+      <button type="button" class="primary go" id="goBtn">バトル開始！</button>
+    </div>
+  </section>
+
+  <!-- バトル -->
+  <section class="screen battle" id="battle" hidden>
+    <header class="bar">
+      <button type="button" class="icon-btn back" data-back aria-label="もどる">←</button>
+      <h2 id="battleTitle"></h2>
+      <button type="button" class="icon-btn" id="soundBtn" aria-label="効果音">🔊</button>
+    </header>
+    <div class="hud" id="hud"></div>
+    <div class="arena-wrap" id="arenaWrap">
+      <canvas id="arena" aria-label="対戦フィールド"></canvas>
+      <div class="timer" id="timer">0.0</div>
+      <div class="overlay" id="overlay" hidden>
+        <p class="result" id="resultText"></p>
+        <p class="result-sub" id="resultSub"></p>
+        <div class="overlay-buttons" id="overlayButtons"></div>
+      </div>
+    </div>
+    <div class="controls">
+      <button type="button" class="primary" id="playBtn">▶ スタート</button>
+      <button type="button" id="speedBtn" aria-label="再生速度">×1</button>
+      <button type="button" id="shareBtn" aria-label="この対戦を共有">🔗 共有</button>
+    </div>
+    <div class="live-pad" id="livePad" hidden>
+      <div class="live-en" id="liveEn"><i id="liveEnBar"></i><span id="liveEnText"></span></div>
+      <div class="live-acts" id="liveActs"></div>
+      <div class="live-emos" id="liveEmos"></div>
+      <p class="hint" id="liveHint"></p>
+    </div>
+    <p class="toast" id="toast" hidden></p>
+    <div class="side-info" id="sideInfo"></div>
+    <div class="bracket" id="bracket"></div>
+  </section>
+
+  <!-- 武器ずかん -->
+  <section class="screen book" id="book" hidden>
+    <header class="bar">
+      <button type="button" class="icon-btn back" data-back aria-label="もどる">←</button>
+      <h2>武器ずかん</h2>
+      <span class="bar-space"></span>
+    </header>
+    <div class="seg book-tabs" id="bookTabs">
+      <button type="button" data-book="weapons" class="on">武器</button>
+      <button type="button" data-book="skills">カード・進化</button>
+    </div>
+    <div class="book-tools">
+      <input type="search" id="bookSearch" placeholder="さがす" aria-label="さがす">
+      <select id="bookSort" aria-label="並び">
+        <option value="no">番号順</option>
+        <option value="rate">勝率順(ランキング)</option>
+        <option value="games">試合数順</option>
+      </select>
+    </div>
+    <p class="hint" id="bookHint">数字は今までの勝敗です(このブラウザにだけ保存)。タップするとその武器で1対1の準備へ。</p>
+    <div class="book-grid" id="bookGrid"></div>
+    <div class="skill-book" id="skillBook" hidden></div>
+  </section>
+
+  <!-- オンライン: 部屋を作る・入る・武器を選ぶ -->
+  <section class="screen online" id="online" hidden>
+    <header class="bar">
+      <button type="button" class="icon-btn back" data-back aria-label="もどる">←</button>
+      <h2>📡 みんなでバトル</h2>
+      <span class="bar-space"></span>
+    </header>
+    <div class="online-join" id="onlineJoin">
+      <p class="setup-hint">別々のスマホで同じ部屋に入って、それぞれ武器を選びます。部屋を作った人が始めると、全員のスマホで同じ試合が流れます。</p>
+      <label class="field">名前 <input id="onlineName" maxlength="12" placeholder="ななし"></label>
+      <button type="button" class="primary" id="onlineCreate">部屋を作る</button>
+      <div class="join-row">
+        <input id="onlineCode" maxlength="4" placeholder="部屋コード" autocapitalize="characters">
+        <button type="button" id="onlineJoinBtn">入る</button>
+      </div>
+      <details class="server-box" id="serverBox">
+        <summary>サーバーの設定</summary>
+        <label class="field">サーバー <input id="onlineServer" placeholder="wss://〜"></label>
+        <small>サーバーのたて方は server/README.md を見てください。</small>
+      </details>
+      <p class="online-status" id="onlineStatus"></p>
+    </div>
+    <div class="online-lobby" id="onlineLobby" hidden>
+      <p class="room-code">部屋コード <b id="roomCode"></b></p>
+      <p class="hint">このコードを友だちに伝えて、同じ画面から「入る」</p>
+      <div class="lobby-list" id="lobbyList"></div>
+      <button type="button" id="onlinePick">🗡️ 自分の武器を選ぶ</button>
+      <button type="button" class="primary live-start" id="onlineLive">⚡ 操作バトル開始！(ホーム)</button>
+      <p class="hint" id="onlineLiveHint">⚡ 操作バトル: 試合の途中で、自分のボールに 💨ダッシュ・🛡️ガード・🔥覚醒 を指示できる。見ている人は📣応援でエネルギーを送れる</p>
+      <button type="button" class="primary" id="onlineStart">👀 見るバトル開始！(ホーム)</button>
+      <p class="hint" id="onlineWait" hidden>ホーム(👑)が始めるのを待っています</p>
+      <button type="button" id="onlineLeave">部屋から出る</button>
+    </div>
+  </section>
+
+  <!-- 武器を選ぶ(全画面) -->
+  <dialog id="picker">
+    <div class="picker-head">
+      <h2 id="pickerTitle">武器をえらぶ</h2>
+      <button type="button" class="icon-btn" id="pickerClose" aria-label="閉じる">✕</button>
+    </div>
+    <div class="picker-tools">
+      <input type="search" id="pickerSearch" placeholder="名前でさがす" aria-label="名前でさがす">
+      <button type="button" id="pickerRandom">🎲 おまかせ</button>
+    </div>
+    <div class="tabs" id="pickerTabs"></div>
+    <div class="picker-grid" id="pickerGrid"></div>
+  </dialog>
+
+  <!-- スキルカードを選ぶ -->
+  <dialog id="cardDialog">
+    <p class="card-who" id="cardWho"></p>
+    <p class="card-sub" id="cardSub"></p>
+    <div class="card-grid" id="cardGrid"></div>
+    <p class="card-mine" id="cardMine"></p>
+  </dialog>
+
+  <script type="module" src="src/main.js?v=57ad6f5"></script>
+</body>
+</html>
