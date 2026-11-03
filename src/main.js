@@ -1,24 +1,26 @@
 // 画面の操作。ホーム → 準備 → バトル の画面を切り替えて遊ぶ。
-import { createMelee, step, DT, HARD_LIMIT } from './engine.js';
+import { createMelee, step, DT, mulberry32 } from './engine.js';
 import { WEAPONS, WEAPON_BY_ID } from './weapons.js';
 import { Renderer, drawIcon } from './render.js';
 import { Sound } from './sound.js';
 import { createTournament, nextMatch, reportWinner, pickEntries, roundName } from './tournament.js';
-import { newChallenge, enemyBoost, offerCards, takeCards, takeAwaken, isBoss } from './challenge.js';
-import { RARITY, SKILLS, SKILL_BY_ID, cpuPick, awakenSuffix, fusionsReady, fusionsNear } from './skills.js';
+import { enemyBoost, offerCards, takeAwaken, isBoss } from './challenge.js';
+import { RARITY, SKILLS, SKILL_BY_ID, cpuPick, awakenSuffix, fusionsReady, fusionsNear, addSkills } from './skills.js';
 import { createRounds, fighters, reportRound, pickSkills } from './rounds.js';
 import { GENRES, genreOf } from './genres.js';
 import { Net } from './net.js';
-import { ACTIONS, enableLive, LiveClock, LiveHost, liveLead, LIVE_MAX_EN, LIVE_TICK_MS } from './live.js';
+import { fmtNum, parseNum } from './format.js';
 import { createRaid, raidMatch, reportRaid, pickRaidCards, bossOf, combosOf, DIFFICULTY } from './raid.js';
 
 const $ = (id) => document.getElementById(id);
-const SPEEDS = [1, 2, 4];
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+const speedText = (v) => '×' + ({ 0.25: '¼', 0.5: '½' }[v] || v);
 const RECORD_KEY = 'weapon-battle-records';
 const BEST_KEY = 'weapon-battle-challenge-best';
 const RAID_BEST_KEY = 'weapon-battle-raid-best';
 const SERVER_KEY = 'weapon-battle-server';
 const NAME_KEY = 'weapon-battle-name';
+const AUTO_KEY = 'weapon-battle-auto';
 // オンラインで1試合に出られる人数(それより多い人は見るだけ)
 const ONLINE_MAX_FIGHTERS = 6;
 const net = new Net();
@@ -26,15 +28,14 @@ const PLAYER_COLORS = ['#e8484d', '#2f7de1', '#2fa84f', '#e0a600'];
 
 // 遊び方ごとの設定。counts: 選べる人数 / fixed: 人数が決まっている
 const MODES = {
-  duel: { title: '⚔️ 1対1', fixed: 2, go: 'バトル開始！', hint: '武器をタップして変える。🎲 でその人だけランダム。' },
-  royale: { title: '💥 バトルロイヤル', counts: [3, 4], go: 'バトル開始！', hint: '全員が広いフィールドで同時に戦います。それぞれ一番近い相手をねらい、最後に残った1人の勝ち。' },
+  battle: { title: '⚔️ バトル', counts: [2, 3, 4], go: 'バトル開始！', hint: '2人なら1対1、3〜4人ならバトルロイヤル(全員が同時に戦い、最後に残った1人の勝ち)。' },
   rounds: {
     title: '🃏 ラウンズ',
     counts: [2, 3, 4],
     go: 'ラウンズ開始！',
-    hint: '全員同時に戦い、勝った人に★。負けた人はみんなスキルカードを選んで強くなる(3回目ごとは大進化で2枚)。1台を交代で操作します。',
+    hint: '全員同時に戦い、勝った人に★。負けた人はみんなスキルカードを選んで強くなる(3回目ごとは大進化で2枚)。',
   },
-  chal: { title: '🗡️ チャレンジ', fixed: 1, go: '挑戦する！', hint: 'この武器で、だんだん強くなる敵と連戦。勝つたびにスキルカード、5ステージごとにボス(倒すと大進化)。負けたら終わり。' },
+  chal: { title: '🗡️ チャレンジ', counts: [1, 2, 3, 4], go: '挑戦する！', hint: 'だんだん強くなる敵と連戦。勝つたびにスキルカード、5ステージごとにボス(倒すと武器進化と大進化)。2人以上は同じ数の敵とチーム戦。負けたら終わり。' },
   raid: {
     title: '🐉 ボス・レイド',
     counts: [2, 3, 4],
@@ -77,9 +78,11 @@ const sound = new Sound();
 
 const state = {
   screen: 'home',
-  mode: 'duel',
+  mode: 'battle',
   slots: [], // 準備画面の各プレイヤー { weapon, cpu }
-  count: { duel: 2, royale: 4, rounds: 2, chal: 1, raid: 2 },
+  count: { battle: 2, rounds: 2, chal: 1, raid: 2 },
+  sess: null, // 今の進め方(種つきの乱数・オンラインのカード選び)
+  autoPick: false, // 🤖 オート: カードを自動でランダムに選んでどんどん進む
   difficulty: 'normal',
   target: 5,
   tourSize: 8,
@@ -240,7 +243,11 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function show(screen, push = true) {
-  if (state.screen === 'battle' && screen !== 'battle') leaveBattle();
+  if (state.screen === 'battle' && screen !== 'battle') {
+    // オンラインの途中で抜けたら知らせる(このあとのカードはホームが代わりに選ぶ)
+    if (isOnline()) net.post({ kind: 'quit' });
+    leaveBattle();
+  }
   if (push && state.screen !== screen) history.pushState({ screen }, '');
   for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== screen;
   state.screen = screen;
@@ -274,8 +281,7 @@ function leaveBattle() {
   state.teams = null;
   state.auto = false;
   state.world = null;
-  state.live = null;
-  renderLivePad();
+  state.sess = null;
   for (const d of document.querySelectorAll('dialog[open]')) d.close();
 }
 
@@ -352,16 +358,16 @@ function renderSetup() {
   for (const b of $('targetSeg').children) b.classList.toggle('on', Number(b.dataset.target) === state.target);
   $('sizeRow').hidden = mode !== 'tour';
   for (const b of $('sizeSeg').children) b.classList.toggle('on', Number(b.dataset.size) === state.tourSize);
-  $('setupTools').hidden = mode === 'tour' || mode === 'chal';
-  $('swapBtn').hidden = mode !== 'duel';
-
   const n = mode === 'tour' ? 0 : slotCount();
+  $('setupTools').hidden = mode === 'tour' || n < 2;
+  $('swapBtn').hidden = mode !== 'battle' || n !== 2;
   const box = $('slots');
   box.replaceChildren();
   state.slots.slice(0, n).forEach((s, i) => {
     const slot = el('div', { className: 'slot' });
-    slot.style.setProperty('--c', mode === 'chal' ? '#8b3fe0' : PLAYER_COLORS[i]);
-    const tag = el('span', { className: 'ptag', textContent: mode === 'chal' ? 'YOU' : `P${i + 1}` });
+    const solo = mode === 'chal' && n === 1;
+    slot.style.setProperty('--c', solo ? '#8b3fe0' : PLAYER_COLORS[i]);
+    const tag = el('span', { className: 'ptag', textContent: solo ? 'YOU' : `P${i + 1}` });
     const pickBtn = el(
       'button',
       { type: 'button', className: 'slot-pick' },
@@ -372,7 +378,7 @@ function renderSetup() {
     pickBtn.setAttribute('aria-label', `P${i + 1}の武器(${s.weapon.name})を変える`);
     pickBtn.addEventListener('click', () =>
       openPicker(
-        mode === 'chal' ? '挑戦する武器をえらぶ' : `P${i + 1} の武器をえらぶ`,
+        solo ? '挑戦する武器をえらぶ' : `P${i + 1} の武器をえらぶ`,
         (def) => {
           s.weapon = def;
           renderSetup();
@@ -390,7 +396,7 @@ function renderSetup() {
       renderSetup();
     });
     const side = el('div', { className: 'slot-side' }, dice);
-    if (mode === 'rounds' || mode === 'raid') {
+    if (mode === 'rounds' || mode === 'raid' || (mode === 'chal' && i > 0)) {
       const who = el('button', { type: 'button', className: 'slot-who' + (s.cpu ? ' cpu' : ''), textContent: s.cpu ? '🤖 CPU' : '🙂 人' });
       who.addEventListener('click', () => {
         s.cpu = !s.cpu;
@@ -418,35 +424,19 @@ function renderSetup() {
 function begin() {
   sound.unlock();
   const mode = state.mode;
-  const slots = state.slots.slice(0, slotCount());
-  leaveBattle();
-  show('battle');
-  if (mode === 'duel' || mode === 'royale') {
-    setMatch(
-      slots.map((s) => s.weapon),
-      [],
-      mode === 'royale' ? slots.map((_, i) => ({ text: `P${i + 1}`, color: PLAYER_COLORS[i] })) : null,
-    );
-    play();
-  } else if (mode === 'rounds') {
-    state.rounds = createRounds(
-      slots.map((s, i) => ({ name: `P${i + 1}`, weapon: s.weapon, cpu: s.cpu, color: PLAYER_COLORS[i] })),
-      state.target,
-    );
-    playRound();
-  } else if (mode === 'chal') {
-    state.chal = newChallenge(slots[0].weapon);
-    playChalStage();
-  } else if (mode === 'raid') {
-    state.raid = createRaid(
-      slots.map((s, i) => ({ name: `P${i + 1}`, weapon: s.weapon, cpu: s.cpu, color: PLAYER_COLORS[i] })),
-      state.difficulty,
-    );
-    playRaid();
-  } else if (mode === 'tour') {
+  const seed = (Math.random() * 2 ** 32) >>> 0;
+  if (mode === 'tour') {
+    leaveBattle();
+    show('battle');
+    updateAutoBtn();
     state.tour = createTournament(pickEntries(WEAPONS, state.tourSize));
     playTourMatch();
+    return;
   }
+  const players = state.slots.slice(0, slotCount()).map((s, i) => ({ name: `P${i + 1}`, weapon: s.weapon, cpu: i > 0 && s.cpu, color: PLAYER_COLORS[i] }));
+  // ラウンズ・レイドは1人目も CPU にできる
+  if (mode === 'rounds' || mode === 'raid') players[0].cpu = state.slots[0].cpu;
+  startMode(mode, players, { target: state.target, difficulty: state.difficulty }, seed);
 }
 
 // ---- 試合 ----
@@ -461,11 +451,10 @@ function setMatch(defs, boosts = [], labels = null, teams = null) {
 
 function newBattle() {
   // オンラインでは全員が同じ種(state.seed)を使うので、どのスマホでも同じ試合になる
-  const seed = state.seed ?? (Math.random() * 2 ** 32) >>> 0;
+  const seed = state.seed ?? (srng()() * 2 ** 32) >>> 0;
   state.seed = null;
   state.world = createMelee(state.fighters, seed, { boosts: state.boosts, teams: state.teams || undefined });
   state.running = false;
-  state.live = null;
   renderer.particles = [];
   renderer.texts = [];
   renderer.rings = [];
@@ -479,14 +468,14 @@ function newBattle() {
   renderHud();
   renderSideInfo();
   updatePlay();
-  $('shareBtn').hidden = !['duel', 'royale', 'auto'].includes(state.mode);
+  $('shareBtn').hidden = !(['battle', 'auto'].includes(state.mode) && !isOnline());
   resize();
 }
 
 function play() {
   sound.unlock();
   const w = state.world;
-  if (!w || w.over || state.live) return;
+  if (!w || w.over) return;
   state.running = !state.running;
   updatePlay();
 }
@@ -494,9 +483,11 @@ function play() {
 function updatePlay() {
   const btn = $('playBtn');
   const w = state.world;
-  btn.disabled = !w || w.over || !!state.live;
-  $('speedBtn').disabled = !!state.live;
-  btn.textContent = !w || w.over ? '決着' : state.live ? '⚡ 操作バトル中' : state.running ? '⏸ 一時停止' : w.t > 0 ? '▶ 再開' : '▶ スタート';
+  // オンラインは全員で同じペースで見るので、止められない。速さはホームが決める
+  btn.disabled = !w || w.over || isOnline();
+  $('speedBtn').disabled = isOnline() && !net.isHost;
+  $('speedBtn').textContent = speedText(state.speed);
+  btn.textContent = !w || w.over ? '決着' : isOnline() ? '📡 オンライン' : state.running ? '⏸ 一時停止' : w.t > 0 ? '▶ 再開' : '▶ スタート';
 }
 
 function nameOf(i) {
@@ -539,6 +530,7 @@ function renderHud() {
     const def = state.fighters[i];
     const tag = state.labels && state.labels[i];
     const card = el('div', { className: 'hud-card' });
+    card.addEventListener('click', () => openBallInfo(i));
     card.style.setProperty('--c', readable(def.color));
     if (ball.awaken) card.classList.add('awakened');
     if (def.kind === 'boss') card.classList.add('boss-card');
@@ -571,11 +563,8 @@ function updateHud() {
     const card = cards[i];
     if (!card) return;
     const hpPct = Math.max(0, Math.min(100, (ball.hp / ball.maxHp) * 100));
-    const rows = ball.def.stats(ball, w);
-    // 上限を超えて成長した分は「威力」として表示する
-    if (ball.power > 1.005) rows.push(['威力', '×' + ball.power.toFixed(2)]);
-    if (ball.live) rows.push(['⚡', ball.live.en.toFixed(1)]);
-    const stats = rows.map(([k, v]) => `${k} <b>${v}</b>`).join('<em>・</em>');
+    const rows = statRows(ball, w);
+    const stats = rows.map(([k, v, up]) => `<span>${k} <b>${v}</b>${up ? `<i>${up}</i>` : ''}</span>`).join('');
     const chips = ball.skills.filter((sk) => !sk.def.hidden).map((sk) => `<span title="${sk.def.name}" style="border-color:${RARITY[sk.def.rarity].color}">${sk.def.icon}</span>`).join('');
     const key = `${Math.ceil(ball.hp)}|${hpPct.toFixed(1)}|${stats}|${chips}|${ball.dead}`;
     if (hudCache[i] === key) return;
@@ -587,6 +576,80 @@ function updateHud() {
     card.querySelector('.chips').innerHTML = chips;
   });
   $('timer').textContent = w.t.toFixed(1);
+  if ($('ballDialog').open && performance.now() - (state.infoAt || 0) > 300) {
+    state.infoAt = performance.now();
+    renderBallInfo();
+  }
+}
+
+// 能力値の行: [名前, 今の値, 試合が始まってから伸びた分]。上限を超えた分は「威力」
+function statRows(ball, w) {
+  const rows = ball.def.stats(ball, w).map(([k, v]) => [k, String(v)]);
+  if (ball.power > 1.005 || (ball.startStats && ball.startStats['威力'] != null)) rows.push(['威力', '×' + (ball.power < 100 ? ball.power.toFixed(2) : fmtNum(ball.power))]);
+  // 最初の値を覚えておき、伸びた分を ▲ で出す
+  if (!ball.startStats) {
+    ball.startStats = {};
+    for (const [k, v] of rows) ball.startStats[k] = parseNum(v);
+    if (ball.startStats['威力'] == null) ball.startStats['威力'] = 1;
+  }
+  return rows.map(([k, v]) => {
+    const a = ball.startStats[k];
+    const b = parseNum(v);
+    if (a == null || b == null || Math.abs(b - a) < 1e-9) return [k, v, ''];
+    const d = b - a;
+    const text = Math.abs(d) >= 100 || Number.isInteger(d) ? fmtNum(Math.round(d)) : Math.abs(d) < 10 ? d.toFixed(2).replace(/0$/, '') : d.toFixed(1);
+    return [k, v, (d > 0 ? '▲' : '▼') + text.replace('-', '')];
+  });
+}
+
+// HUDのカードをタップ: そのボールの能力値・成長・カードをくわしく
+function openBallInfo(i) {
+  state.infoBall = i;
+  renderBallInfo();
+  const dlg = $('ballDialog');
+  if (!dlg.open) dlg.showModal();
+}
+
+function renderBallInfo() {
+  const w = state.world;
+  const i = state.infoBall;
+  const ball = w && w.balls[i];
+  const dlg = $('ballDialog');
+  if (!ball) {
+    if (dlg.open) dlg.close();
+    return;
+  }
+  const def = ball.def;
+  const tag = state.labels && state.labels[i];
+  const skills = ball.skills.filter((sk) => !sk.def.hidden);
+  const counts = new Map();
+  for (const sk of skills) counts.set(sk.def, (counts.get(sk.def) || 0) + 1);
+  $('ballInfo').innerHTML =
+    `<h3 style="color:${readable(def.color)}">${tag ? `<span class="ptag" style="background:${tag.color}">${tag.text}</span> ` : ''}${weaponName(i)}</h3>` +
+    `<p class="bi-grow">${def.grow || ''}</p>` +
+    `<table class="bi-stats"><tr><th></th><th>はじめ</th><th>いま</th><th>のび</th></tr>` +
+    `<tr><td>HP</td><td>${fmtNum(ball.maxHp)}</td><td>${ball.dead ? 'OUT' : fmtNum(Math.ceil(ball.hp))}</td><td></td></tr>` +
+    statRows(ball, w)
+      .map(([k, v, up]) => `<tr><td>${k}</td><td>${ball.startStats[k] == null ? '' : fmtNum(ball.startStats[k])}</td><td><b>${v}</b></td><td class="up">${up}</td></tr>`)
+      .join('') +
+    `<tr><td>当てた回数</td><td></td><td><b>${fmtNum(ball.hits)}</b></td><td></td></tr>` +
+    `<tr><td>与えたダメージ</td><td></td><td><b>${fmtNum(Math.round(w.dealt[i] || 0))}</b></td><td></td></tr>` +
+    `</table>` +
+    (skills.length
+      ? `<h4>カード(${skills.length}枚)</h4><ul class="bi-cards">` +
+        [...counts]
+          .map(([d, n]) => `<li><span style="border-color:${RARITY[d.rarity] ? RARITY[d.rarity].color : '#999'}">${d.icon}</span><b>${d.name}${n > 1 ? ` ×${n}` : ''}</b><small>${d.desc || ''}</small></li>`)
+          .join('') +
+        '</ul>'
+      : '<p class="bi-none">カードなし</p>');
+}
+
+// 🤖 オートのボタン(カード選びのあるモードだけ)
+function updateAutoBtn() {
+  const b = $('autoBtn');
+  b.hidden = !['rounds', 'chal', 'raid'].includes(state.mode);
+  b.textContent = state.autoPick ? '🤖 オート ON' : '🤖 オート';
+  b.classList.toggle('on', state.autoPick);
 }
 
 function setButtons(list) {
@@ -620,8 +683,7 @@ function finish() {
       reportRound(state.rounds, -1);
       setTimeout(() => state.world === w && playRound(), 1500);
     } else if (state.auto) setTimeout(() => state.world === w && playAuto(), 1800);
-    else if (state.mode === 'online') setButtons(onlineButtons());
-    else setButtons(matchButtons());
+    else setButtons(endButtons(matchButtons()));
   } else {
     const win = state.fighters[w.winner];
     text.textContent = `${nameOf(w.winner)}の勝ち！`;
@@ -635,11 +697,10 @@ function finish() {
     text.style.color = (state.labels && state.labels[w.winner] && state.rounds ? state.labels[w.winner].color : null) || win.color;
     record(w.winner);
     if (state.rounds) roundResult(w);
-    else if (state.chal) chalResult(w.winner === 0);
+    else if (state.chal) chalResult(state.chal.players.length > 1 ? w.winTeam === 0 : w.winner === 0);
     else if (state.tour) tourResult(win, w);
     else if (state.auto) setTimeout(() => state.world === w && state.auto && playAuto(), 2200);
-    else if (state.mode === 'online') setButtons(onlineButtons());
-    else setButtons(matchButtons());
+    else setButtons(endButtons(matchButtons()));
   }
   setTimeout(() => {
     if (state.world === w) $('overlay').hidden = false;
@@ -686,6 +747,138 @@ function matchButtons() {
   ];
 }
 
+// ---- 進め方(ローカルとオンラインで共通) ----
+// モードの流れで使う乱数(カードの候補・敵・試合の種)はすべて state.sess.rng(種つき)から引く。
+// オンラインでは全員に同じ種が配られ、カード選びは選んだ人のスマホから全員へ送るので、
+// 全員のスマホで同じ流れ・同じ結果になる(試合の計算も種で決まる)。
+
+function newSession(seed, online = false) {
+  state.sess = { seed, rng: mulberry32(seed), online, step: 0, inbox: new Map(), gone: new Set(), run: null };
+  return state.sess;
+}
+
+const srng = () => (state.sess ? state.sess.rng : Math.random);
+const isOnline = () => !!(state.sess && state.sess.online);
+
+// players: [{ name, weapon, cpu, color, owner(オンラインの部屋のメンバーID) }]
+function startMode(mode, players, opts, seed, online = false) {
+  leaveBattle();
+  state.mode = mode;
+  newSession(seed, online);
+  show('battle');
+  updateAutoBtn();
+  if (mode === 'battle') {
+    setMatch(
+      players.map((p) => p.weapon),
+      [],
+      players.length > 2 || online ? players.map((p) => ({ text: p.name, color: p.color })) : null,
+    );
+    play();
+  } else if (mode === 'rounds') {
+    state.rounds = createRounds(players, opts.target);
+    playRound();
+  } else if (mode === 'chal') {
+    state.chal = { stage: 1, players: players.map((p, i) => ({ ...p, idx: i, skills: [], picked: [] })) };
+    playChalStage();
+  } else if (mode === 'raid') {
+    state.raid = createRaid(players, opts.difficulty);
+    playRaid();
+  }
+}
+
+// だれがカードを選ぶか: cpu / me(このスマホ) / remote(ほかのスマホ) / gone(抜けた人。ホームが代わりに選ぶ)
+function decider(p) {
+  if (p.cpu) return 'cpu';
+  if (!isOnline() || p.owner === net.you) return 'me';
+  if (state.sess.gone.has(p.owner)) return 'gone';
+  return 'remote';
+}
+
+// カード選びをまとめて進める。items: [{ p, cards, choose, show, apply(cards) }]
+// 選んだ結果は items の順番どおりに apply する(どのスマホでも同じ順番)。全部そろったら done()
+function runPicks(items, done) {
+  const sess = state.sess;
+  const run = { step: ++sess.step, items, results: new Map(), next: 0, done, asking: false };
+  sess.run = run;
+  // オンラインのCPUや抜けた人のカードは、どのスマホでも同じ決め方(cpuPick)
+  if (isOnline()) items.forEach((it, k) => decider(it.p) === 'cpu' && run.results.set(k, cpuPick(it.cards, it.choose)));
+  // 先に届いていたほかの人の選択
+  for (const [key, ids] of sess.inbox) {
+    const [s, k] = key.split(':').map(Number);
+    if (s === run.step) acceptPick(run, k, ids);
+  }
+  coverGone();
+  askMine(run);
+  flushPicks(run);
+}
+
+function acceptPick(run, k, ids) {
+  const it = run.items[k];
+  if (!it || run.results.has(k) || !Array.isArray(ids)) return;
+  const cards = ids.map((id) => it.cards.find((c) => c.id === id)).filter(Boolean);
+  if (cards.length === it.choose) run.results.set(k, cards);
+}
+
+function flushPicks(run) {
+  const sess = state.sess;
+  if (!sess || sess.run !== run) return;
+  while (run.next < run.items.length && run.results.has(run.next)) {
+    run.items[run.next].apply(run.results.get(run.next));
+    run.next++;
+  }
+  renderSideInfo();
+  if (run.next >= run.items.length) {
+    sess.run = null;
+    for (const key of [...sess.inbox.keys()]) if (Number(key.split(':')[0]) <= run.step) sess.inbox.delete(key);
+    run.done();
+    return;
+  }
+  // ほかの人を待っている
+  const wait = [...new Set(run.items.filter((it, k) => !run.results.has(k) && decider(it.p) !== 'me').map((it) => it.p.name))];
+  if (wait.length && !run.asking) toast(`${wait.join('・')} のカード選びを待っています…`);
+}
+
+// このスマホで選ぶカードを1つずつ出す(ローカルではCPUの選択も見せる)
+function askMine(run) {
+  if (run.asking || !state.sess || state.sess.run !== run) return;
+  const k = run.items.findIndex((it, k) => !run.results.has(k) && (decider(it.p) === 'me' || (!isOnline() && decider(it.p) === 'cpu')));
+  if (k < 0) return;
+  const it = run.items[k];
+  run.asking = true;
+  showCards({
+    ...it.show,
+    cards: it.cards,
+    choose: it.choose,
+    cpu: decider(it.p) === 'cpu',
+    onDone(cards) {
+      run.asking = false;
+      if (!state.sess || state.sess.run !== run) return;
+      run.results.set(k, cards);
+      if (isOnline()) net.post({ kind: 'card', step: run.step, k, ids: cards.map((c) => c.id) });
+      askMine(run);
+      flushPicks(run);
+    },
+  });
+}
+
+// 抜けた人のカードは、ホームが代わりに選んで全員へ送る
+function coverGone() {
+  const run = state.sess && state.sess.run;
+  if (!run || !isOnline() || !net.isHost) return;
+  run.items.forEach((it, k) => {
+    if (run.results.has(k) || decider(it.p) !== 'gone') return;
+    const cards = cpuPick(it.cards, it.choose);
+    run.results.set(k, cards);
+    net.post({ kind: 'card', step: run.step, k, ids: cards.map((c) => c.id) });
+  });
+  flushPicks(run);
+}
+
+// 終わったときのボタン(オンラインは部屋へ)
+function endButtons(local) {
+  return isOnline() ? onlineButtons() : local;
+}
+
 // ---- ラウンズ ----
 
 function playRound() {
@@ -703,58 +896,51 @@ function playRound() {
 function roundResult(w) {
   const r = state.rounds;
   const winner = r.players[w.winner];
-  reportRound(r, w.winner, Math.random, w.outOrder);
+  reportRound(r, w.winner, srng(), w.outOrder);
   renderSideInfo();
   renderHud();
   if (r.champion) {
     $('resultText').textContent = `🏆 ${winner.name} 優勝！`;
     $('resultSub').textContent = `${winner.weapon.name}・${winner.wins}勝`;
-    setButtons([
-      { text: 'もう一度(同じ設定)', primary: true, onClick: begin },
-      { text: 'ホームへ', onClick: () => show('home') },
-    ]);
+    setButtons(
+      endButtons([
+        { text: 'もう一度(同じ設定)', primary: true, onClick: begin },
+        { text: 'ホームへ', onClick: () => show('home') },
+      ]),
+    );
     return;
   }
-  setTimeout(() => state.rounds === r && nextPick(r), 1100);
-}
-
-// 負けた人が順番にカードを選ぶ。全員選んだら次のラウンド
-function nextPick(r) {
-  if (state.rounds !== r) return;
-  const pend = r.pending;
-  if (!pend) {
-    playRound();
-    return;
-  }
-  const p = r.players[pend.player];
-  showCards({
-    who: `${p.name}${p.cpu ? '(CPU)' : ''} のカード選び`,
-    color: p.color,
-    sub: pend.big ? '🌟 大進化！ 4枚から2枚選べる' : `${p.weapon.name} を強くするカードを1枚`,
-    cards: pend.cards,
-    choose: pend.choose,
-    cpu: p.cpu,
-    mine: p.skills,
-    weapon: p.weapon,
-    onDone(cards) {
-      pickSkills(r, cards);
-      renderSideInfo();
-      nextPick(r);
-    },
+  const items = [r.pending, ...r.waiting].map((pend) => {
+    const p = r.players[pend.player];
+    return {
+      p,
+      cards: pend.cards,
+      choose: pend.choose,
+      show: { who: `${p.name}${p.cpu ? '(CPU)' : ''} のカード選び`, color: p.color, sub: pend.big ? '🌟 大進化！ 4枚から2枚選べる' : `${p.weapon.name} を強くするカードを1枚`, mine: p.skills, weapon: p.weapon },
+      apply: (cards) => pickSkills(r, cards),
+    };
   });
+  setTimeout(() => state.rounds === r && runPicks(items, playRound), 1100);
 }
 
-// ---- チャレンジ ----
+// ---- チャレンジ(1〜4人。2人以上は同じ数の敵とチーム戦) ----
 
 function playChalStage() {
   const ch = state.chal;
   if (!ch) return;
-  const enemy = pick(WEAPONS.filter((w) => w !== ch.weapon));
-  ch.enemy = enemyBoost(ch.stage);
+  const rng = srng();
+  const n = ch.players.length;
+  ch.enemy = enemyBoost(ch.stage, rng);
+  const mine = ch.players.map((p) => p.weapon);
+  const pool = WEAPONS.filter((w) => !mine.includes(w));
+  const enemies = Array.from({ length: n }, () => pool[Math.floor(rng() * pool.length)]);
+  const solo = n === 1 && !isOnline();
+  const foeTag = ch.enemy.boss ? { text: 'BOSS', color: '#c01f1f' } : n > 1 ? { text: '敵', color: '#555555' } : null;
   setMatch(
-    [ch.weapon, enemy],
-    [{ skills: ch.skills }, ch.enemy],
-    [{ text: 'YOU', color: '#8b3fe0' }, ch.enemy.boss ? { text: 'BOSS', color: '#c01f1f' } : null],
+    [...mine, ...enemies],
+    [...ch.players.map((p) => ({ skills: p.skills })), ...enemies.map(() => ch.enemy)],
+    [...ch.players.map((p) => (solo ? { text: 'YOU', color: '#8b3fe0' } : { text: p.name, color: p.color })), ...enemies.map(() => foeTag)],
+    n > 1 ? [...mine.map(() => 0), ...enemies.map(() => 1)] : null,
   );
   play();
 }
@@ -762,63 +948,60 @@ function playChalStage() {
 function chalResult(won) {
   const ch = state.chal;
   const text = $('resultText');
+  const names = ch.players.map((p) => p.weapon.name).join('・');
   if (!won) {
     const cleared = ch.stage - 1;
     const best = Math.max(loadBest(), cleared);
     saveBest(best);
     text.textContent = `ステージ${ch.stage}で敗退…`;
-    $('resultSub').textContent = `${cleared}勝 / 最高記録 ${best}勝`;
-    const weapon = ch.weapon;
+    $('resultSub').textContent = `${names}  ${cleared}勝 / 最高記録 ${best}勝`;
     state.chal = null;
-    setButtons([
-      {
-        text: 'もう一度挑戦',
-        primary: true,
-        onClick: () => {
-          state.mode = 'chal';
-          state.slots[0].weapon = weapon;
-          begin();
-        },
-      },
-      { text: 'ホームへ', onClick: () => show('home') },
-    ]);
+    setButtons(
+      endButtons([
+        { text: 'もう一度挑戦', primary: true, onClick: begin },
+        { text: 'ホームへ', onClick: () => show('home') },
+      ]),
+    );
     return;
   }
-  const offer = offerCards(ch);
   text.textContent = ch.enemy.boss ? 'ボス撃破！' : `ステージ${ch.stage} クリア！`;
-  const cardPick = () =>
-    showCards({
-      who: 'スキルカードを選ぶ',
-      color: '#8b3fe0',
-      sub: offer.big ? '🌟 大進化！ 4枚から2枚選べる' : `${ch.weapon.name} を強くするカードを1枚`,
+  // 全員の候補を先に決める(どのスマホでも同じ順番で乱数を引く)
+  const rng = srng();
+  const items = [];
+  for (const p of ch.players) {
+    const offer = offerCards({ skills: p.skills, stage: ch.stage }, rng);
+    const tag = ch.players.length > 1 ? `${p.name} ` : '';
+    if (offer.awaken) {
+      // ボスのあと: まず武器進化、そのあと大進化
+      const tier = p.skills.filter((c) => c.rarity === 'awaken').length;
+      items.push({
+        p,
+        cards: offer.awaken,
+        choose: 1,
+        show: { who: `⚔️ ${tag}武器進化！`, color: '#ff7a1a', sub: `${p.weapon.name}${awakenSuffix(tier)} → ${p.weapon.name}${awakenSuffix(tier + 1)}  進化先を1つ選ぶ`, mine: p.skills, weapon: p.weapon },
+        apply: ([card]) => takeAwaken(p, card),
+      });
+    }
+    items.push({
+      p,
       cards: offer.cards,
       choose: offer.choose,
-      mine: ch.skills,
-      weapon: ch.weapon,
-      onDone(cards) {
-        takeCards(ch, cards);
+      show: { who: `${tag}スキルカードを選ぶ`, color: ch.players.length > 1 ? p.color : '#8b3fe0', sub: offer.big ? '🌟 大進化！ 4枚から2枚選べる' : `${p.weapon.name} を強くするカードを1枚`, mine: p.skills, weapon: p.weapon },
+      apply: (cards) => {
+        addSkills(p.skills, cards);
+        p.picked.push(...cards.map((c) => c.id));
+      },
+    });
+  }
+  setTimeout(
+    () =>
+      state.chal === ch &&
+      runPicks(items, () => {
+        ch.stage++;
         playChalStage();
-      },
-    });
-  setTimeout(() => {
-    if (state.chal !== ch) return;
-    if (!offer.awaken) return cardPick();
-    // ボスのあと: まず武器進化、そのあと大進化
-    const tier = ch.skills.filter((c) => c.rarity === 'awaken').length;
-    showCards({
-      who: '⚔️ 武器進化！',
-      color: '#ff7a1a',
-      sub: `${ch.weapon.name}${awakenSuffix(tier)} → ${ch.weapon.name}${awakenSuffix(tier + 1)}  進化先を1つ選ぶ`,
-      cards: offer.awaken,
-      choose: 1,
-      mine: ch.skills,
-      weapon: ch.weapon,
-      onDone([card]) {
-        takeAwaken(ch, card);
-        cardPick();
-      },
-    });
-  }, 1100);
+      }),
+    1100,
+  );
 }
 
 // ---- ボス・レイド ----
@@ -854,7 +1037,7 @@ function playRaid() {
 function raidRanking(w, r) {
   const list = r.players.map((p, i) => ({ p, dmg: Math.round(w.dealt[i] || 0) })).sort((a, b) => b.dmg - a.dmg);
   r.lastRanking = list;
-  return list.map(({ p, dmg }, k) => `${k === 0 ? '👑' : ''}${p.name} ${p.weapon.name} ${dmg}`).join(' / ');
+  return list.map(({ p, dmg }, k) => `${k === 0 ? '👑' : ''}${p.name} ${p.weapon.name} ${fmtNum(dmg)}`).join(' / ');
 }
 
 function raidResult(w) {
@@ -870,51 +1053,45 @@ function raidResult(w) {
     text.style.color = boss.color;
     $('resultSub').textContent = `${cleared}体たおした / 最高記録 Lv${best}\n与ダメージ: ${raidRanking(w, r)}`;
     reportRaid(r, false);
-    setButtons([
-      { text: 'もう一度(同じ設定)', primary: true, onClick: begin },
-      { text: 'ホームへ', onClick: () => show('home') },
-    ]);
+    setButtons(
+      endButtons([
+        { text: 'もう一度(同じ設定)', primary: true, onClick: begin },
+        { text: 'ホームへ', onClick: () => show('home') },
+      ]),
+    );
     return;
   }
   text.textContent = `${boss.name}を倒した！`;
   text.style.color = '#2fa84f';
   saveRaidBest(Math.max(loadRaidBest(), r.level));
   const ranking = raidRanking(w, r);
-  reportRaid(r, true);
+  reportRaid(r, true, srng());
   $('resultSub').textContent = `MVP: ${ranking}\n次は Lv${r.level} ${bossOf(r).def.name}${r.pending && r.pending.chest ? '  🎁 宝箱！' : ''}`;
   renderSideInfo();
-  setTimeout(() => state.raid === r && nextRaidPick(r), 2200);
-}
-
-// 勝ったら全員が順番にカードを1枚ずつ選ぶ
-function nextRaidPick(r) {
-  if (state.raid !== r) return;
-  const pend = r.pending;
-  if (!pend) {
-    playRaid();
-    return;
-  }
-  const p = r.players[pend.player];
-  showCards({
-    who: `${p.name}${p.cpu ? '(CPU)' : ''} のカード選び`,
-    color: p.color,
-    sub: pend.chest ? '🎁 宝箱！ 良いカードが出やすい4枚から2枚選べる' : `${p.weapon.name} を強くするカードを1枚`,
-    cards: pend.cards,
-    choose: pend.choose,
-    cpu: p.cpu,
-    mine: p.skills,
-    weapon: p.weapon,
-    onDone(cards) {
-      pickRaidCards(r, cards);
-      renderSideInfo();
-      nextRaidPick(r);
-    },
+  // 勝ったら全員がカードを選ぶ
+  const items = [r.pending, ...r.waiting].map((pend) => {
+    const p = r.players[pend.player];
+    return {
+      p,
+      cards: pend.cards,
+      choose: pend.choose,
+      show: { who: `${p.name}${p.cpu ? '(CPU)' : ''} のカード選び`, color: p.color, sub: pend.chest ? '🎁 宝箱！ 良いカードが出やすい4枚から2枚選べる' : `${p.weapon.name} を強くするカードを1枚`, mine: p.skills, weapon: p.weapon },
+      apply: (cards) => pickRaidCards(r, cards),
+    };
   });
+  setTimeout(() => state.raid === r && runPicks(items, playRaid), 2200);
 }
 
-// ---- オンライン(みんなでバトル) ----
+// ---- オンライン(📡 部屋に集まってから、ホームがモードを選ぶ) ----
 
-const online = { picks: {}, status: '' };
+// オンラインで遊べるモードと人数(多い人は見るだけ)
+const ONLINE_MODES = {
+  battle: { name: '⚔️ バトル', min: 2, max: 6 },
+  rounds: { name: '🃏 ラウンズ', min: 2, max: 4 },
+  chal: { name: '🗡️ チャレンジ', min: 1, max: 4 },
+  raid: { name: '🐉 ボス・レイド', min: 1, max: 4 },
+};
+const online = { picks: {}, status: '', mode: null, target: 5, difficulty: 'normal' };
 
 function onlineStatus(text) {
   online.status = text;
@@ -961,6 +1138,7 @@ async function onlineGo(action) {
     return;
   }
   online.picks = {};
+  online.mode = null;
   if (action === 'create') net.create(name);
   else net.join(code, name);
 }
@@ -977,186 +1155,107 @@ net.on((m) => {
     if (!online.picks[net.you]) {
       ensureSlots();
       online.myWeapon = online.myWeapon || state.slots[0].weapon;
-      net.post({ kind: 'pick', weapon: online.myWeapon.id });
+      net.post({ kind: 'weapon', weapon: online.myWeapon.id });
     } else if (m.members.some((x) => !online.picks[x.id])) {
       // 新しく入った人に、自分の選んだ武器を知らせ直す
-      net.post({ kind: 'pick', weapon: online.picks[net.you] });
+      net.post({ kind: 'weapon', weapon: online.picks[net.you] });
+    }
+    // ホームは選んだモードを知らせ直す
+    if (net.isHost && online.mode) postMode();
+    // 試合中に抜けた人のカードは、ホームが代わりに選ぶ
+    if (isOnline()) {
+      const ids = new Set(m.members.map((x) => x.id));
+      for (const p of currentPlayers()) if (p.owner && !ids.has(p.owner)) state.sess.gone.add(p.owner);
+      coverGone();
     }
     if (state.screen === 'online') renderOnline();
-    // 操作バトル中にホームが抜けたら、次のホームが時計を引きつぐ
-    if (state.live && net.isHost && !state.live.host) startLiveHost(state.live, state.live.clock.upto);
   }
   if (m.t === 'msg' && m.data) onlineMessage(m.from, m.data);
 });
 
+// 今のモードのプレイヤー
+function currentPlayers() {
+  const s = state.rounds || state.raid || state.chal;
+  return s ? s.players : [];
+}
+
+function postMode() {
+  net.post({ kind: 'mode', mode: online.mode, target: online.target, difficulty: online.difficulty });
+}
+
 function onlineMessage(from, d) {
-  if (d.kind === 'pick' && WEAPON_BY_ID[d.weapon]) {
+  if (d.kind === 'weapon' && WEAPON_BY_ID[d.weapon]) {
     online.picks[from] = d.weapon;
     if (state.screen === 'online') renderOnline();
   }
-  if (d.kind === 'start' && Array.isArray(d.order)) {
-    // ホームが決めた順番・武器・種で、全員が同じ試合を始める
-    const defs = d.order.map((o) => WEAPON_BY_ID[o.weapon]).filter(Boolean);
-    if (defs.length < 2) return;
-    if (d.version && d.version !== $('version').textContent) toast('ほかの人と版がちがうので、試合が少しずれるかもしれません(ページを再読み込みしてください)');
+  if (d.kind === 'mode' && net.room && from === net.room.host) {
+    online.mode = ONLINE_MODES[d.mode] ? d.mode : null;
+    online.target = [3, 5, 7].includes(d.target) ? d.target : 5;
+    online.difficulty = DIFFICULTY[d.difficulty] ? d.difficulty : 'normal';
+    if (state.screen === 'online') renderOnline();
+  }
+  if (d.kind === 'start' && ONLINE_MODES[d.mode] && Array.isArray(d.players)) {
+    // ホームが決めたモード・順番・武器・種で、全員が同じ流れを始める
+    const players = d.players
+      .filter((o) => WEAPON_BY_ID[o.weapon])
+      .map((o, i) => ({ name: o.name, weapon: WEAPON_BY_ID[o.weapon], cpu: false, color: PLAYER_COLORS[i % PLAYER_COLORS.length], owner: o.id }));
+    if (players.length < ONLINE_MODES[d.mode].min) return;
+    if (d.version && d.version !== $('version').textContent) toast('ほかの人と版がちがうので、試合がずれるかもしれません(ページを再読み込みしてください)');
     for (const dlg of document.querySelectorAll('dialog[open]')) dlg.close();
-    state.mode = 'online';
-    if (state.screen !== 'battle') show('battle');
-    state.seed = d.seed >>> 0;
     // 速さもホームに合わせる(全員で同じペースで見る)
-    if (SPEEDS.includes(d.speed)) {
-      state.speed = d.speed;
-      $('speedBtn').textContent = '×' + state.speed;
+    if (SPEEDS.includes(d.speed)) state.speed = d.speed;
+    startMode(d.mode, players, { target: d.target, difficulty: d.difficulty }, d.seed >>> 0, true);
+  }
+  if (d.kind === 'card' && isOnline()) {
+    const sess = state.sess;
+    sess.inbox.set(`${d.step}:${d.k}`, d.ids);
+    if (sess.run && sess.run.step === d.step) {
+      acceptPick(sess.run, d.k, d.ids);
+      flushPicks(sess.run);
     }
-    setMatch(
-      defs,
-      [],
-      d.order.map((o, i) => ({ text: o.name, color: PLAYER_COLORS[i % PLAYER_COLORS.length] })),
-    );
-    online.lastLive = !!d.live;
-    stopLiveHost();
-    if (d.live) {
-      // ⚡ 操作バトル: ホームの時計に合わせて全員で進める
-      enableLive(state.world);
-      state.live = { clock: new LiveClock(state.world), order: d.order, me: d.order.findIndex((o) => o.id === net.you), host: null, lead: liveLead(state.speed) };
-      if (net.isHost) startLiveHost(state.live, 0);
-      sound.unlock();
-      state.running = true;
-      updatePlay();
-      renderLivePad();
-      resize();
-    } else play();
   }
-  if (d.kind === 'tick' && state.live) state.live.clock.receive(d);
-  if (d.kind === 'act' && state.live) {
-    const lv = state.live;
-    const i = lv.order.findIndex((o) => o.id === from);
-    if (d.a === 'cheer') {
-      // 応援は見ている人(試合に出ていない人)だけ。全員のスマホに📣を出す
-      const to = Number(d.to);
-      const b = state.world && state.world.balls[to];
-      if (b && i < 0) renderer.texts.push({ x: b.x + (Math.random() - 0.5) * 40, y: b.y - b.r - 20, text: '📣', color: '#333333', life: 0.9, age: 0, size: 26 });
-      if (lv.host && i < 0) lv.host.add({ i: -1, a: 'cheer', to });
-    } else if (lv.host && i >= 0 && ACTIONS[d.a]) lv.host.add({ i, a: d.a });
+  if (d.kind === 'quit' && isOnline()) {
+    state.sess.gone.add(from);
+    coverGone();
   }
-  if (d.kind === 'emo' && state.world && EMOS.includes(d.e)) {
-    // スタンプ(見た目だけ。試合には関係しない)
-    const w = state.world;
-    const i = state.live ? state.live.order.findIndex((o) => o.id === from) : -1;
-    const b = w.balls[i];
-    const x = b && !b.dead ? b.x : w.size * (0.2 + Math.random() * 0.6);
-    const y = b && !b.dead ? b.y - b.r - 30 : w.size * 0.15;
-    renderer.texts.push({ x, y, text: d.e, color: '#333333', life: 1.2, age: 0, size: 34 });
-  }
-}
-
-// ---- ⚡ 操作バトル ----
-
-const EMOS = ['👏', '🔥', '😱', '😂'];
-let liveTimer = null;
-
-// ホーム: 0.1秒ごとに「ここまで進めてよい」と操作を全員へ配る
-function startLiveHost(lv, from) {
-  stopLiveHost();
-  lv.host = new LiveHost(from, lv.lead);
-  const t0 = performance.now() - (from * DT * 1000) / state.speed;
-  const speed = state.speed;
-  const end = HARD_LIMIT / DT + lv.lead * 4;
-  const tick = () => {
-    const target = ((performance.now() - t0) / 1000) * speed / DT;
-    // 試合が終わったら止める(ホームがバトル画面から出ても、ほかの人の試合が止まらないよう時計は進める)
-    if (lv.clock.world.over || target > end || !net.connected) return stopLiveHost();
-    net.post({ kind: 'tick', ...lv.host.tick(target, lv.clock) });
-  };
-  tick();
-  liveTimer = setInterval(tick, LIVE_TICK_MS);
-}
-
-function stopLiveHost() {
-  clearInterval(liveTimer);
-  liveTimer = null;
-}
-
-function liveAct(a, to) {
-  sound.unlock();
-  net.post(a === 'cheer' ? { kind: 'act', a, to } : { kind: 'act', a });
-}
-
-// バトル画面の下の操作ボタン
-function renderLivePad() {
-  const pad = $('livePad');
-  const lv = state.live;
-  pad.hidden = !lv;
-  if (!lv) return;
-  const acts = $('liveActs');
-  if (lv.me >= 0) {
-    $('liveEn').hidden = false;
-    acts.replaceChildren(
-      ...Object.entries(ACTIONS).map(([key, a], k) => {
-        const b = el('button', { type: 'button', className: 'live-btn', title: a.desc });
-        b.dataset.act = key;
-        b.style.setProperty('--c', a.color);
-        b.append(el('b', { textContent: `${a.icon} ${a.name}` }), el('small', { textContent: `⚡${a.cost}` }), el('kbd', { textContent: String(k + 1) }));
-        b.addEventListener('click', () => liveAct(key));
-        return b;
-      }),
-    );
-  } else {
-    // 見ている人: 応援でエネルギーを送る
-    $('liveEn').hidden = true;
-    acts.replaceChildren(
-      ...lv.order.map((o, i) => {
-        const b = el('button', { type: 'button', className: 'live-btn cheer', textContent: `📣 ${o.name}` });
-        b.style.setProperty('--c', PLAYER_COLORS[i % PLAYER_COLORS.length]);
-        b.addEventListener('click', () => liveAct('cheer', i));
-        return b;
-      }),
-    );
-  }
-  $('liveEmos').replaceChildren(
-    ...EMOS.map((e) => {
-      const b = el('button', { type: 'button', className: 'emo', textContent: e });
-      b.addEventListener('click', () => net.post({ kind: 'emo', e }));
-      return b;
-    }),
-  );
-  $('liveHint').textContent = lv.me >= 0 ? '⚡がたまったら押す(時間・ダメージを受ける・応援でたまる)' : '見ている人は📣応援で選手に⚡を送れる';
-  updateLivePad();
-}
-
-function updateLivePad() {
-  const lv = state.live;
-  const ball = lv && state.world && state.world.balls[lv.me];
-  if (!ball) return;
-  const st = ball.live;
-  $('liveEnBar').style.width = (st.en / LIVE_MAX_EN) * 100 + '%';
-  $('liveEnText').textContent = ball.dead ? 'OUT' : `⚡ ${st.en.toFixed(1)} / ${LIVE_MAX_EN}`;
-  for (const b of $('liveActs').children) {
-    const key = b.dataset.act;
-    const on = (key === 'guard' && st.guard > 0) || (key === 'rage' && st.rage > 0);
-    b.disabled = ball.dead || state.world.over || on || st.en < ACTIONS[key].cost;
-    b.classList.toggle('active', on);
+  if (d.kind === 'speed' && net.room && from === net.room.host && SPEEDS.includes(d.v) && isOnline()) {
+    state.speed = d.v;
+    updatePlay();
   }
 }
 
 function onlineButtons() {
-  const list = [{ text: '部屋にもどる', primary: true, onClick: () => show('online') }];
-  if (net.isHost) list.unshift({ text: '同じ武器でもう一度', primary: true, onClick: () => onlineStart(online.lastLive) });
+  const list = [{ text: '部屋にもどる', primary: !net.isHost, onClick: () => show('online') }];
+  if (net.isHost) list.unshift({ text: 'もう一度(同じ設定)', primary: true, onClick: onlineStart });
   return list;
 }
 
-// ホーム: 全員の選んだ武器で試合を始める(live: ⚡ 操作バトル)
-function onlineStart(live = false) {
+// ホーム: 選んだモードで、全員の選んだ武器で始める
+function onlineStart() {
   if (!net.isHost || !net.room) return;
-  const order = net.room.members
-    .filter((x) => online.picks[x.id])
-    .slice(0, ONLINE_MAX_FIGHTERS)
-    .map((x) => ({ id: x.id, name: x.name, weapon: online.picks[x.id] }));
-  if (order.length < 2) {
-    toast('2人以上そろうと始められます');
+  const m = ONLINE_MODES[online.mode];
+  if (!m) {
+    toast('先にモードを選んでください');
     return;
   }
-  net.post({ kind: 'start', order, seed: (Math.random() * 2 ** 32) >>> 0, speed: state.speed, version: $('version').textContent, live: live === true });
+  const players = net.room.members
+    .filter((x) => online.picks[x.id])
+    .slice(0, m.max)
+    .map((x) => ({ id: x.id, name: x.name, weapon: online.picks[x.id] }));
+  if (players.length < m.min) {
+    toast(`${m.name} は${m.min}人そろうと始められます`);
+    return;
+  }
+  net.post({
+    kind: 'start',
+    mode: online.mode,
+    players,
+    target: online.target,
+    difficulty: online.difficulty,
+    seed: (Math.random() * 2 ** 32) >>> 0,
+    speed: state.speed,
+    version: $('version').textContent,
+  });
 }
 
 function renderOnline() {
@@ -1168,7 +1267,34 @@ function renderOnline() {
   $('onlineStatus').textContent = online.status;
   if (!inRoom) return;
   const r = net.room;
+  const host = net.isHost;
+  const m = ONLINE_MODES[online.mode];
   $('roomCode').textContent = r.code;
+  // モード選び(ホームだけ押せる)
+  $('onlineModeSeg').replaceChildren(
+    ...Object.entries(ONLINE_MODES).map(([id, om]) => {
+      const b = el('button', { type: 'button', textContent: om.name, className: id === online.mode ? 'on' : '' });
+      b.dataset.omode = id;
+      b.disabled = !host;
+      b.addEventListener('click', () => {
+        online.mode = id;
+        postMode();
+        renderOnline();
+      });
+      return b;
+    }),
+  );
+  $('onlineModeHint').textContent = m ? `${MODES[online.mode].hint}(${m.min}〜${m.max}人)` : host ? '👆 モードを選んでください' : 'ホーム(👑)がモードを選んでいます…';
+  $('onlineTargetRow').hidden = online.mode !== 'rounds';
+  $('onlineDiffRow').hidden = online.mode !== 'raid';
+  for (const b of $('onlineTargetSeg').children) {
+    b.classList.toggle('on', Number(b.dataset.target) === online.target);
+    b.disabled = !host;
+  }
+  for (const b of $('onlineDiffSeg').children) {
+    b.classList.toggle('on', b.dataset.diff === online.difficulty);
+    b.disabled = !host;
+  }
   $('lobbyList').replaceChildren(
     ...r.members.map((x, i) => {
       const def = WEAPON_BY_ID[online.picks[x.id]];
@@ -1179,16 +1305,15 @@ function renderOnline() {
       if (x.id === r.host) row.append(el('span', { className: 'host', textContent: '👑ホーム' }));
       if (def) row.append(iconCanvas(def, 56), el('b', { textContent: def.name, style: `color:${readable(def.color)}` }), genreTag(def, true));
       else row.append(el('small', { textContent: '武器を選んでいます…' }));
-      if (i >= ONLINE_MAX_FIGHTERS) row.append(el('small', { textContent: '(見るだけ)' }));
+      if (m && i >= m.max) row.append(el('small', { textContent: '(見るだけ)' }));
       return row;
     }),
   );
-  const n = Math.min(ONLINE_MAX_FIGHTERS, r.members.length);
-  $('onlineStart').hidden = !net.isHost;
-  $('onlineStart').textContent = net.isHost ? `👀 見るバトル開始！(${n}人)` : '';
-  $('onlineLive').hidden = !net.isHost;
-  $('onlineLive').textContent = net.isHost ? `⚡ 操作バトル開始！(${n}人)` : '';
-  $('onlineWait').hidden = net.isHost;
+  const n = m ? Math.min(m.max, r.members.length) : 0;
+  $('onlineStart').hidden = !host;
+  $('onlineStart').disabled = !m || n < m.min;
+  $('onlineStart').textContent = m ? `${m.name} 開始！(${n}人)` : 'モードを選ぶと開始できます';
+  $('onlineWait').hidden = host;
 }
 
 // ---- トーナメント ----
@@ -1282,10 +1407,15 @@ function renderSideInfo() {
     const ch = state.chal;
     const e = ch.enemy || enemyBoost(ch.stage);
     box.innerHTML =
-      `<h3>${ch.weapon.name}の挑戦(最高記録 ${loadBest()}勝)</h3>` +
-      `<p>自分のスキル: ${skillIcons(ch.skills) || 'まだなし'}</p>` +
-      recipeHints(ch.skills) +
-      `<p>敵: HP${e.maxHp}・初期成長+${e.preGrow}${e.skills.length ? '・' + skillIcons(e.skills) : ''}</p>`;
+      `<h3>チャレンジ ステージ${ch.stage}(最高記録 ${loadBest()}勝)</h3>` +
+      ch.players
+        .map(
+          (p) =>
+            `<div class="board-row"><span class="ptag" style="background:${p.color}">${p.name}</span><span class="bname" style="color:${p.weapon.color}">${p.weapon.name}${p.cpu ? ' 🤖' : ''}</span><span class="bskills">${skillIcons(p.skills) || 'カードなし'}</span></div>` +
+            recipeHints(p.skills),
+        )
+        .join('') +
+      `<p>敵${ch.players.length > 1 ? `(${ch.players.length}体)` : ''}: HP${fmtNum(e.maxHp)}・初期成長+${e.preGrow}・威力×${e.power.toFixed(2)}${e.skills.length ? '・' + skillIcons(e.skills) : ''}</p>`;
   } else if (state.auto) {
     box.innerHTML = '<p>ランダムな対戦を自動で流し続けます。止めるときは ← でもどる。</p>';
   } else {
@@ -1345,6 +1475,7 @@ function showCards({ who, color, sub, cards, choose, cpu = false, mine = [], wea
   function finishPick(list) {
     if (done) return;
     done = true;
+    state.cardAuto = null;
     for (const [card, b] of buttons) b.classList.toggle('picked', list.includes(card));
     setTimeout(() => {
       if (dlg.open) dlg.close();
@@ -1352,7 +1483,19 @@ function showCards({ who, color, sub, cards, choose, cpu = false, mine = [], wea
     }, 450);
   }
   if (!dlg.open) dlg.showModal();
-  if (cpu) setTimeout(() => finishPick(cpuPick(cards, choose)), 1200);
+  state.cardAuto = null;
+  if (cpu) setTimeout(() => finishPick(cpuPick(cards, choose)), state.autoPick ? 300 : 1200);
+  else {
+    // 🤖 オート: ランダムに選ぶ(あとからオートにしたときも選ぶ)
+    state.cardAuto = () => {
+      state.cardAuto = null;
+      const pool = cards.slice();
+      const list = [];
+      while (list.length < choose && pool.length) list.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+      finishPick(list);
+    };
+    if (state.autoPick) setTimeout(() => state.cardAuto && state.cardAuto(), 300);
+  }
 }
 
 // ---- 武器を選ぶ画面 ----
@@ -1457,7 +1600,8 @@ function renderBook() {
       ensureSlots();
       state.slots[0].weapon = def;
       if (state.slots[1].weapon === def) state.slots[1].weapon = randomWeapons(1, [def])[0];
-      state.mode = 'duel';
+      state.mode = 'battle';
+      state.count.battle = 2;
       show('setup');
       renderSetup();
     });
@@ -1492,29 +1636,15 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   const w = state.world;
-  const lv = state.live;
   if (w && state.running && !w.over) {
     acc += dt * state.speed;
     let n = 0;
-    if (lv) {
-      // 操作バトル: ホームの時計(upto)より先へは進まない。遅れていたら追いつく
-      const want = Math.min(600, Math.floor(acc / DT) + Math.max(0, lv.clock.behind - lv.lead * 2));
-      while (n < want && lv.clock.canStep()) {
-        lv.clock.step();
-        n++;
-      }
-      acc = Math.min(Math.max(0, acc - n * DT), 0.5);
-      if (lv.clock.desync && !lv.warned) {
-        lv.warned = true;
-        toast('ほかのスマホと試合がずれました(版がちがうかもしれません。ページを再読み込みしてください)');
-      }
-    } else
-      while (acc >= DT && n < 600) {
-        step(w);
-        acc -= DT;
-        n++;
-        if (w.over) break;
-      }
+    while (acc >= DT && n < 600) {
+      step(w);
+      acc -= DT;
+      n++;
+      if (w.over) break;
+    }
   } else {
     acc = 0;
   }
@@ -1528,7 +1658,6 @@ function frame(now) {
     renderer.update(dt * (state.running ? state.speed : 1));
     if (w) renderer.draw(w);
     updateHud();
-    if (lv) updateLivePad();
   }
   requestAnimationFrame(frame);
 }
@@ -1537,7 +1666,7 @@ function frame(now) {
 function resize() {
   if (state.screen !== 'battle') return;
   const wrap = $('arenaWrap');
-  const used = document.querySelector('#battle .bar').offsetHeight + $('hud').offsetHeight + document.querySelector('#battle .controls').offsetHeight + $('livePad').offsetHeight + 36;
+  const used = document.querySelector('#battle .bar').offsetHeight + $('hud').offsetHeight + document.querySelector('#battle .controls').offsetHeight + 36;
   const byW = Math.min(window.innerWidth, 860) - 24;
   const byH = window.innerHeight - used;
   const size = Math.round(Math.max(260, Math.min(byW, byH, 860)));
@@ -1582,14 +1711,31 @@ function init() {
   $('goBtn').addEventListener('click', begin);
   $('onlineCreate').addEventListener('click', () => onlineGo('create'));
   $('onlineJoinBtn').addEventListener('click', () => onlineGo('join'));
-  $('onlineStart').addEventListener('click', () => onlineStart(false));
-  $('onlineLive').addEventListener('click', () => onlineStart(true));
-  // 操作バトルはキーボードの 1/2/3 でも押せる
-  document.addEventListener('keydown', (e) => {
-    const lv = state.live;
-    if (!lv || lv.me < 0 || state.screen !== 'battle' || e.repeat) return;
-    const key = Object.keys(ACTIONS)[Number(e.key) - 1];
-    if (key) liveAct(key);
+  $('onlineStart').addEventListener('click', onlineStart);
+  for (const b of $('onlineTargetSeg').children) {
+    b.addEventListener('click', () => {
+      online.target = Number(b.dataset.target);
+      postMode();
+      renderOnline();
+    });
+  }
+  for (const b of $('onlineDiffSeg').children) {
+    b.addEventListener('click', () => {
+      online.difficulty = b.dataset.diff;
+      postMode();
+      renderOnline();
+    });
+  }
+  $('localBtn').addEventListener('click', () => {
+    sound.unlock();
+    show('modes');
+  });
+  $('onlineBtn').addEventListener('click', () => openMode('online'));
+  $('autoBtn').addEventListener('click', () => {
+    state.autoPick = !state.autoPick;
+    saveSetting(AUTO_KEY, state.autoPick ? '1' : '');
+    updateAutoBtn();
+    if (state.autoPick && state.cardAuto) state.cardAuto();
   });
   $('onlineLeave').addEventListener('click', () => {
     net.close();
@@ -1601,19 +1747,21 @@ function init() {
       '自分の武器をえらぶ',
       (def) => {
         online.myWeapon = def;
-        net.post({ kind: 'pick', weapon: def.id });
+        net.post({ kind: 'weapon', weapon: def.id });
       },
       () => {
         online.myWeapon = randomWeapons(1)[0];
-        net.post({ kind: 'pick', weapon: online.myWeapon.id });
+        net.post({ kind: 'weapon', weapon: online.myWeapon.id });
       },
     ),
   );
   $('playBtn').addEventListener('click', play);
-  $('speedBtn').textContent = '×' + state.speed;
+  $('speedBtn').textContent = speedText(state.speed);
   $('speedBtn').addEventListener('click', () => {
+    if (isOnline() && !net.isHost) return;
     state.speed = SPEEDS[(SPEEDS.indexOf(state.speed) + 1) % SPEEDS.length];
-    $('speedBtn').textContent = '×' + state.speed;
+    $('speedBtn').textContent = speedText(state.speed);
+    if (isOnline()) net.post({ kind: 'speed', v: state.speed });
   });
   $('soundBtn').addEventListener('click', () => {
     sound.unlock();
@@ -1645,6 +1793,7 @@ function init() {
   });
   window.addEventListener('resize', resize);
 
+  state.autoPick = loadSetting(AUTO_KEY) === '1';
   ensureSlots();
   history.replaceState({ screen: 'home' }, '');
   renderHome();
@@ -1654,8 +1803,8 @@ function init() {
     ? params.get('w').split(',').map((id) => WEAPON_BY_ID[id]).filter(Boolean).slice(0, 4)
     : [WEAPON_BY_ID[params.get('a')], WEAPON_BY_ID[params.get('b')]].filter(Boolean);
   if (shared.length >= 2) {
-    state.mode = shared.length === 2 ? 'duel' : 'royale';
-    if (shared.length > 2) state.count.royale = shared.length;
+    state.mode = 'battle';
+    state.count.battle = shared.length;
     shared.forEach((d, i) => (state.slots[i].weapon = d));
     history.pushState({ screen: 'setup' }, '');
     renderSetup();

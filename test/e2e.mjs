@@ -56,12 +56,20 @@ try {
     return { screen: s.screen, f: s.fighters.map((d) => d.id), over: !!(s.world && s.world.over), t: s.world ? s.world.t : 0, n: s.world ? s.world.balls.length : 0, size: s.world ? s.world.size : 0, slots: s.slots.map((x) => x.weapon.id) };
   });
   const waitOverlay = () => page.waitForSelector('#overlay:not([hidden])', { timeout: 150000 });
+  // ホーム → ローカル → モード
+  const openLocal = async (mode) => {
+    await page.click('#localBtn');
+    await page.click(`[data-mode="${mode}"]`);
+  };
 
   // 1) ホーム
   await page.goto(base + '?speed=4');
-  const modes = await page.locator('[data-mode]').count();
-  check(modes === 8, `ホームの遊び方: ${modes}個`);
+  check((await page.isVisible('#localBtn')) && (await page.isVisible('#onlineBtn')), 'ホームはローカル/オンラインの2つ');
   await page.screenshot({ path: join(outDir, '0-home.png') });
+  await page.click('#localBtn');
+  const modes = await page.locator('#modes [data-mode]').count();
+  check(modes === 6, `ローカルのモード: ${modes}個`);
+  await page.screenshot({ path: join(outDir, '0b-modes.png') });
 
   // 2) 共有URL(剣 vs 短剣)を4倍速で自動スタートし、決着まで見る
   await page.goto(base + '?a=sword&b=dagger&speed=4&autostart=1');
@@ -86,7 +94,7 @@ try {
 
   // 3) 1対1の準備: 武器選び(検索)・片方だけランダム・入れ替え
   await page.goto(base + '?speed=4');
-  await page.click('[data-mode="duel"]');
+  await openLocal('battle');
   await page.click('#slots .slot:nth-child(2) .slot-pick');
   await page.waitForSelector('#picker[open]');
   const count = await page.locator('#pickerGrid button').count();
@@ -118,7 +126,7 @@ try {
 
   // 4) バトルロイヤル: 4人が広いフィールドで同時に戦う
   await page.goto(base + '?speed=4');
-  await page.click('[data-mode="royale"]');
+  await openLocal('battle');
   await page.click('#countSeg [data-count="4"]');
   const slots = await page.locator('#slots .slot').count();
   check(slots === 4, `バトルロイヤルの準備: ${slots}人`);
@@ -141,7 +149,7 @@ try {
 
   // 5) ラウンズ: 3人同時(P1は人、P2・P3はCPU)、3勝先取。負けた人が全員カードを選ぶ
   await page.goto(base + '?speed=4');
-  await page.click('[data-mode="rounds"]');
+  await openLocal('rounds');
   await page.click('#countSeg [data-count="3"]');
   await page.click('#targetSeg [data-target="3"]');
   const who = await page.$$eval('#slots .slot-who', (els) => els.map((e) => e.textContent));
@@ -184,7 +192,7 @@ try {
 
   // 6) チャレンジ: 1ステージ戦い、勝てばカードを選んで次へ / 負ければ終了
   await page.goto(base + '?speed=4');
-  await page.click('[data-mode="chal"]');
+  await openLocal('chal');
   await page.click('#slots .slot-pick');
   await page.click('#pickerGrid button[data-id="lightning"]');
   await page.click('#goBtn');
@@ -208,7 +216,7 @@ try {
 
   // 6.5) チャレンジのボスを倒したとき: 武器進化(3つから1つ) → 大進化(合体進化も出る)
   await page.goto(base + '?speed=4');
-  await page.click('[data-mode="chal"]');
+  await openLocal('chal');
   await page.click('#slots .slot-pick');
   await page.click('#pickerGrid button[data-id="bow"]');
   await page.click('#goBtn');
@@ -218,7 +226,7 @@ try {
     const { SKILL_BY_ID: S } = await import('./src/skills.js');
     s.chal.stage = 5;
     s.chal.enemy.boss = true;
-    s.chal.skills.push(S.vamp, S.hp);
+    s.chal.players[0].skills.push(S.vamp, S.hp);
     // ボスのカード(回復する守護神など)で持ち直さないよう、カードを外してからHPを減らす
     s.world.balls[1].skills = [];
     s.world.balls[1].w.revived = true; // 不死鳥のよみがえりも使い切ったことにする
@@ -242,7 +250,7 @@ try {
 
   // 6.8) ボス・レイド: みんな(チーム0)でボス(チーム1)と戦い、勝つと全員がカードを選んで次のレベルへ
   await page.goto(base + '?speed=4');
-  await page.click('[data-mode="raid"]');
+  await openLocal('raid');
   await page.click('#countSeg button[data-count="3"]');
   await page.click('#diffSeg button[data-diff="easy"]');
   const comboText = await page.textContent('#slots .combo-box');
@@ -268,7 +276,7 @@ try {
 
   // 7) トーナメント(8人)を4倍速で最後まで
   await page.goto(base + '?speed=4');
-  await page.click('[data-mode="tour"]');
+  await openLocal('tour');
   await page.click('#sizeSeg [data-size="8"]');
   await page.click('#goBtn');
   await page.waitForSelector('#bracket .champion', { timeout: 300000 });
@@ -280,8 +288,9 @@ try {
   // 8) ずかん: 勝率順(ランキング)と検索
   await page.click('#battle [data-back]');
   await page.click('#setup [data-back]');
+  await page.click('#modes [data-back]');
   s = await st();
-  check(s.screen === 'home', `戻る2回でホームへ: ${s.screen}`);
+  check(s.screen === 'home', `戻る3回でホームへ: ${s.screen}`);
   await page.click('#bookOpen');
   await page.selectOption('#bookSort', 'rate');
   const ranks = await page.evaluate(() => [...document.querySelectorAll('#bookGrid .rank')].map((r) => r.textContent));
@@ -301,7 +310,7 @@ try {
 
   // 9) 連続観戦
   await page.goto(base + '?speed=4');
-  await page.click('[data-mode="auto"]');
+  await openLocal('auto');
   await page.waitForTimeout(800);
   s = await st();
   check(s.screen === 'battle' && s.n >= 2 && s.t > 0, `連続観戦: ${s.f.join(', ')}`);
@@ -324,7 +333,7 @@ try {
     await page2.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
     for (const p of [page, page2]) {
       await p.goto(url);
-      await p.click('[data-mode="online"]');
+      await p.click('#onlineBtn');
     }
     await page.fill('#onlineName', 'あお');
     await page.click('#onlineCreate');
@@ -335,22 +344,33 @@ try {
     await page2.click('#onlineJoinBtn');
     await page.waitForFunction(() => document.querySelectorAll('#lobbyList .lobby-row b').length === 2, null, { timeout: 10000 });
     check(/^[A-Z0-9]{4}$/.test(code), `オンライン: 部屋 ${code} に2人(${(await page.textContent('#lobbyList')).slice(0, 30)})`);
+    check(await page.isDisabled('#onlineStart'), 'オンライン: モードを選ぶまで開始できない');
+    // ホームがモードを選ぶと、ほかの人にも出る
+    await page.click('#onlineModeSeg [data-omode="battle"]');
+    await page2.waitForFunction(() => document.querySelector('#onlineModeSeg .on') && document.querySelector('#onlineModeSeg .on').dataset.omode === 'battle', null, { timeout: 5000 });
     await page.screenshot({ path: join(outDir, '8b-online-lobby.png') });
     await page.click('#onlineStart');
     const snap = (p) => p.evaluate(() => { const w = window.__weaponBattle.state.world; return w && `${w.seed}|${w.balls.map((b) => b.def.id).join(',')}`; });
     await Promise.all([page, page2].map((p) => p.waitForFunction(() => window.__weaponBattle.state.world && window.__weaponBattle.state.world.t > 1, null, { timeout: 15000 })));
     const [s1, s2] = [await snap(page), await snap(page2)];
-    check(s1 && s1 === s2, `オンライン: 2台で同じ試合 ${s1} / ${s2}`);
-    // ⚡ 操作バトル: あかが途中でダッシュを押しても、2台で最後まで同じ試合になるか
-    await page.evaluate(() => document.getElementById('onlineLive').click());
-    await Promise.all([page, page2].map((p) => p.waitForFunction(() => { const s = window.__weaponBattle.state; return s.live && s.world && s.world.t > 0.5; }, null, { timeout: 15000 })));
-    await page2.click('#liveActs [data-act="dash"]');
-    await page.screenshot({ path: join(outDir, '8c-online-live.png') });
-    const fin = (p) => p.evaluate(() => { const w = window.__weaponBattle.state.world; return `${w.winner}|${w.t.toFixed(4)}|${w.balls.map((b) => b.hp.toFixed(3) + ':' + b.live.used).join(',')}`; });
-    await Promise.all([page, page2].map((p) => p.waitForFunction(() => window.__weaponBattle.state.world && window.__weaponBattle.state.world.over, null, { timeout: 120000 })));
+    check(s1 && s1 === s2, `オンライン: バトルが2台で同じ試合 ${s1} / ${s2}`);
+    // ラウンズ(3勝): カードは各自のスマホで選ぶ(オート)。最後まで2台で同じ流れ・同じ結果になるか
+    for (const p of [page, page2]) await p.click('#battle [data-back]');
+    await page.click('#onlineModeSeg [data-omode="rounds"]');
+    await page.click('#onlineTargetSeg [data-target="3"]');
+    await page.click('#onlineStart');
+    await Promise.all([page, page2].map((p) => p.waitForFunction(() => window.__weaponBattle.state.rounds, null, { timeout: 15000 })));
+    for (const p of [page, page2]) if (!(await p.evaluate(() => window.__weaponBattle.state.autoPick))) await p.click('#autoBtn');
+    await page.screenshot({ path: join(outDir, '8c-online-rounds.png') });
+    const fin = (p) =>
+      p.evaluate(() => {
+        const r = window.__weaponBattle.state.rounds;
+        return r && r.champion ? r.players.map((x) => `${x.name}:${x.wins}:${x.skills.map((c) => c.id).join('+')}`).join(' ') : null;
+      });
+    await Promise.all([page, page2].map((p) => p.waitForFunction(() => { const r = window.__weaponBattle.state.rounds; return r && r.champion; }, null, { timeout: 300000 })));
     const [f1, f2] = [await fin(page), await fin(page2)];
-    check(f1 === f2 && /:1/.test(f2.split(',')[1]), `オンライン: 操作バトルで2台とも同じ結果(ダッシュ1回) ${f1} / ${f2}`);
-    await page2.screenshot({ path: join(outDir, '8d-online-live-end.png') });
+    check(f1 && f1 === f2 && /\+|:\w/.test(f1), `オンライン: ラウンズが2台で同じ結果 ${f1} / ${f2}`);
+    await page2.screenshot({ path: join(outDir, '8d-online-rounds-end.png') });
     await page2.close();
   } finally {
     game.kill();

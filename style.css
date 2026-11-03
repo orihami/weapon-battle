@@ -269,11 +269,16 @@ input[type="search"], select {
 
 .hp span { position: relative; display: block; text-align: center; font-family: var(--num); font-size: 13px; line-height: 14px; color: #fff; -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill; }
 
-.hud-stats { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud-card { cursor: pointer; }
+
+/* 能力値は省略せず全部出す(折り返す)。伸びた分は ▲ */
+.hud-stats { display: flex; flex-wrap: wrap; gap: 0 8px; font-size: 13px; line-height: 1.35; }
+
+.hud-stats span { white-space: nowrap; }
 
 .hud-stats b { font-family: var(--num); font-weight: 400; font-size: 15px; }
 
-.hud-stats em { font-style: normal; color: #bbb; }
+.hud-stats i { font-style: normal; font-size: 11px; color: #1e8449; margin-left: 2px; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 2px; }
 
@@ -329,7 +334,11 @@ input[type="search"], select {
 
 .overlay-buttons { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 
-.controls { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; margin-top: 8px; }
+.controls { display: flex; gap: 8px; margin-top: 8px; }
+
+.controls > button:first-child { flex: 1; }
+
+#autoBtn.on { background: #16a3a3; color: #fff; }
 
 .controls .primary { font-size: 18px; }
 
@@ -602,20 +611,29 @@ dialog { color: var(--ink); }
 .lobby-row canvas { width: 30px; height: 30px; }
 .lobby-row .host { font-size: 12px; font-weight: bold; }
 
-/* ⚡ 操作バトル */
-.online-lobby .live-start { background: #7b3fe0; }
-.live-pad { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
-.live-pad .hint { margin: 0; font-size: 12px; color: var(--muted); text-align: center; }
-.live-en { position: relative; height: 22px; border: 3px solid var(--line); border-radius: 11px; background: #fff; overflow: hidden; }
-.live-en i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #ffd23f, #ff9f1a); transition: width 0.1s linear; }
-.live-en span { position: relative; display: block; text-align: center; font-size: 13px; font-weight: bold; line-height: 16px; }
-.live-acts { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 6px; }
-.live-btn { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 64px; padding: 6px; background: var(--c); color: #fff; touch-action: manipulation; }
-.live-btn b { font-size: 17px; white-space: nowrap; }
-.live-btn small { font-size: 12px; opacity: 0.9; }
-.live-btn kbd { position: absolute; top: 3px; right: 6px; font: 11px var(--num); opacity: 0.6; }
-.live-btn.active { opacity: 1; box-shadow: 0 0 0 3px #ffd23f, 0 3px 0 var(--line); }
-.live-btn.cheer { min-height: 48px; font-size: 15px; }
-.live-emos { display: flex; justify-content: center; gap: 6px; }
-.live-emos .emo { min-height: 40px; min-width: 52px; padding: 2px 8px; font-size: 22px; touch-action: manipulation; }
-@media (hover: none) { .live-btn kbd { display: none; } }
+
+/* ボールのくわしい能力値 */
+#ballDialog { width: min(480px, calc(100vw - 20px)); max-height: calc(100dvh - 30px); border: 4px solid var(--line); border-radius: 16px; background: var(--bg); padding: 12px; }
+#ballDialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+#ballDialog form { margin-top: 10px; text-align: center; }
+.bi h3 { margin: 0 0 4px; -webkit-text-stroke: 1px var(--ink); paint-order: stroke fill; }
+.bi-grow { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+.bi-stats { width: 100%; border-collapse: collapse; font-size: 14px; }
+.bi-stats th { font-size: 12px; color: var(--muted); font-weight: normal; text-align: right; }
+.bi-stats td { padding: 3px 4px; border-top: 1px solid #e3d8c6; text-align: right; }
+.bi-stats td:first-child { text-align: left; }
+.bi-stats b { font-family: var(--num); font-weight: 400; font-size: 16px; }
+.bi-stats .up { color: #1e8449; }
+.bi h4 { margin: 10px 0 4px; }
+.bi-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.bi-cards li { display: grid; grid-template-columns: auto 1fr; gap: 0 6px; align-items: center; font-size: 14px; }
+.bi-cards li span { grid-row: span 2; border: 2px solid; border-radius: 6px; padding: 2px 4px; }
+.bi-cards small { color: var(--muted); font-size: 12px; }
+.bi-none { color: var(--muted); }
+
+/* オンラインの部屋: モード選び */
+.online-mode { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 3px solid var(--line); border-radius: 12px; background: #fff; }
+.online-mode .opt-label { margin: 0; }
+.online-mode .hint { margin: 0; }
+.seg.wrap { flex-wrap: wrap; }
+.seg.wrap button { flex: 1 1 40%; }

@@ -1,6 +1,7 @@
 // 武器の定義。攻撃が当たるたびに onHit で能力値が成長する。
 // stats() が返す値が画面下に表示される(動画の「Damage: 6」のような部分)。
 
+import { fmtNum } from './format.js';
 import {
   ARENA,
   BALL_R,
@@ -25,9 +26,8 @@ const BOMB_DAMAGE = 0.9;
 const BOMB_MAX = 30;
 const SONIC_RANGE = 170;
 
-function fmt(n) {
-  return Number.isInteger(n) ? String(n) : n.toFixed(1);
-}
+// 大きな数は「1.2万」のようにまとめる(format.js)
+const fmt = fmtNum;
 
 function aimAt(me, foe) {
   return Math.atan2(foe.y - me.y, foe.x - me.x);
