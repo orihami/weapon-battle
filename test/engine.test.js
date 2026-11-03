@@ -247,7 +247,7 @@ test('進化: 材料がそろうと合体進化が出て、選ぶと材料と合
   addSkills(owned, [S.vampLord]);
   assert.deepEqual(owned.map((s) => s.id), ['power', 'vampLord'], '材料のカードが消えていない');
   const world = createBattle(W.sword, W.sword, 1, { a: { skills: owned } });
-  assert.equal(world.balls[0].maxHp, 140);
+  assert.equal(world.balls[0].maxHp, 120); // 吸血鬼の王は最大HP +20(あふれた回復でさらに増えていく)
   // チャレンジのボスのあと: 武器進化3つ → 大進化
   const ch = newChallenge(W.bomb);
   ch.stage = 5;
@@ -850,4 +850,42 @@ test('ボス・レイド3: ボス12体(双子の鬼は2体で出る)・8レベ�
   assert.deepEqual(m.teams, [0, 0, 1, 1]);
   const w = runToEnd(createMelee(m.defs, 3, { boosts: m.boosts, teams: m.teams }));
   assert.ok(w.over);
+});
+
+test('合体進化・武器進化は試合の中で育つ(2026-11-03 見直し)', async () => {
+  const { SKILL_BY_ID: S } = await import('../src/skills.js');
+  const W = WEAPON_BY_ID;
+  const st = (w, id) => w.balls[0].skills.find((sk) => sk.def.id === id).st;
+  // 雷帝: 雷が当たるほど強くなる
+  const w1 = createBattle(W.sword, W.sword, 3, { a: { skills: [S.thunderEmperor] } });
+  for (let i = 0; i < 120 * 7; i++) step(w1);
+  assert.ok(st(w1, 'thunderEmperor').n >= 3, '雷が落ちていない');
+  assert.match(S.thunderEmperor.show(st(w1, 'thunderEmperor')), /雷 \d/);
+  // 剣の輪舞: 2本から、6回当てるごとに1本
+  const w2 = createBattle(W.sword, W.sword, 3, { a: { skills: [S.bladeDance] } });
+  const extras = () => w2.balls[0].blades.filter((b) => b.extra).length;
+  assert.equal(extras(), 2);
+  for (let i = 0; i < 6; i++) landHit(w2, w2.balls[0], w2.balls[1], 0.01);
+  assert.equal(extras(), 3);
+  // 吸血鬼の王: 満タンであふれた分が最大HPになる
+  const w3 = createBattle(W.sword, W.sword, 3, { a: { skills: [S.vampLord] } });
+  const before = w3.balls[0].maxHp;
+  landHit(w3, w3.balls[0], w3.balls[1], 40);
+  assert.ok(w3.balls[0].maxHp > before, '最大HPが増えない');
+  // 不滅: よみがえるたびに最大HPが40%に
+  const w4 = createBattle(W.sword, W.sword, 3, { a: { skills: [S.immortal] } });
+  landHit(w4, w4.balls[1], w4.balls[0], 999);
+  assert.equal(Math.round(w4.balls[0].maxHp), 40);
+  assert.equal(Math.round(w4.balls[0].hp), 40);
+  // 成長の覚醒: 8回目に当てたとき、まとめて成長する
+  const w5 = createBattle(W.sword, W.sword, 3, { a: { skills: [S.aGrowth] } });
+  const dmg = () => w5.balls[0].w.dmg;
+  for (let i = 0; i < 7; i++) landHit(w5, w5.balls[0], w5.balls[1], 0.01);
+  const d7 = dmg();
+  landHit(w5, w5.balls[0], w5.balls[1], 0.01);
+  assert.ok(dmg() - d7 >= 5, `8回目でまとめて成長しない: ${d7} → ${dmg()}`);
+  // 王の覚醒: 持っているカードの枚数で強くなる
+  const w6 = createBattle(W.sword, W.sword, 3, { a: { skills: [S.hp, S.power, S.speed, S.aKing] } });
+  step(w6);
+  assert.equal(st(w6, 'aKing').n, 4);
 });

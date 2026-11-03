@@ -12,6 +12,7 @@
 //   contact(world, me, foe, st)              ボールどうしがぶつかったとき
 
 import { ARENA, ally, dealDamage, foeOf, heal, knockback, spawnProjectile } from './engine.js';
+import { fmtNum } from './format.js';
 
 export const RARITY = {
   common: { name: 'ふつう', color: '#9aa0a6', weight: 55 },
@@ -756,251 +757,343 @@ export const SKILLS = [
     id: 'vampLord',
     icon: '🦇',
     name: '吸血鬼の王',
-    desc: '最大HP +40・与えたダメージの35%を回復',
+    desc: '最大HP +20・与えたダメージの25%を回復。HPが満タンであふれた分は、最大HPになって増え続ける',
     rarity: 'fusion',
     needs: ['vamp', 'hp'],
-    apply: (w, me) => ((me.maxHp += 40), (me.hp += 40)),
-    afterDeal(world, me, target, amount, opts) {
-      if (opts.kind !== 'reflect') heal(world, me, amount * 0.35);
+    apply: (w, me) => ((me.maxHp += 20), (me.hp += 20)),
+    afterDeal(world, me, target, amount, opts, st) {
+      if (opts.kind === 'reflect') return;
+      const gain = amount * 0.25;
+      const room = me.maxHp - me.hp;
+      heal(world, me, Math.min(gain, room));
+      if (gain > room) {
+        // 血をたくわえて大きくなる
+        me.maxHp += gain - room;
+        me.hp += gain - room;
+        st.gain = (st.gain || 0) + gain - room;
+      }
     },
+    show: (st) => `たくわえた最大HP +${fmtNum(Math.round(st.gain || 0))}`,
   },
   {
     id: 'hellfire',
     icon: '☄️',
     name: '獄炎爆破',
-    desc: '攻撃が当たると大爆発(まわりの相手全員に4ダメージ)+強いやけど',
+    desc: '当てると相手が燃えて「火種」がたまる。火種4つで大爆発(まわりの相手全員に 6ダメージ+強いやけど)。爆発するたびに次の爆発が +2 強くなる',
     rarity: 'fusion',
     needs: ['burnEdge', 'explode'],
     onHit(world, me, foe, info, st) {
+      foe.burnT = Math.max(foe.burnT, 1.5);
+      foe.burnDps = Math.max(foe.burnDps, 1.5);
+      foe.burnSrc = me.id;
       if ((st.cd || 0) > world.t) return;
-      st.cd = world.t + 0.3;
-      world.events.push({ type: 'boom', x: foe.x, y: foe.y, radius: 80, kind: 'bomb' });
-      for (const o of world.balls) {
-        if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - foe.x, o.y - foe.y) > 80 + o.r) continue;
-        skillDamage(world, me, o, 4);
+      st.cd = world.t + 0.2;
+      st.seed = (st.seed || 0) + 1;
+      if (st.seed < 4) return;
+      st.seed = 0;
+      const dmg = 6 + 2 * (st.n || 0);
+      st.n = (st.n || 0) + 1;
+      world.events.push({ type: 'boom', x: foe.x, y: foe.y, radius: 95, kind: 'bomb' });
+      for (const o of enemiesNear(world, foe, 95)) {
+        if (o === me) continue;
+        skillDamage(world, me, o, dmg);
         o.burnT = 3;
-        o.burnDps = Math.max(o.burnDps, 2.5);
+        o.burnDps = Math.max(o.burnDps, 3);
         o.burnSrc = me.id;
       }
     },
+    show: (st) => `火種 ${st.seed || 0}/4・爆発 ${st.n || 0}回・次は ${6 + 2 * (st.n || 0)}ダメージ`,
   },
   {
     id: 'frostDance',
     icon: '💃',
     name: '氷の舞',
-    desc: '当てると+2ダメージ・ときどき凍らせる。15%でよける・素早さ+10%',
+    desc: '当てると相手が遅くなる。15%でよけ、よけるたびに相手を凍らせて「舞」+1(舞1つごとに 与えるダメージ +8%・素早さ +3%。素早さは +45%まで)',
     rarity: 'fusion',
     needs: ['frostEdge', 'speed'],
-    apply: (w, me) => (me.speedMul *= 1.1),
-    onHit(world, me, foe, info, st) {
+    onHit(world, me, foe) {
       foe.slow = Math.max(foe.slow, 0.2);
       foe.slowT = 1;
-      if ((st.cd || 0) <= world.t) {
-        st.cd = world.t + 0.3;
-        skillDamage(world, me, foe, 2);
-      }
-      if ((st.fz || 0) <= world.t) {
-        st.fz = world.t + 1.5;
-        foe.freeze = Math.max(foe.freeze, 0.4);
-        foe.stun = Math.max(foe.stun, 0.4);
-      }
     },
-    incoming: dodge(0.15),
+    incoming(world, me, src, amount, opts, st) {
+      if (opts.kind === 'poison' || opts.kind === 'burn' || world.rng() >= 0.15) return amount;
+      world.events.push({ type: 'dodge', x: me.x, y: me.y, target: me.id });
+      st.n = (st.n || 0) + 1;
+      if (st.n <= 15) me.speedMul *= 1.03;
+      if (src && src !== me && !src.dead) {
+        src.freeze = Math.max(src.freeze, 0.6);
+        src.stun = Math.max(src.stun, 0.6);
+      }
+      return 0;
+    },
+    outgoing: (world, me, target, amount, opts, st) => amount * (1 + 0.08 * (st.n || 0)),
+    show: (st) => `舞 ${st.n || 0}(与えるダメージ +${(st.n || 0) * 8}%)`,
   },
   {
     id: 'thunderEmperor',
     icon: '⚜️',
     name: '雷帝',
-    desc: '2秒ごとに相手全員へ雷(4ダメージ)。当てると20%でさらに雷',
+    desc: '2秒ごとに相手全員へ雷(3ダメージ)。雷が当たるたびに、雷が +0.4 ずつ強くなり続ける',
     rarity: 'fusion',
     needs: ['chainZap', 'thunderGod'],
     update(world, me, foe, dt, st) {
       st.t = (st.t ?? 1) - dt;
       if (st.t > 0) return;
       st.t = 2;
-      for (const o of enemiesNear(world, me, 9999)) zap(world, me, o, 4);
+      for (const o of enemiesNear(world, me, 9999)) {
+        zap(world, me, o, 3 + 0.4 * (st.n || 0));
+        st.n = (st.n || 0) + 1;
+      }
     },
-    onHit(world, me, foe) {
-      if (world.rng() < 0.2) zap(world, me, foe, 4);
-    },
+    show: (st) => `雷 ${fmtNum(+(3 + 0.4 * (st.n || 0)).toFixed(1))}ダメージ(${st.n || 0}回落とした)`,
   },
   {
     id: 'bladeDance',
     icon: '🎡',
     name: '剣の輪舞',
-    desc: 'まわりを回る剣が4本(各1.1ダメージ)・攻撃速度 +5%',
+    desc: 'まわりを回る剣2本から始まり、武器の攻撃を6回当てるごとに剣が1本増える(8本まで。そのあとは剣のダメージ +0.3)',
     rarity: 'fusion',
     needs: ['extraBlade', 'twin'],
     apply(world, me) {
-      for (let i = 0; i < 4; i++) addBlade(me, 1.1);
-      me.haste *= 1.05;
+      for (let i = 0; i < 2; i++) addBlade(me, 1.2);
     },
+    onHit(world, me, foe, info, st) {
+      st.hits = (st.hits || 0) + 1;
+      if (st.hits % 6) return;
+      const mine = me.blades.filter((b) => b.extra);
+      if (mine.length < 8) addBlade(me, 1.2);
+      else for (const b of mine) b.damage += 0.3;
+    },
+    show: (st, me) => `剣 ${me.blades.filter((b) => b.extra).length}本`,
   },
   {
     id: 'missileRain',
     icon: '🎆',
     name: 'ミサイルの雨',
-    desc: '1.5秒ごとに追尾ミサイル5発(各3ダメージ)',
+    desc: '1.5秒ごとに追尾ミサイル(各3ダメージ)。2発から始まり、当てた回数5回ごとに +1発(10発まで。そのあとは1発 +0.5ダメージ)',
     rarity: 'fusion',
     needs: ['missiles', 'split'],
     update(world, me, foe, dt, st) {
       st.t = (st.t ?? 0.8) - dt;
       if (st.t > 0) return;
       st.t = 1.5;
+      const more = Math.floor(me.hits / 5);
+      const n = Math.min(10, 2 + more);
+      const dmg = 3 + 0.5 * Math.max(0, 2 + more - 10);
       const a = Math.atan2(foe.y - me.y, foe.x - me.x) + Math.PI;
-      for (let i = 0; i < 5; i++) {
-        skillShot(world, me, foe, a + (i - 2) * 0.4, 260, 3, 'missile', {
+      for (let i = 0; i < n; i++) {
+        skillShot(world, me, foe, a + (i - (n - 1) / 2) * 0.3, 260, dmg, 'missile', {
           life: 3.5,
           update: (world, p, owner, foe, dt) => homingStep(p, foe, 3.4, dt, 440),
         });
       }
     },
+    show: (st, me) => `ミサイル ${Math.min(10, 2 + Math.floor(me.hits / 5))}発`,
   },
   {
     id: 'immortal',
     icon: '👼',
     name: '不滅',
-    desc: '2度までよみがえる(HP60% → HP30%)',
+    desc: '倒れても何度でもHP満タンでよみがえる。ただし、よみがえるたびに最大HPが40%に減る(最大HPが15より少なくなると終わり)',
     rarity: 'fusion',
     needs: ['guts', 'undying'],
     lethal(world, me, st) {
-      st.n = st.n || 0;
-      if (st.n >= 2) return false;
-      me.hp = me.maxHp * (st.n === 0 ? 0.6 : 0.3);
-      st.n++;
+      const next = me.maxHp * 0.4;
+      if (next < 15) return false;
+      me.maxHp = next;
+      me.hp = next;
+      st.n = (st.n || 0) + 1;
       me.poison = 0;
       me.burnT = 0;
       world.events.push({ type: 'rebirth', x: me.x, y: me.y, target: me.id });
       return true;
     },
+    show: (st, me) => `よみがえり ${st.n || 0}回・次は最大HP ${fmtNum(Math.round(me.maxHp * 0.4))}${me.maxHp * 0.4 < 15 ? '(もう無理)' : ''}`,
   },
   {
     id: 'deathblow',
     icon: '💀',
     name: '必殺',
-    desc: '威力 +15%・35%でダメージ3倍',
+    desc: '会心(ダメージ3倍)の確率が10%から始まり、出なかった攻撃のたびに +6%。会心が出ると10%にもどる',
     rarity: 'fusion',
     needs: ['crit', 'power'],
-    apply: (w, me) => (me.power *= 1.15),
-    outgoing(world, me, target, amount, opts) {
-      if (opts.kind === 'poison' || opts.kind === 'burn' || world.rng() >= 0.35) return amount;
+    outgoing(world, me, target, amount, opts, st) {
+      if (!isWeaponHit(opts)) return amount;
+      const rate = 0.1 + 0.06 * (st.miss || 0);
+      if (world.rng() >= rate) {
+        st.miss = (st.miss || 0) + 1;
+        return amount;
+      }
+      st.miss = 0;
       world.events.push({ type: 'crit', x: target.x, y: target.y });
       return amount * 3;
     },
+    show: (st) => `次の会心率 ${Math.min(100, 10 + 6 * (st.miss || 0))}%`,
   },
   {
     id: 'fortress',
     icon: '🏰',
     name: '要塞',
-    desc: '受けるダメージ -10%・15秒ごとに10ダメージを防ぐバリアを張り直す',
+    desc: '8ダメージを防ぐバリア。バリアが割れずに8秒もつたびに、バリアが +3 厚くなる(割れたら12秒後に張り直す)',
     rarity: 'fusion',
     needs: ['armor', 'barrier'],
-    apply: (w, me, st) => ((st.left = 10), (me.barrier = (me.barrier || 0) + 10)),
+    apply: (w, me, st) => ((st.max = 8), (st.left = 8), (me.barrier = (me.barrier || 0) + 8)),
     update(world, me, foe, dt, st) {
       st.t = (st.t || 0) + dt;
-      if (st.t < 15) return;
-      st.t = 0;
-      me.barrier = (me.barrier || 0) + (10 - st.left);
-      st.left = 10;
+      if (st.left > 0 && st.t >= 8) {
+        // 守りきった: 城壁を高くする
+        st.t = 0;
+        st.max += 3;
+        me.barrier = (me.barrier || 0) + (st.max - st.left);
+        st.left = st.max;
+      } else if (st.left <= 0 && st.t >= 12) {
+        st.t = 0;
+        me.barrier = (me.barrier || 0) + st.max;
+        st.left = st.max;
+      }
     },
     incoming(world, me, src, amount, opts, st) {
-      amount *= 0.9;
       if (st.left <= 0) return amount;
       const block = Math.min(st.left, amount);
       st.left -= block;
       me.barrier = Math.max(0, (me.barrier || 0) - block);
-      if (st.left <= 0) world.events.push({ type: 'block', x: me.x, y: me.y });
+      if (st.left <= 0) {
+        st.t = 0;
+        world.events.push({ type: 'block', x: me.x, y: me.y });
+      }
       return amount - block;
     },
+    show: (st) => `バリア ${fmtNum(Math.round(st.left || 0))} / ${fmtNum(st.max || 8)}`,
   },
   {
     id: 'rot',
     icon: '🧪',
     name: '腐敗',
-    desc: '攻撃が当たると毒 +1・呪い +1(0.5秒に1回まで)',
+    desc: '攻撃が当たると毒 +1(0.4秒に1回)。相手の毒が4たまるごとに、腐って 毒4 → 呪い +2 に変わる',
     rarity: 'fusion',
     needs: ['poisonEdge', 'curseEdge'],
     onHit(world, me, foe, info, st) {
       if ((st.cd || 0) > world.t) return;
-      st.cd = world.t + 0.5;
+      st.cd = world.t + 0.4;
       foe.poison += 1;
       foe.poisonSrc = me.id;
-      foe.curse += 1;
+      if (foe.poison >= 4) {
+        foe.poison -= 4;
+        foe.curse += 2;
+        st.n = (st.n || 0) + 1;
+        world.events.push({ type: 'say', x: foe.x, y: foe.y, text: '腐敗！', color: '#5b2a86' });
+      }
     },
+    show: (st) => `腐らせた回数 ${st.n || 0}(呪い +${(st.n || 0) * 2})`,
   },
   {
     id: 'worldTree',
     icon: '🌳',
     name: '世界樹',
-    desc: '毎秒HPが3回復・試合開始の時点で8回分成長している',
+    desc: '試合開始の時点で4回分成長・毎秒HPが2回復。6秒ごとに年輪がふえて、武器が1回成長し、回復も +0.5 ずつ増えていく',
     rarity: 'fusion',
     needs: ['regen', 'pregrow'],
-    apply: (world, me) => preGrow(world, me, 8),
-    update: regen(3),
+    apply: (world, me) => preGrow(world, me, 4),
+    update(world, me, foe, dt, st) {
+      regen(2 + 0.5 * (st.n || 0))(world, me, foe, dt, st);
+      st.t = (st.t || 0) + dt;
+      if (st.t < 6) return;
+      st.t = 0;
+      st.n = (st.n || 0) + 1;
+      growQuiet(world, me, foe);
+    },
+    show: (st) => `年輪 ${st.n || 0}・毎秒 ${2 + 0.5 * (st.n || 0)}回復`,
   },
   {
     id: 'demon',
     icon: '👹',
     name: '鬼神',
-    desc: '減ったHPが多いほど威力が大きく上がる(HP1%ごとに+1.5%)・受けたダメージの30%を返す',
+    desc: '受けたダメージの30%を返す。受けたダメージは「怒り」としてたまり、怒り1につき威力 +0.8%(上限なし)',
     rarity: 'fusion',
     needs: ['rage', 'reflect'],
-    outgoing: (world, me, target, amount) => amount * (1 + 1.5 * Math.max(0, 1 - me.hp / me.maxHp)),
-    incoming(world, me, src, amount, opts) {
+    outgoing: (world, me, target, amount, opts, st) => amount * (1 + 0.008 * (st.rage || 0)),
+    incoming(world, me, src, amount, opts, st) {
       if (src && src !== me && opts.kind !== 'reflect' && opts.kind !== 'skill') dealDamage(world, me, src, amount * 0.3, { kind: 'reflect' });
+      st.rage = (st.rage || 0) + amount;
       return amount;
     },
+    show: (st) => `怒り ${fmtNum(Math.round(st.rage || 0))}(威力 +${fmtNum(Math.round(0.8 * (st.rage || 0)))}%)`,
   },
   {
     id: 'infinite',
     icon: '🧬',
     name: '無限進化',
-    desc: '攻撃が当たるたびに、さらに2回成長する',
+    desc: '当てるたびに、さらに成長する。追加の成長は 0.5回から始まり、当てるほど増えていく(10回当てると1回、30回で2回、50回で3回…)',
     rarity: 'fusion',
     needs: ['growth2', 'overgrow'],
     onHit(world, me, foe, info) {
       if (!me.def.onHit) return;
-      me.def.onHit(world, me, foe, info);
-      if (!foe.dead) me.def.onHit(world, me, foe, info);
+      let extra = 0.5 + me.hits * 0.05;
+      while (extra > 0 && !foe.dead) {
+        if (extra >= 1 || world.rng() < extra) me.def.onHit(world, me, foe, info);
+        extra -= 1;
+      }
     },
+    show: (st, me) => `追加の成長 ${(0.5 + me.hits * 0.05).toFixed(2)}回/1ヒット`,
   },
   {
     id: 'colossus',
     icon: '🏔️',
     name: '超巨神',
-    desc: '大きさ +60%・最大HP +160・威力 +50%・素早さ -12%',
+    desc: '大きさ +25%・最大HP +60・素早さ -8%。当てるたびに体が +1.5% 大きくなり(+90%まで)、最大HP +3(上限なし)',
     rarity: 'fusion',
     needs: ['big', 'titan'],
-    apply(world, me) {
-      resize(me, 1.6);
-      me.maxHp += 160;
-      me.hp += 160;
-      me.power *= 1.5;
-      me.speedMul *= 0.88;
+    apply(world, me, st) {
+      resize(me, 1.25);
+      st.size = 1.25;
+      me.maxHp += 60;
+      me.hp += 60;
+      me.speedMul *= 0.92;
     },
+    onHit(world, me, foe, info, st) {
+      me.maxHp += 3;
+      me.hp += 3;
+      if (st.size < 1.9) {
+        const k = Math.min(1.9, st.size * 1.015) / st.size;
+        resize(me, k);
+        st.size *= k;
+      }
+    },
+    show: (st, me) => `大きさ ×${(st.size || 1).toFixed(2)}・最大HP ${fmtNum(Math.round(me.maxHp))}`,
   },
   {
     id: 'ninja',
     icon: '🥷',
     name: '忍',
-    desc: '大きさ -30%・素早さ +25%・攻撃速度 +15%・22%でよける',
+    desc: '大きさ -25%・素早さ +20%・20%でよける。よけたあとの次の武器の攻撃は「影討ち」でダメージ3倍',
     rarity: 'fusion',
     needs: ['small', 'haste'],
     apply(world, me) {
-      resize(me, 0.7);
-      me.speedMul *= 1.25;
-      me.haste *= 1.15;
+      resize(me, 0.75);
+      me.speedMul *= 1.2;
     },
-    incoming: dodge(0.22),
+    incoming(world, me, src, amount, opts, st) {
+      const got = dodge(0.2)(world, me, src, amount, opts);
+      if (got === 0 && amount > 0) st.ready = true;
+      return got;
+    },
+    outgoing(world, me, target, amount, opts, st) {
+      if (!st.ready || !isWeaponHit(opts)) return amount;
+      st.ready = false;
+      st.n = (st.n || 0) + 1;
+      world.events.push({ type: 'crit', x: target.x, y: target.y });
+      return amount * 3;
+    },
+    show: (st) => `影討ち ${st.n || 0}回${st.ready ? '(次は3倍！)' : ''}`,
   },
   {
     id: 'timeKing',
     icon: '⌛',
     name: '時の王',
-    desc: '攻撃速度 +50%・2.5秒ごとに相手全員の時間を1秒止める',
+    desc: '攻撃速度 +20%・2.5秒ごとに相手全員の時間を1秒止める。止まっている相手へのダメージ +30%',
     rarity: 'fusion',
     needs: ['timeLord', 'haste'],
-    apply: (w, me) => (me.haste *= 1.5),
+    apply: (w, me) => (me.haste *= 1.2),
     update(world, me, foe, dt, st) {
       st.t = (st.t ?? 1.5) - dt;
       if (st.t > 0) return;
@@ -1011,39 +1104,44 @@ export const SKILLS = [
         world.events.push({ type: 'timestop', x: o.x, y: o.y, target: o.id });
       }
     },
+    outgoing: (world, me, target, amount) => (target.freeze > 0 ? amount * 1.3 : amount),
   },
   {
     id: 'ironThorns',
     icon: '🦔',
     name: '鉄のトゲ',
-    desc: 'ぶつかった相手に5ダメージ・受けるダメージ -10%',
+    desc: '受けるダメージ -10%。ぶつかった相手にトゲ(3ダメージ)。ぶつかるたびにトゲが伸びて +0.5 ずつ強くなる',
     rarity: 'fusion',
     needs: ['thorns', 'armor'],
     contact(world, me, foe, st) {
       if ((st.cd || 0) > world.t) return;
       st.cd = world.t + 0.3;
-      skillDamage(world, me, foe, 5);
+      skillDamage(world, me, foe, 3 + 0.5 * (st.n || 0));
+      st.n = (st.n || 0) + 1;
     },
     incoming: (w, me, src, amount) => amount * 0.9,
+    show: (st) => `トゲ ${(3 + 0.5 * (st.n || 0)).toFixed(1)}ダメージ`,
   },
   {
     id: 'sunGod',
     icon: '🔆',
     name: '太陽神',
-    desc: '広い範囲の相手が毎秒4ダメージを受けて激しく燃える',
+    desc: 'まわりの相手が毎秒4ダメージを受けて燃える。日が昇るように、照らす範囲が時間とともに広がっていく(半径100 → 毎秒+6、320まで)',
     rarity: 'fusion',
     needs: ['sun', 'burnEdge'],
     update(world, me, foe, dt, st) {
+      st.r = Math.min(320, (st.r || 100) + 6 * dt);
       st.t = (st.t || 0) + dt;
       if (st.t < 0.5) return;
       st.t -= 0.5;
-      for (const o of enemiesNear(world, me, 170)) {
+      for (const o of enemiesNear(world, me, st.r)) {
         skillDamage(world, me, o, 2);
         o.burnT = Math.max(o.burnT, 1.5);
         o.burnDps = Math.max(o.burnDps, 2);
         o.burnSrc = me.id;
       }
     },
+    show: (st) => `日差しの半径 ${Math.round(st.r || 100)}`,
   },
   {
     id: 'vortex',
@@ -1073,34 +1171,36 @@ export const SKILLS = [
     id: 'assassin',
     icon: '🦂',
     name: '暗殺者',
-    desc: '武器の攻撃 +1ダメージ・HP30%以下の相手へはダメージ3倍',
+    desc: '武器の攻撃 +1ダメージ。相手のHPが少ないほどダメージが上がる(残りHP50%で約1.8倍、0%に近いほど4倍)',
     rarity: 'fusion',
     needs: ['execute', 'sharp'],
     outgoing(world, me, target, amount, opts) {
       if (isWeaponHit(opts)) amount += 1;
-      return target.hp < target.maxHp * 0.3 ? amount * 3 : amount;
+      const lost = Math.max(0, 1 - target.hp / target.maxHp);
+      return amount * (1 + 3 * lost * lost);
     },
   },
   {
     id: 'dragonKing',
     icon: '🐲',
     name: '竜王',
-    desc: '2.2秒ごとに火の玉を5発(各3ダメージ+やけど)・威力 +15%',
+    desc: '2.2秒ごとに火の玉(各3ダメージ+やけど)。3発から始まり、当てた回数4回ごとに +1発(9発まで。そのあとは1発 +0.5ダメージ)',
     rarity: 'fusion',
     needs: ['dragon', 'power'],
-    apply: (w, me) => (me.power *= 1.15),
     update(world, me, foe, dt, st) {
       st.t = (st.t ?? 1) - dt;
       if (st.t > 0) return;
       st.t = 2.2;
-      breath(world, me, foe, 5, 3);
+      const more = Math.floor(me.hits / 4);
+      breath(world, me, foe, Math.min(9, 3 + more), 3 + 0.5 * Math.max(0, 3 + more - 9));
     },
+    show: (st, me) => `火の玉 ${Math.min(9, 3 + Math.floor(me.hits / 4))}発`,
   },
   {
     id: 'miracle',
     icon: '🌠',
     name: '奇跡',
-    desc: '15%でよける・25%でダメージ2倍・8秒ごとに1.2秒無敵',
+    desc: '15%でよける・8秒ごとに1.2秒無敵。よけたり無敵で防いだりしたダメージは「奇跡の力」としてたまり、次の武器の攻撃にまとめて上乗せされる',
     rarity: 'fusion',
     needs: ['lucky', 'starGuard'],
     update(world, me, foe, dt, st) {
@@ -1110,15 +1210,19 @@ export const SKILLS = [
       st.until = world.t + 1.2;
       world.events.push({ type: 'block', x: me.x, y: me.y });
     },
-    outgoing(world, me, target, amount, opts) {
-      if (!isWeaponHit(opts) || world.rng() >= 0.25) return amount;
+    outgoing(world, me, target, amount, opts, st) {
+      if (!isWeaponHit(opts) || !(st.stock > 0)) return amount;
+      const add = st.stock;
+      st.stock = 0;
       world.events.push({ type: 'crit', x: target.x, y: target.y });
-      return amount * 2;
+      return amount + add;
     },
     incoming(world, me, src, amount, opts, st) {
-      if ((st.until || 0) > world.t) return 0;
-      return dodge(0.15)(world, me, src, amount, opts);
+      const got = (st.until || 0) > world.t ? 0 : dodge(0.15)(world, me, src, amount, opts);
+      if (got === 0 && amount > 0) st.stock = (st.stock || 0) + amount;
+      return got;
     },
+    show: (st) => `奇跡の力 ${fmtNum(+(st.stock || 0).toFixed(1))}`,
   },
 
   // ==== 第3弾: 成長・体の動き・武器との組み合わせ・時間・対策・カード選びのカード ====
@@ -1462,7 +1566,7 @@ export const SKILLS = [
     id: 'oneShot',
     icon: '🎇',
     name: '一撃必殺',
-    desc: '2秒間攻撃を受けなかったら、次の攻撃が5倍・ふだんも25%でダメージ2倍',
+    desc: '攻撃を受けずにいるほど力がたまる(1秒ごとに次の攻撃の倍率 +1、8倍まで)。武器の攻撃でまとめて放つ。攻撃を受けるとたまった力は消える',
     rarity: 'fusion',
     needs: ['focus', 'crit'],
     incoming(world, me, src, amount, opts, st) {
@@ -1471,17 +1575,12 @@ export const SKILLS = [
     },
     outgoing(world, me, target, amount, opts, st) {
       if (!isWeaponHit(opts)) return amount;
-      if (world.t - Math.max(st.calm ?? 0, st.used ?? 0) >= 2) {
-        st.used = world.t;
-        world.events.push({ type: 'crit', x: target.x, y: target.y });
-        return amount * 5;
-      }
-      if (world.rng() < 0.25) {
-        world.events.push({ type: 'crit', x: target.x, y: target.y });
-        return amount * 2;
-      }
-      return amount;
+      const k = Math.min(8, 1 + Math.floor(world.t - Math.max(st.calm ?? 0, st.used ?? 0)));
+      st.used = world.t;
+      if (k >= 3) world.events.push({ type: 'crit', x: target.x, y: target.y });
+      return amount * k;
     },
+    show: () => '受けずにいた秒数ぶん、次の一撃が強い',
   },
   {
     id: 'holySpring',
@@ -1501,7 +1600,7 @@ export const SKILLS = [
     id: 'earthRage',
     icon: '🪨',
     name: '大地の怒り',
-    desc: '着地するたびに大きな地震(まわりの相手に10ダメージ)・吹き飛ばされにくい(-70%)',
+    desc: '着地するたびに地震(まわりの相手に8ダメージ)。地震のたびに大地の怒りがたまり、次の地震が +1 強くなる。吹き飛ばされにくい(-70%)',
     rarity: 'fusion',
     needs: ['landing', 'heavy'],
     apply: (w, me) => (me.knockMul = (me.knockMul ?? 1) * 0.3),
@@ -1509,16 +1608,19 @@ export const SKILLS = [
       const onFloor = me.y >= ARENA - me.r - 3;
       if (onFloor && (st.vy || 0) > 200 && (st.cd || 0) <= world.t) {
         st.cd = world.t + 0.8;
+        const dmg = 8 + (st.n || 0);
+        st.n = (st.n || 0) + 1;
         world.events.push({ type: 'quake', x: me.x, y: ARENA - 4 });
         world.events.push({ type: 'shock', x: me.x, y: ARENA - 6, r: 190, color: '#a07a50' });
         for (const o of enemiesNear(world, me, 210)) {
-          skillDamage(world, me, o, 10);
+          skillDamage(world, me, o, dmg);
           o.vy -= 420 * (o.knockMul ?? 1);
           o.stun = Math.max(o.stun, 0.2);
         }
       }
       st.vy = me.vy;
     },
+    show: (st) => `次の地震 ${8 + (st.n || 0)}ダメージ`,
   },
   {
     id: 'perfectReflect',
@@ -1545,22 +1647,25 @@ export const SKILLS = [
     id: 'genius',
     icon: '🧠',
     name: '天才',
-    desc: '3秒ごとに武器が1回成長・攻撃を受けると60%でも成長',
+    desc: '3秒ごとに武器が1回成長。成長するたびにひらめきが速くなり、間隔が7%ずつ短くなる(0.6秒まで)。攻撃を受けると50%でも成長',
     rarity: 'fusion',
     needs: ['seed', 'learn'],
     update(world, me, foe, dt, st) {
+      st.gap = st.gap || 3;
       st.t = (st.t || 0) + dt;
-      if (st.t < 3) return;
+      if (st.t < st.gap) return;
       st.t = 0;
+      st.gap = Math.max(0.6, st.gap * 0.93);
       growQuiet(world, me, foe);
     },
     incoming(world, me, src, amount, opts, st) {
-      if (src && src !== me && isWeaponHit(opts) && (st.cd || 0) <= world.t && world.rng() < 0.6) {
+      if (src && src !== me && isWeaponHit(opts) && (st.cd || 0) <= world.t && world.rng() < 0.5) {
         st.cd = world.t + 0.25;
         growQuiet(world, me, src);
       }
       return amount;
     },
+    show: (st) => `ひらめきの間隔 ${(st.gap || 3).toFixed(1)}秒`,
   },
   {
     id: 'fortune',
@@ -1575,15 +1680,15 @@ export const SKILLS = [
     id: 'lateKing',
     icon: '🌅',
     name: '大器晩成',
-    desc: '20秒たつと威力 +40%・負けているときは当てるたびに2回多く成長する',
+    desc: '10秒ごとに威力 +15%(試合が続くほど上がり続ける)・負けているときは当てるたびに1回多く成長する',
     rarity: 'fusion',
     needs: ['lateBloom', 'underdog'],
-    outgoing: (world, me, target, amount) => (world.t >= 20 ? amount * 1.4 : amount),
+    outgoing: (world, me, target, amount) => amount * (1 + 0.15 * Math.floor(world.t / 10)),
     onHit(world, me, foe, info) {
       if (!me.def.onHit || me.hp / me.maxHp >= foe.hp / foe.maxHp) return;
       me.def.onHit(world, me, foe, info);
-      if (!foe.dead) me.def.onHit(world, me, foe, info);
     },
+    show: () => '10秒ごとに威力 +15%',
   },
 
   // ==== 第4弾: 床・お守り・筋トレ・進化の石・磁力・時間で強くなるカード ====
@@ -1793,26 +1898,33 @@ export const SKILLS = [
     id: 'muscleGod',
     icon: '🦾',
     name: '筋肉の神',
-    desc: '威力 +20%。武器の攻撃が当たるたびに 威力 +3%(最大 +75%)',
+    desc: '武器の攻撃が当たるたびに「筋肉」+1。筋肉1つごとに威力 +2.5%(上限なし)。筋肉10ごとに体も少し大きくなる(+3%、+45%まで)',
     rarity: 'fusion',
     needs: ['training', 'power'],
-    apply: (w, me) => (me.power *= 1.2),
     onHit(world, me, foe, info, st) {
-      st.k = Math.min(0.75, (st.k || 0) + 0.03);
+      st.k = (st.k || 0) + 1;
+      if (st.k % 10 === 0 && st.k <= 150) resize(me, 1.03);
     },
-    outgoing: (world, me, target, amount, opts, st) => (isWeaponHit(opts) ? amount * (1 + (st.k || 0)) : amount),
+    outgoing: (world, me, target, amount, opts, st) => (isWeaponHit(opts) ? amount * (1 + 0.025 * (st.k || 0)) : amount),
+    show: (st) => `筋肉 ${st.k || 0}(威力 +${fmtNum(+(2.5 * (st.k || 0)).toFixed(1))}%)`,
   },
   {
     id: 'evoGod',
     icon: '🧬',
     name: '進化の神',
-    desc: '試合開始の時点で4回分成長(大器晩成の武器なら7回分)・当てると40%でもう1回成長',
+    desc: '試合開始の時点で3回分成長(🌱進化の武器なら6回分)。当てた回数が 4・8・16・32…(倍々)になるたびに大進化して、その回数の1/4だけまとめて成長する',
     rarity: 'fusion',
     needs: ['evoStone', 'growth2'],
-    apply: (world, me) => preGrow(world, me, me.def.bloom ? 7 : 4),
-    onHit(world, me, foe, info) {
-      if (me.def.onHit && world.rng() < 0.4) me.def.onHit(world, me, foe, info);
+    apply: (world, me) => preGrow(world, me, me.def.bloom ? 6 : 3),
+    onHit(world, me, foe, info, st) {
+      st.next = st.next || 4;
+      if (!me.def.onHit || me.hits < st.next) return;
+      const n = st.next / 4;
+      st.next *= 2;
+      world.events.push({ type: 'say', x: me.x, y: me.y, text: '大進化！', color: '#ff3d9a' });
+      for (let i = 0; i < n && !foe.dead; i++) me.def.onHit(world, me, foe, info);
     },
+    show: (st) => `次の大進化: ${st.next || 4}回目のヒット(+${(st.next || 4) / 4}回成長)`,
   },
   {
     id: 'hyper',
@@ -1883,46 +1995,84 @@ export const SKILLS = [
   },
 
   // ==== 武器進化: ボスを倒したときなどに選ぶ。重ねるほど武器の名前が「改 → 真 → 極 → 神」と変わる ====
-  { id: 'aPower', icon: '🔺', name: '力の覚醒', desc: '武器の威力 +45%', rarity: 'awaken', apply: (w, me) => (awaken(me), (me.power *= 1.45)) },
-  { id: 'aSpeed', icon: '💨', name: '速さの覚醒', desc: '攻撃速度 +30%・素早さ +10%', rarity: 'awaken', apply: (w, me) => (awaken(me), (me.haste *= 1.3), (me.speedMul *= 1.1)) },
+  {
+    id: 'aPower',
+    icon: '🔺',
+    name: '剛力の覚醒',
+    desc: '武器の威力 +25%。1発のダメージが大きい攻撃ほど、さらに強くなる(5ダメージ以上の攻撃は さらに +30%)',
+    rarity: 'awaken',
+    apply: (w, me) => (awaken(me), (me.power *= 1.25)),
+    outgoing: (world, me, target, amount, opts) => (isWeaponHit(opts) && amount >= 5 ? amount * 1.3 : amount),
+  },
+  {
+    id: 'aSpeed',
+    icon: '💨',
+    name: '疾風の覚醒',
+    desc: '攻撃速度 +15%。当てるたびに風に乗って、攻撃速度 +1.5%・素早さ +0.5%(攻撃速度 +60%・素早さ +20%まで)',
+    rarity: 'awaken',
+    apply: (w, me) => (awaken(me), (me.haste *= 1.15)),
+    onHit(world, me, foe, info, st) {
+      if ((st.n || 0) >= 40) return;
+      st.n = (st.n || 0) + 1;
+      me.haste *= 1.012;
+      me.speedMul *= 1.0046;
+    },
+    show: (st) => `風 ${st.n || 0}/40`,
+  },
   {
     id: 'aGrowth',
     icon: '🌻',
     name: '成長の覚醒',
-    desc: '最初から3回分成長・当たると50%でもう1回成長',
+    desc: '最初から3回分成長。当てた回数が8の倍数になるたびに、まとめて5回成長する(ドカンと伸びる)',
     rarity: 'awaken',
     apply: (world, me) => (awaken(me), preGrow(world, me, 3)),
     onHit(world, me, foe, info) {
-      if (me.def.onHit && world.rng() < 0.5) me.def.onHit(world, me, foe, info);
+      if (!me.def.onHit || me.hits % 8) return;
+      world.events.push({ type: 'say', x: me.x, y: me.y, text: '開花！', color: '#e0a600' });
+      for (let i = 0; i < 5 && !foe.dead; i++) me.def.onHit(world, me, foe, info);
     },
   },
   {
     id: 'aGuard',
     icon: '🏯',
-    name: '守りの覚醒',
-    desc: '最大HP +50・受けるダメージ -10%',
+    name: '不動の覚醒',
+    desc: '最大HP +40・受けるダメージ -10%。打たれるほど育つ: 受けたダメージ12ごとに、武器が1回成長する',
     rarity: 'awaken',
-    apply: (w, me) => (awaken(me), (me.maxHp += 50), (me.hp += 50)),
-    incoming: (w, me, src, amount) => amount * 0.9,
+    apply: (w, me) => (awaken(me), (me.maxHp += 40), (me.hp += 40)),
+    incoming(world, me, src, amount, opts, st) {
+      amount *= 0.9;
+      st.d = (st.d || 0) + amount;
+      while (st.d >= 12) {
+        st.d -= 12;
+        st.n = (st.n || 0) + 1;
+        growQuiet(world, me, src && src !== me ? src : foeOf(world, me));
+      }
+      return amount;
+    },
+    show: (st) => `打たれて成長 ${st.n || 0}回`,
   },
   {
     id: 'aEcho',
     icon: '👥',
     name: '残像の覚醒',
-    desc: '武器の攻撃が25%でもう1回同じダメージで当たる',
+    desc: '武器の攻撃が 15% でもう1回同じダメージで当たる。当てるたびに残像が濃くなり、確率が +1% ずつ上がる(50%まで)',
     rarity: 'awaken',
     apply: (w, me) => awaken(me),
+    onHit(world, me, foe, info, st) {
+      st.n = Math.min(35, (st.n || 0) + 1);
+    },
     afterDeal(world, me, target, amount, opts, st) {
-      if (!isWeaponHit(opts) || (st.cd || 0) > world.t || world.rng() >= 0.25) return;
+      if (!isWeaponHit(opts) || (st.cd || 0) > world.t || world.rng() >= 0.15 + 0.01 * (st.n || 0)) return;
       st.cd = world.t + 0.2;
       skillDamage(world, me, target, amount);
     },
+    show: (st) => `残像の確率 ${15 + (st.n || 0)}%`,
   },
   {
     id: 'aLight',
     icon: '✨',
     name: '光の覚醒',
-    desc: '2秒ごとに光の衝撃波(まわりの相手全員に6ダメージ)',
+    desc: '2秒ごとに光の衝撃波(まわりの相手全員に4ダメージ)。衝撃波が当たるたびに光が強まり、+0.4 ずつ強くなり続ける',
     rarity: 'awaken',
     apply: (w, me) => awaken(me),
     update(world, me, foe, dt, st) {
@@ -1931,10 +2081,12 @@ export const SKILLS = [
       st.t = 2;
       world.events.push({ type: 'shock', x: me.x, y: me.y, r: 190, color: '#ffe066' });
       for (const o of enemiesNear(world, me, 190)) {
-        skillDamage(world, me, o, 6);
+        skillDamage(world, me, o, 4 + 0.4 * (st.n || 0));
+        st.n = (st.n || 0) + 1;
         knockback(me, o, 260);
       }
     },
+    show: (st) => `衝撃波 ${(4 + 0.4 * (st.n || 0)).toFixed(1)}ダメージ`,
   },
   {
     id: 'aBlood',
@@ -1951,13 +2103,15 @@ export const SKILLS = [
   {
     id: 'aFlame',
     icon: '♨️',
-    name: '炎の覚醒',
-    desc: '武器の攻撃で相手が燃える(2秒間・毎秒2.5)',
+    name: '業火の覚醒',
+    desc: '武器の攻撃で相手が燃える(毎秒1.5)。燃えている相手に当てるたびに炎が重なって、やけどが毎秒 +0.6 ずつ強くなる(消えるまで)',
     rarity: 'awaken',
     apply: (w, me) => awaken(me),
     onHit(world, me, foe) {
+      // 自分の炎で燃えている相手なら重ねて強く、そうでなければ毎秒1.5から
+      const mine = foe.burnT > 0 && foe.burnSrc === me.id;
+      foe.burnDps = mine ? foe.burnDps + 0.6 : Math.max(foe.burnT > 0 ? foe.burnDps : 0, 1.5);
       foe.burnT = 2;
-      foe.burnDps = Math.max(foe.burnDps, 2.5);
       foe.burnSrc = me.id;
     },
   },
@@ -1965,34 +2119,41 @@ export const SKILLS = [
     id: 'aKing',
     icon: '👑',
     name: '王の覚醒',
-    desc: '威力+15%・最大HP+25・攻撃速度+10%・素早さ+5%',
+    desc: '威力 +10%。集めたカードが力になる: 持っているカード1枚ごとに さらに 威力 +5%・最大HP +5',
     rarity: 'awaken',
-    apply(world, me) {
-      awaken(me);
-      me.power *= 1.15;
-      me.maxHp += 25;
-      me.hp += 25;
-      me.haste *= 1.1;
-      me.speedMul *= 1.05;
+    apply: (w, me) => (awaken(me), (me.power *= 1.1)),
+    // あとから足されたカードも数えるため、試合が始まってから数える
+    update(world, me, foe, dt, st) {
+      if (st.done) return;
+      st.done = true;
+      const n = me.skills.filter((sk) => !sk.def.hidden).length;
+      st.n = n;
+      me.power *= 1 + 0.05 * n;
+      me.maxHp += 5 * n;
+      me.hp += 5 * n;
     },
+    show: (st) => `カード ${st.n || 0}枚ぶん(威力 さらに +${5 * (st.n || 0)}%)`,
   },
   {
     id: 'aChaos',
     icon: '🎲',
     name: '混沌の覚醒',
-    desc: '当てるたびにランダム: 雷(4ダメージ) / 毒+1 / 2回復',
+    desc: '当てるたびにランダム: 雷 / 毒 / 回復。起きるたびに混沌が深まり、どの効果も少しずつ大きくなる',
     rarity: 'awaken',
     apply: (w, me) => awaken(me),
     onHit(world, me, foe, info, st) {
       if ((st.cd || 0) > world.t) return;
       st.cd = world.t + 0.4;
+      const k = 1 + 0.08 * (st.n || 0);
+      st.n = (st.n || 0) + 1;
       const r = world.rng();
-      if (r < 1 / 3) zap(world, me, foe, 4);
+      if (r < 1 / 3) zap(world, me, foe, 3 * k);
       else if (r < 2 / 3) {
-        foe.poison += 1;
+        foe.poison += Math.max(1, Math.round(k));
         foe.poisonSrc = me.id;
-      } else heal(world, me, 2);
+      } else heal(world, me, 1.5 * k);
     },
+    show: (st) => `混沌 ×${(1 + 0.08 * (st.n || 0)).toFixed(2)}`,
   },
 
   // ==== 呪いのカード: とても強いが、代わりに弱点がつく ====

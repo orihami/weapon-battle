@@ -622,8 +622,13 @@ function renderBallInfo() {
   const def = ball.def;
   const tag = state.labels && state.labels[i];
   const skills = ball.skills.filter((sk) => !sk.def.hidden);
+  // 同じカードはまとめる。育つカードは今の状態(show)も出す
   const counts = new Map();
-  for (const sk of skills) counts.set(sk.def, (counts.get(sk.def) || 0) + 1);
+  for (const sk of skills) {
+    const c = counts.get(sk.def) || { n: 0, st: sk.st };
+    c.n++;
+    counts.set(sk.def, c);
+  }
   $('ballInfo').innerHTML =
     `<h3 style="color:${readable(def.color)}">${tag ? `<span class="ptag" style="background:${tag.color}">${tag.text}</span> ` : ''}${weaponName(i)}</h3>` +
     `<p class="bi-grow">${def.grow || ''}</p>` +
@@ -638,7 +643,10 @@ function renderBallInfo() {
     (skills.length
       ? `<h4>カード(${skills.length}枚)</h4><ul class="bi-cards">` +
         [...counts]
-          .map(([d, n]) => `<li><span style="border-color:${RARITY[d.rarity] ? RARITY[d.rarity].color : '#999'}">${d.icon}</span><b>${d.name}${n > 1 ? ` ×${n}` : ''}</b><small>${d.desc || ''}</small></li>`)
+          .map(
+            ([d, { n, st }]) =>
+              `<li><span style="border-color:${RARITY[d.rarity] ? RARITY[d.rarity].color : '#999'}">${d.icon}</span><b>${d.name}${n > 1 ? ` ×${n}` : ''}${d.show ? ` <em>${d.show(st, ball)}</em>` : ''}</b><small>${d.desc || ''}</small></li>`,
+          )
           .join('') +
         '</ul>'
       : '<p class="bi-none">カードなし</p>');

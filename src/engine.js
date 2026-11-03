@@ -385,7 +385,11 @@ function stepStatus(world, b, dt) {
     if (b.poison > 0) dealDamage(world, world.balls[b.poisonSrc] || null, b, b.poison * 0.3 * 0.5, { kind: 'poison' });
     if (b.burnT > 0) dealDamage(world, world.balls[b.burnSrc] || null, b, b.burnDps * 0.5, { kind: 'burn' });
   }
-  if (b.burnT > 0) b.burnT -= dt;
+  if (b.burnT > 0) {
+    b.burnT -= dt;
+    // 燃え終わったら強さも消す(重ねがけした強さが次のやけどに残らないように)
+    if (b.burnT <= 0) b.burnDps = 0;
+  }
 }
 
 // ボールの「元気さ」= 運動エネルギー + 位置エネルギー。
