@@ -11,6 +11,7 @@
 //   lethal(world, me, st) → true なら倒れない
 //   contact(world, me, foe, st)              ボールどうしがぶつかったとき
 
+import { M } from './detmath.js';
 import { ARENA, ally, dealDamage, foeOf, heal, knockback, spawnProjectile } from './engine.js';
 import { fmtNum } from './format.js';
 
@@ -43,10 +44,10 @@ function resize(me, k) {
 
 function skillShot(world, me, foe, angle, speed, damage, kind = 'skillbolt', extra = {}) {
   spawnProjectile(world, me, {
-    x: me.x + Math.cos(angle) * (me.r + 6),
-    y: me.y + Math.sin(angle) * (me.r + 6),
-    vx: Math.cos(angle) * speed,
-    vy: Math.sin(angle) * speed,
+    x: me.x + M.cos(angle) * (me.r + 6),
+    y: me.y + M.sin(angle) * (me.r + 6),
+    vx: M.cos(angle) * speed,
+    vy: M.sin(angle) * speed,
     angle,
     kind,
     r: 5,
@@ -62,12 +63,12 @@ function skillShot(world, me, foe, angle, speed, damage, kind = 'skillbolt', ext
 }
 
 function homingStep(p, foe, turn, dt, speed) {
-  const want = Math.atan2(foe.y - p.y, foe.x - p.x);
-  const cur = Math.atan2(p.vy, p.vx);
+  const want = M.atan2(foe.y - p.y, foe.x - p.x);
+  const cur = M.atan2(p.vy, p.vx);
   const diff = ((want - cur + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
   const a = cur + Math.max(-turn * dt, Math.min(turn * dt, diff));
-  p.vx = Math.cos(a) * speed;
-  p.vy = Math.sin(a) * speed;
+  p.vx = M.cos(a) * speed;
+  p.vy = M.sin(a) * speed;
   p.angle = a;
 }
 
@@ -95,7 +96,7 @@ function addBlade(me, dmg) {
 const isWeaponHit = (opts) => !['poison', 'burn', 'skill', 'reflect'].includes(opts.kind);
 
 function enemiesNear(world, me, range) {
-  return world.balls.filter((o) => o !== me && !o.dead && !ally(o, me) && Math.hypot(o.x - me.x, o.y - me.y) < range + o.r);
+  return world.balls.filter((o) => o !== me && !o.dead && !ally(o, me) && M.hypot(o.x - me.x, o.y - me.y) < range + o.r);
 }
 
 function dodge(rate) {
@@ -146,7 +147,7 @@ function growQuiet(world, me, foe) {
 
 // 竜の息吹: 相手の方へ扇形に火の玉
 function breath(world, me, foe, n, dmg) {
-  const a = Math.atan2(foe.y - me.y, foe.x - me.x);
+  const a = M.atan2(foe.y - me.y, foe.x - me.x);
   for (let i = 0; i < n; i++) {
     skillShot(world, me, foe, a + (i - (n - 1) / 2) * 0.18, 480, dmg, 'fireball', {
       r: 8,
@@ -305,7 +306,7 @@ export const SKILLS = [
       st.t = (st.t ?? 1) - dt;
       if (st.t > 0) return;
       st.t = 2;
-      skillShot(world, me, foe, Math.atan2(foe.y - me.y, foe.x - me.x) + Math.PI, 260, 6, 'missile', {
+      skillShot(world, me, foe, M.atan2(foe.y - me.y, foe.x - me.x) + Math.PI, 260, 6, 'missile', {
         life: 3.5,
         update: (world, p, owner, foe, dt) => homingStep(p, foe, 3.2, dt, 420),
       });
@@ -422,7 +423,7 @@ export const SKILLS = [
       st.t = (st.t ?? 0.8) - dt;
       if (st.t > 0) return;
       st.t = 1.8;
-      const a = Math.atan2(foe.y - me.y, foe.x - me.x);
+      const a = M.atan2(foe.y - me.y, foe.x - me.x);
       for (const s of [-0.3, 0, 0.3]) skillShot(world, me, foe, a + s, 520, 2);
     },
   },
@@ -551,7 +552,7 @@ export const SKILLS = [
     rarity: 'common',
     outgoing(world, me, target, amount) {
       if (me.def.kind !== 'ranged') return amount * 1.12;
-      return Math.hypot(target.x - me.x, target.y - me.y) > 220 ? amount * 1.4 : amount;
+      return M.hypot(target.x - me.x, target.y - me.y) > 220 ? amount * 1.4 : amount;
     },
   },
   { id: 'jump', icon: '🦘', name: '跳躍', desc: '動きが15%速くなり、8%で攻撃をよける', rarity: 'common', apply: (w, me) => (me.speedMul *= 1.15), incoming: dodge(0.08) },
@@ -665,7 +666,7 @@ export const SKILLS = [
       st.t = 5;
       world.events.push({ type: 'shock', x: me.x, y: me.y, r: 260, color: '#5a3a8a' });
       for (const o of enemiesNear(world, me, 9999)) {
-        const d = Math.hypot(me.x - o.x, me.y - o.y) || 1;
+        const d = M.hypot(me.x - o.x, me.y - o.y) || 1;
         o.vx += ((me.x - o.x) / d) * 520;
         o.vy += ((me.y - o.y) / d) * 520;
         skillDamage(world, me, o, 3);
@@ -880,7 +881,7 @@ export const SKILLS = [
       const more = Math.floor(me.hits / 5);
       const n = Math.min(10, 2 + more);
       const dmg = 3 + 0.5 * Math.max(0, 2 + more - 10);
-      const a = Math.atan2(foe.y - me.y, foe.x - me.x) + Math.PI;
+      const a = M.atan2(foe.y - me.y, foe.x - me.x) + Math.PI;
       for (let i = 0; i < n; i++) {
         skillShot(world, me, foe, a + (i - (n - 1) / 2) * 0.3, 260, dmg, 'missile', {
           life: 3.5,
@@ -1156,7 +1157,7 @@ export const SKILLS = [
       st.t = 2.5;
       world.events.push({ type: 'boom', x: me.x, y: me.y, radius: 200, kind: 'bomb' });
       for (const o of enemiesNear(world, me, 9999)) {
-        const d = Math.hypot(me.x - o.x, me.y - o.y) || 1;
+        const d = M.hypot(me.x - o.x, me.y - o.y) || 1;
         if (d < 200 + o.r) {
           skillDamage(world, me, o, 8);
           knockback(me, o, 600);
@@ -1445,7 +1446,7 @@ export const SKILLS = [
     incoming(world, me, src, amount, opts) {
       if (!opts.projectile || !src || src === me || world.rng() >= 0.35) return amount * 0.85;
       world.events.push({ type: 'block', x: me.x, y: me.y });
-      const a = Math.atan2(src.y - me.y, src.x - me.x);
+      const a = M.atan2(src.y - me.y, src.x - me.x);
       skillShot(world, me, src, a, 560, Math.min(8, amount), 'skillbolt', {
         update: (world, p, owner, foe, dt) => homingStep(p, src.dead ? foe : src, 3, dt, 560),
       });
@@ -1510,13 +1511,13 @@ export const SKILLS = [
       for (const p of world.projectiles) {
         if (p.owner !== me.id || p.gravity || !(p.vx || p.vy) || p.age < 0.05) continue;
         const target = foeOf(world, me);
-        const want = Math.atan2(target.y - p.y, target.x - p.x);
-        const cur = Math.atan2(p.vy, p.vx);
+        const want = M.atan2(target.y - p.y, target.x - p.x);
+        const cur = M.atan2(p.vy, p.vx);
         const diff = ((want - cur + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
         const a = cur + Math.max(-2.4 * dt, Math.min(2.4 * dt, diff));
-        const sp = Math.hypot(p.vx, p.vy);
-        p.vx = Math.cos(a) * sp;
-        p.vy = Math.sin(a) * sp;
+        const sp = M.hypot(p.vx, p.vy);
+        p.vx = M.cos(a) * sp;
+        p.vy = M.sin(a) * sp;
       }
     },
   },
@@ -1559,7 +1560,7 @@ export const SKILLS = [
     },
     outgoing(world, me, target, amount) {
       if (me.def.kind !== 'ranged') return amount * 1.35;
-      return Math.hypot(target.x - me.x, target.y - me.y) > 200 ? amount * 1.8 : amount;
+      return M.hypot(target.x - me.x, target.y - me.y) > 200 ? amount * 1.8 : amount;
     },
   },
   {
@@ -1633,7 +1634,7 @@ export const SKILLS = [
       if (!src || src === me) return amount;
       if (opts.projectile && world.rng() < 0.4) {
         world.events.push({ type: 'block', x: me.x, y: me.y });
-        const a = Math.atan2(src.y - me.y, src.x - me.x);
+        const a = M.atan2(src.y - me.y, src.x - me.x);
         skillShot(world, me, src, a, 600, Math.min(10, amount * 1.2), 'skillbolt', {
           update: (world, p, owner, foe, dt) => homingStep(p, src.dead ? foe : src, 3.5, dt, 600),
         });
@@ -1760,7 +1761,7 @@ export const SKILLS = [
         if (p.owner === me.id || !(p.vx || p.vy)) continue;
         const dx = p.x - me.x;
         const dy = p.y - me.y;
-        const d = Math.hypot(dx, dy);
+        const d = M.hypot(dx, dy);
         if (d > me.r + 110 || d < 1) continue;
         p.vx += (dx / d) * 1300 * dt;
         p.vy += (dy / d) * 1300 * dt;
@@ -1977,7 +1978,7 @@ export const SKILLS = [
     update(world, me, foe, dt, st) {
       for (const p of world.projectiles) {
         if (p.owner === me.id || p.stormed || !(p.vx || p.vy)) continue;
-        if (Math.hypot(p.x - me.x, p.y - me.y) > me.r + 90) continue;
+        if (M.hypot(p.x - me.x, p.y - me.y) > me.r + 90) continue;
         // はじき返す(持ち主は変えない。武器ごとの弾の仕組みがこわれないように)
         p.stormed = true;
         p.vx = -p.vx;

@@ -1,6 +1,9 @@
 // 対戦シミュレーション本体。DOMに依存しないので Node のテストからそのまま動かせる。
+// 数学関数は detmath.js の M を使う(どのブラウザでも同じ答えになるように。オンラインで全員の試合をそろえるため)。
 // 座標系: 1辺 ARENA の正方形フィールド。時間は秒。
 // ボールは2個以上何個でもよい(バトルロイヤル)。それぞれ一番近い生きている相手を狙う。
+
+import { M } from './detmath.js';
 
 // フィールドの広さ。試合ごとに createWorld が設定する(人数が多いと広くする)。
 // 他のファイルからは import した ARENA がそのまま新しい値になる(ES Modules のライブバインディング)
@@ -76,8 +79,8 @@ export function segSegDist(a, b) {
 export function bladeSegment(ball, blade) {
   // free: 武器とは別に自分で回る刃(スキルの追加の剣)。遠距離武器は相手の方を向き続けるので、武器の向きに付けると当たらない
   const ang = (blade.free ? blade.rot : ball.angle) + blade.off;
-  const c = Math.cos(ang);
-  const s = Math.sin(ang);
+  const c = M.cos(ang);
+  const s = M.sin(ang);
   return [ball.x + c * blade.rIn, ball.y + s * blade.rIn, ball.x + c * blade.rOut, ball.y + s * blade.rOut];
 }
 
@@ -91,8 +94,8 @@ function makeBall(def, id, x, y, angle) {
     def,
     x,
     y,
-    vx: Math.cos(angle) * BASE_SPEED,
-    vy: Math.sin(angle) * BASE_SPEED * 0.6,
+    vx: M.cos(angle) * BASE_SPEED,
+    vy: M.sin(angle) * BASE_SPEED * 0.6,
     r: BALL_R,
     hp: MAX_HP,
     maxHp: MAX_HP,
@@ -168,7 +171,7 @@ function createWorld(defs, seed, boosts, size, teams) {
     const base = rng() * Math.PI * 2;
     defs.forEach((def, i) => {
       const a = base + (i * Math.PI * 2) / defs.length;
-      world.balls.push(makeBall(def, i, ARENA / 2 + Math.cos(a) * ARENA * 0.3, ARENA / 2 + Math.sin(a) * ARENA * 0.3, rng() * Math.PI * 2));
+      world.balls.push(makeBall(def, i, ARENA / 2 + M.cos(a) * ARENA * 0.3, ARENA / 2 + M.sin(a) * ARENA * 0.3, rng() * Math.PI * 2));
     });
   }
   world.balls.forEach((b) => b.id % 2 === 1 && (b.spin = -b.spin));
@@ -223,7 +226,7 @@ export function foeOf(world, ball) {
   let bestD = Infinity;
   for (const o of balls) {
     if (o === ball || o.dead || ally(o, ball)) continue;
-    const d = (o.x - ball.x) ** 2 + (o.y - ball.y) ** 2;
+    const d = (o.x - ball.x) * (o.x - ball.x) + (o.y - ball.y) * (o.y - ball.y);
     if (d < bestD) {
       bestD = d;
       best = o;
@@ -315,7 +318,7 @@ export function landHit(world, me, foe, amount, info = {}) {
 export function knockback(from, target, power) {
   let dx = target.x - from.x;
   let dy = target.y - from.y;
-  const d = Math.hypot(dx, dy) || 1;
+  const d = M.hypot(dx, dy) || 1;
   dx /= d;
   dy /= d;
   // knockMul: 吹き飛ばされにくさ(スキル「重い体」など。なければ1)
@@ -353,8 +356,8 @@ export function spawnProjectile(world, owner, p) {
     for (let i = 0; i < owner.extraShots; i++) {
       const side = i % 2 ? -1 : 1;
       const a = side * 0.22 * (1 + Math.floor(i / 2));
-      const c = Math.cos(a);
-      const sn = Math.sin(a);
+      const c = M.cos(a);
+      const sn = M.sin(a);
       const copy = { ...proj, vx: proj.vx * c - proj.vy * sn, vy: proj.vx * sn + proj.vy * c, angle: proj.angle + a };
       for (const k in copy) {
         if (Array.isArray(copy[k])) copy[k] = copy[k].slice();
@@ -456,7 +459,7 @@ function wallSlam(world, b, impact, dt) {
 function collideBalls(world, a, b) {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
-  const d = Math.hypot(dx, dy);
+  const d = M.hypot(dx, dy);
   const min = a.r + b.r;
   if (d >= min || d === 0) return;
   const nx = dx / d;
@@ -496,8 +499,8 @@ function meleeStep(world, me, foe, dt) {
       bl.cdLeft = bl.cd;
       const amount = typeof bl.damage === 'function' ? bl.damage(world, me, foe) : bl.damage;
       // 当たった位置(刃の上で相手に一番近い点のあたり)
-      const hx = foe.x + (me.x - foe.x) * (foe.r / (Math.hypot(me.x - foe.x, me.y - foe.y) || 1));
-      const hy = foe.y + (me.y - foe.y) * (foe.r / (Math.hypot(me.x - foe.x, me.y - foe.y) || 1));
+      const hx = foe.x + (me.x - foe.x) * (foe.r / (M.hypot(me.x - foe.x, me.y - foe.y) || 1));
+      const hy = foe.y + (me.y - foe.y) * (foe.r / (M.hypot(me.x - foe.x, me.y - foe.y) || 1));
       landHit(world, me, foe, amount, { kind: 'melee', blade: bl, x: hx, y: hy });
       knockback(me, foe, bl.knock);
     }
@@ -596,7 +599,7 @@ function projectileStep(world, dt) {
     if (p.onTouch) {
       for (const o of world.balls) {
         if (o === owner || o.dead || ally(o, owner)) continue;
-        if (Math.hypot(o.x - p.x, o.y - p.y) < o.r + p.r) {
+        if (M.hypot(o.x - p.x, o.y - p.y) < o.r + p.r) {
           p.onTouch(world, p, owner, o);
           if (p.dead) break;
         }

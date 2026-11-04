@@ -455,6 +455,13 @@ function newBattle() {
   state.seed = null;
   state.world = createMelee(state.fighters, seed, { boosts: state.boosts, teams: state.teams || undefined });
   state.running = false;
+  if (isOnline()) {
+    const sess = state.sess;
+    sess.battle++;
+    sess.frame = 0;
+    sess.battleAt = performance.now();
+  }
+  $('syncText').textContent = '';
   renderer.particles = [];
   renderer.texts = [];
   renderer.rings = [];
@@ -680,6 +687,7 @@ function finish() {
   const sub = $('resultSub');
   sub.textContent = '';
   setButtons([]);
+  renderSync();
   if (w.winner === -1) {
     text.textContent = '引き分け！';
     text.style.color = '#ffffff';
@@ -761,9 +769,102 @@ function matchButtons() {
 // 全員のスマホで同じ流れ・同じ結果になる(試合の計算も種で決まる)。
 
 function newSession(seed, online = false) {
-  state.sess = { seed, rng: mulberry32(seed), online, step: 0, inbox: new Map(), gone: new Set(), run: null };
+  state.sess = {
+    seed, rng: mulberry32(seed), online, step: 0, inbox: new Map(), gone: new Set(), run: null,
+    // オンライン: 何試合目か・その試合の何コマ目か・ホームの時計・答え合わせ
+    battle: 0, frame: 0, battleAt: 0, clock: null, sums: new Map(), remote: new Map(), ends: new Map(), bad: new Set(),
+  };
   return state.sess;
 }
+
+// ---- オンライン: 全員が同じものを、同じ時間に見るためのしくみ ----
+// 1) 試合の計算はどのブラウザでも同じ答えになる(detmath.js)。同じ種・同じカードなら、全員まったく同じ試合になる
+// 2) 答え合わせ: SUM_EVERY コマごとに試合の要約(checksum)を全員へ送ってくらべる。終わったら最後の要約もくらべて「全員同じ結果」を出す
+// 3) 時計: ホームが「今何コマ目か」を配り、ほかの人はそれより少し先までしか進まない(遅れていたら追いつく)
+const SUM_EVERY = 240; // 2秒(試合の時間)ごと
+const CLOCK_MS = 200;
+
+function checksum(w) {
+  let h = 2166136261;
+  const s = w.t.toFixed(6) + '|' + w.balls.map((b) => `${b.hp.toFixed(6)},${b.x.toFixed(4)},${b.y.toFixed(4)},${b.dead ? 1 : 0}`).join(';') + '|' + w.projectiles.length;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0;
+  return h;
+}
+
+// 1コマ進めたあと(オンラインのときだけ)
+function onlineStepped(w) {
+  const sess = state.sess;
+  sess.frame++;
+  if (sess.frame % SUM_EVERY === 0 || w.over) {
+    const h = checksum(w);
+    const key = `${sess.battle}:${w.over ? 'end' : sess.frame}`;
+    sess.sums.set(key, h);
+    net.post({ kind: w.over ? 'end' : 'sum', s: sess.seed, b: sess.battle, f: sess.frame, h });
+    compareSums(key);
+  }
+}
+
+function compareSums(key) {
+  const sess = state.sess;
+  const mine = sess.sums.get(key);
+  const theirs = sess.remote.get(key);
+  if (mine === undefined || !theirs) return;
+  for (const [from, h] of theirs) {
+    if (h === mine) continue;
+    if (!sess.bad.has(from)) {
+      sess.bad.add(from);
+      toast(`⚠ ${memberName(from)} の試合がずれています(版がちがう・古いページのままの可能性)`);
+    }
+  }
+  if (key.endsWith(':end')) renderSync();
+}
+
+function memberName(id) {
+  const m = net.room && net.room.members.find((x) => x.id === id);
+  return m ? m.name : 'だれか';
+}
+
+// 試合の終わり: 全員の結果が同じか
+function renderSync() {
+  const el = $('syncText');
+  const sess = state.sess;
+  if (!isOnline() || !sess) {
+    el.textContent = '';
+    return;
+  }
+  const key = `${sess.battle}:end`;
+  const mine = sess.sums.get(key);
+  const theirs = sess.remote.get(key) || new Map();
+  if (mine === undefined) {
+    el.textContent = '';
+    return;
+  }
+  const others = [...theirs];
+  const bad = others.filter(([, h]) => h !== mine).map(([id]) => memberName(id));
+  const total = (net.room ? net.room.members.length : 1);
+  el.classList.toggle('bad', bad.length > 0);
+  el.textContent = bad.length
+    ? `⚠ 結果がちがう人: ${bad.join('・')}(ページを再読み込みしてもらってください)`
+    : others.length + 1 >= total
+      ? `✓ 全員(${total}人)同じ結果`
+      : `✓ ${others.length + 1}人 同じ結果(ほかの人を確認中…)`;
+}
+
+// ほかの人が進んでよいのは、ホームの時計 + 少しまで
+function onlineLimit() {
+  const sess = state.sess;
+  if (!isOnline() || net.isHost) return null;
+  const lead = Math.round((0.3 * state.speed) / DT);
+  const c = sess.clock;
+  const now = performance.now();
+  if (c && c.b === sess.battle) return now - c.at < 2500 ? c.f + lead : null; // ホームから届かなくなったら止めない
+  return now - sess.battleAt < 2500 ? lead : null;
+}
+
+setInterval(() => {
+  const sess = state.sess;
+  if (isOnline() && net.isHost && state.world && sess) net.post({ kind: 'clock', s: sess.seed, b: sess.battle, f: sess.frame });
+}, CLOCK_MS);
 
 const srng = () => (state.sess ? state.sess.rng : Math.random);
 const isOnline = () => !!(state.sess && state.sess.online);
@@ -1208,7 +1309,13 @@ function onlineMessage(from, d) {
       .filter((o) => WEAPON_BY_ID[o.weapon])
       .map((o, i) => ({ name: o.name, weapon: WEAPON_BY_ID[o.weapon], cpu: false, color: PLAYER_COLORS[i % PLAYER_COLORS.length], owner: o.id }));
     if (players.length < ONLINE_MODES[d.mode].min) return;
-    if (d.version && d.version !== $('version').textContent) toast('ほかの人と版がちがうので、試合がずれるかもしれません(ページを再読み込みしてください)');
+    if (d.version && d.version !== $('version').textContent) {
+      // 版がちがうと試合が同じにならないので、参加しない(ホームに知らせる)
+      net.post({ kind: 'mismatch', v: $('version').textContent });
+      onlineStatus(`ホームと版がちがうので参加できません(ホーム ${d.version} / このページ ${$('version').textContent})。ページを再読み込みしてください`);
+      toast('版がちがうので参加できません。ページを再読み込みしてください');
+      return;
+    }
     for (const dlg of document.querySelectorAll('dialog[open]')) dlg.close();
     // 速さもホームに合わせる(全員で同じペースで見る)
     if (SPEEDS.includes(d.speed)) state.speed = d.speed;
@@ -1220,6 +1327,23 @@ function onlineMessage(from, d) {
     if (sess.run && sess.run.step === d.step) {
       acceptPick(sess.run, d.k, d.ids);
       flushPicks(sess.run);
+    }
+  }
+  if ((d.kind === 'sum' || d.kind === 'end') && isOnline() && d.s === state.sess.seed && from !== net.you) {
+    const key = `${d.b}:${d.kind === 'end' ? 'end' : d.f}`;
+    const sess = state.sess;
+    if (!sess.remote.has(key)) sess.remote.set(key, new Map());
+    sess.remote.get(key).set(from, d.h);
+    compareSums(key);
+  }
+  if (d.kind === 'clock' && isOnline() && d.s === state.sess.seed && net.room && from === net.room.host) {
+    state.sess.clock = { b: d.b, f: d.f, at: performance.now() };
+  }
+  if (d.kind === 'mismatch' && net.isHost) {
+    toast(`${memberName(from)} は版がちがうので参加できません(ページを再読み込みしてもらってください)`);
+    if (isOnline()) {
+      state.sess.gone.add(from);
+      coverGone();
     }
   }
   if (d.kind === 'quit' && isOnline()) {
@@ -1647,8 +1771,18 @@ function frame(now) {
   if (w && state.running && !w.over) {
     acc += dt * state.speed;
     let n = 0;
-    while (acc >= DT && n < 600) {
+    const online = isOnline();
+    const lim = online ? onlineLimit() : null;
+    if (lim !== null) {
+      const sess = state.sess;
+      // ホームより遅れていたら追いつく / 先に行きすぎていたら待つ
+      const c = sess.clock;
+      if (c && c.b === sess.battle && c.f - sess.frame > 2 * Math.round((0.3 * state.speed) / DT)) acc = Math.max(acc, (c.f - sess.frame) * DT * 0.5);
+      if (sess.frame >= lim) acc = Math.min(acc, DT);
+    }
+    while (acc >= DT && n < 600 && (lim === null || state.sess.frame < lim)) {
       step(w);
+      if (online) onlineStepped(w);
       acc -= DT;
       n++;
       if (w.over) break;

@@ -1,6 +1,7 @@
 // 武器の定義。攻撃が当たるたびに onHit で能力値が成長する。
 // stats() が返す値が画面下に表示される(動画の「Damage: 6」のような部分)。
 
+import { M } from './detmath.js';
 import { fmtNum } from './format.js';
 import {
   ARENA,
@@ -30,7 +31,7 @@ const SONIC_RANGE = 170;
 const fmt = fmtNum;
 
 function aimAt(me, foe) {
-  return Math.atan2(foe.y - me.y, foe.x - me.x);
+  return M.atan2(foe.y - me.y, foe.x - me.x);
 }
 
 // 相手の方へ少しずつ向きを変える(rate: 1秒あたりどれだけ追いつくか)
@@ -44,10 +45,10 @@ function setSpin(b, speed) {
 
 function shoot(world, me, angle, speed, extra) {
   spawnProjectile(world, me, {
-    x: me.x + Math.cos(angle) * (me.r + 8),
-    y: me.y + Math.sin(angle) * (me.r + 8),
-    vx: Math.cos(angle) * speed,
-    vy: Math.sin(angle) * speed,
+    x: me.x + M.cos(angle) * (me.r + 8),
+    y: me.y + M.sin(angle) * (me.r + 8),
+    vx: M.cos(angle) * speed,
+    vy: M.sin(angle) * speed,
     angle,
     ...extra,
   });
@@ -70,13 +71,13 @@ function shown(b, key) {
 
 // 相手の方へ向きを変えながら進む(turn: 1秒に曲がれる角度)
 function homing(p, foe, turn, dt, speed) {
-  const want = Math.atan2(foe.y - p.y, foe.x - p.x);
-  const cur = Math.atan2(p.vy, p.vx);
+  const want = M.atan2(foe.y - p.y, foe.x - p.x);
+  const cur = M.atan2(p.vy, p.vx);
   const diff = ((want - cur + Math.PI) % TAU + TAU) % TAU - Math.PI;
   const a = cur + Math.max(-turn * dt, Math.min(turn * dt, diff));
-  const sp = speed ?? Math.hypot(p.vx, p.vy);
-  p.vx = Math.cos(a) * sp;
-  p.vy = Math.sin(a) * sp;
+  const sp = speed ?? M.hypot(p.vx, p.vy);
+  p.vx = M.cos(a) * sp;
+  p.vy = M.sin(a) * sp;
   p.angle = a;
 }
 
@@ -94,7 +95,7 @@ function strike(world, me, x, y, delay, chain, big = true, mul = 1) {
       world.events.push({ type: 'zap', x: p.x, y: p.y, big });
       // 落ちた所にいる相手全員に当たる(3人以上の試合で、ねらった相手以外にも)
       for (const foe of world.balls) {
-        if (foe === owner || foe.dead || ally(foe, owner) || Math.hypot(foe.x - p.x, foe.y - p.y) >= p.r + foe.r) continue;
+        if (foe === owner || foe.dead || ally(foe, owner) || M.hypot(foe.x - p.x, foe.y - p.y) >= p.r + foe.r) continue;
         landHit(world, owner, foe, (big ? 4 : 2) * mul, { kind: 'zap', x: foe.x, y: foe.y });
         foe.stun = Math.max(foe.stun, 0.08);
         knockback(p, foe, 150);
@@ -109,8 +110,8 @@ function slimeBlob(world, me, x, y, angle, r, big) {
   spawnProjectile(world, me, {
     x,
     y,
-    vx: Math.cos(angle) * (big ? 300 : 220),
-    vy: Math.sin(angle) * (big ? 300 : 220) - 150,
+    vx: M.cos(angle) * (big ? 300 : 220),
+    vy: M.sin(angle) * (big ? 300 : 220) - 150,
     kind: 'slime',
     r,
     life: big ? 3 : 2,
@@ -130,12 +131,12 @@ function slimeBlob(world, me, x, y, angle, r, big) {
 
 // 鏡の光の矢: (x, y) から相手に向けて撃つ
 function mirrorBolt(world, me, foe, x, y) {
-  const a = Math.atan2(foe.y - y, foe.x - x);
+  const a = M.atan2(foe.y - y, foe.x - x);
   spawnProjectile(world, me, {
     x,
     y,
-    vx: Math.cos(a) * 620,
-    vy: Math.sin(a) * 620,
+    vx: M.cos(a) * 620,
+    vy: M.sin(a) * 620,
     angle: a,
     kind: 'mirrorbolt',
     r: 6,
@@ -153,8 +154,8 @@ const STEALABLE = new Set(['arrow', 'bolt', 'bullet', 'knife', 'shuriken', 'need
 // レーザーが壁で跳ね返る道すじ(線分の配列)
 function traceBeam(x, y, angle, bounces) {
   const segs = [];
-  let dx = Math.cos(angle);
-  let dy = Math.sin(angle);
+  let dx = M.cos(angle);
+  let dy = M.sin(angle);
   for (let i = 0; i <= bounces; i++) {
     // 次に当たる壁までの距離
     const tx = dx > 0 ? (ARENA - x) / dx : dx < 0 ? -x / dx : Infinity;
@@ -186,7 +187,7 @@ function explode(world, p, owner, foe, radius, damage, kind) {
   // 範囲に入った相手全員に当たる(1対1では相手1人だけ)
   for (const o of world.balls) {
     if (o === owner || o.dead || ally(o, owner)) continue;
-    if (Math.hypot(o.x - p.x, o.y - p.y) < radius + o.r) {
+    if (M.hypot(o.x - p.x, o.y - p.y) < radius + o.r) {
       landHit(world, owner, o, damage, { kind, x: o.x, y: o.y });
       knockback(p, o, 140);
     }
@@ -198,8 +199,8 @@ function cube(world, me, x, y, angle, r, gen) {
   spawnProjectile(world, me, {
     x: Math.max(r, Math.min(ARENA - r, x)),
     y: Math.max(r, Math.min(ARENA - r, y)),
-    vx: Math.cos(angle) * 380,
-    vy: Math.sin(angle) * 380,
+    vx: M.cos(angle) * 380,
+    vy: M.sin(angle) * 380,
     angle,
     kind: 'cube',
     r,
@@ -223,7 +224,7 @@ function cube(world, me, x, y, angle, r, gen) {
 
 function splitCube(world, p, owner, foe) {
   if (p.gen <= 1 || p.age < 0.05) return;
-  const a = Math.atan2(foe.y - p.y, foe.x - p.x);
+  const a = M.atan2(foe.y - p.y, foe.x - p.x);
   for (const s of [-0.6, 0.6]) cube(world, owner, p.x, p.y, a + s, p.r * 0.8, p.gen - 1);
 }
 
@@ -237,8 +238,8 @@ function crackerBurst(world, p, me, n) {
     spawnProjectile(world, me, {
       x,
       y,
-      vx: Math.cos(a) * sp,
-      vy: Math.sin(a) * sp - 120,
+      vx: M.cos(a) * sp,
+      vy: M.sin(a) * sp - 120,
       kind: 'cracker',
       r: 6,
       life: 0.12 + i * 0.06,
@@ -254,13 +255,13 @@ function crackerBurst(world, p, me, n) {
 // 風船が割れたら矢を3本
 function popBalloon(world, p, owner, foe) {
   world.events.push({ type: 'boom', x: p.x, y: p.y, radius: 26, kind: 'potion' });
-  const a = Math.atan2(foe.y - p.y, foe.x - p.x);
+  const a = M.atan2(foe.y - p.y, foe.x - p.x);
   for (const s of [-0.25, 0, 0.25]) {
     spawnProjectile(world, owner, {
       x: p.x,
       y: p.y,
-      vx: Math.cos(a + s) * 520,
-      vy: Math.sin(a + s) * 520,
+      vx: M.cos(a + s) * 520,
+      vy: M.sin(a + s) * 520,
       angle: a + s,
       kind: 'dart',
       r: 4,
@@ -367,8 +368,8 @@ function snapAngle(a, offset) {
 // 光線(電球): angle の向きに長さ len・太さ wid の帯に入っている相手に当てる。
 // 毎フレーム調べて、同じ相手には cd 秒に1回だけ(回る光でも、通りすぎる間に当たるように)
 function beamHit(world, me, angle, len, wid, dmg, kind, cd) {
-  const ex = me.x + Math.cos(angle) * len;
-  const ey = me.y + Math.sin(angle) * len;
+  const ex = me.x + M.cos(angle) * len;
+  const ey = me.y + M.sin(angle) * len;
   const next = me.w.next || (me.w.next = {});
   for (const o of world.balls) {
     if (o === me || o.dead || ally(o, me) || (next[o.id] ?? 0) > world.t) continue;
@@ -429,8 +430,8 @@ function neutron(world, me, x, y, angle, gen) {
   spawnProjectile(world, me, {
     x,
     y,
-    vx: Math.cos(angle) * 480,
-    vy: Math.sin(angle) * 480,
+    vx: M.cos(angle) * 480,
+    vy: M.sin(angle) * 480,
     angle,
     kind: 'neutron',
     r: 6,
@@ -445,7 +446,7 @@ function neutron(world, me, x, y, angle, gen) {
       const n = Math.floor(s) + (world.rng() < s - Math.floor(s) ? 1 : 0);
       for (let i = 0; i < n; i++) {
         const a = world.rng() * TAU;
-        neutron(world, owner, p.x + Math.cos(a) * (o.r + 10), p.y + Math.sin(a) * (o.r + 10), a + Math.PI * (0.6 + world.rng() * 0.8), p.gen - 1);
+        neutron(world, owner, p.x + M.cos(a) * (o.r + 10), p.y + M.sin(a) * (o.r + 10), a + Math.PI * (0.6 + world.rng() * 0.8), p.gen - 1);
       }
     },
   });
@@ -624,7 +625,7 @@ export const WEAPONS = [
       // 渦: 相手を自分の方へ引き寄せる
       const dx = me.x - foe.x;
       const dy = me.y - foe.y;
-      const d = Math.hypot(dx, dy) || 1;
+      const d = M.hypot(dx, dy) || 1;
       const acc = me.w.pull * 45;
       foe.vx += (dx / d) * acc * dt;
       foe.vy += (dy / d) * acc * dt;
@@ -658,7 +659,7 @@ export const WEAPONS = [
       state: { joust: 2 },
       blade: { rIn: 20, rOut: 120, w: 8, cd: 0.6, knock: 220 },
       damage(world, me) {
-        const sp = Math.hypot(me.vx, me.vy);
+        const sp = M.hypot(me.vx, me.vy);
         return Math.max(1, Math.round(me.w.joust * (sp / (BASE_SPEED * 2))));
       },
     }),
@@ -669,7 +670,7 @@ export const WEAPONS = [
     stats: (b) => [['突撃ダメージ', fmt(b.w.joust)]],
     update(world, me, foe, dt) {
       // 進行方向へ槍先を向ける
-      const target = Math.atan2(me.vy, me.vx);
+      const target = M.atan2(me.vy, me.vx);
       let diff = ((target - me.angle + Math.PI) % TAU + TAU) % TAU - Math.PI;
       me.angle += diff * Math.min(1, dt * 8);
     },
@@ -730,7 +731,7 @@ export const WEAPONS = [
       me.w.tick += dt;
       if (me.w.tick >= 0.25) {
         me.w.tick -= 0.25;
-        if (Math.hypot(foe.x - me.x, foe.y - me.y) < me.w.cur + foe.r) {
+        if (M.hypot(foe.x - me.x, foe.y - me.y) < me.w.cur + foe.r) {
           landHit(world, me, foe, me.w.dps * 0.25, { kind: 'aura' });
         }
       }
@@ -757,7 +758,7 @@ export const WEAPONS = [
       const n = Math.floor(b.w.n);
       for (let i = 0; i < n; i++) {
         const a = b.angle + (i * TAU) / n;
-        out.push([b.x + Math.cos(a) * b.w.dist, b.y + Math.sin(a) * b.w.dist]);
+        out.push([b.x + M.cos(a) * b.w.dist, b.y + M.sin(a) * b.w.dist]);
       }
       return out;
     },
@@ -769,7 +770,7 @@ export const WEAPONS = [
           continue;
         }
         const [x, y] = pts[i];
-        if (Math.hypot(foe.x - x, foe.y - y) < foe.r + 9) {
+        if (M.hypot(foe.x - x, foe.y - y) < foe.r + 9) {
           me.w.cds[i] = 0.6;
           landHit(world, me, foe, 1.4, { kind: 'orbital', x, y });
         }
@@ -797,7 +798,7 @@ export const WEAPONS = [
       // 鎖の先の鉄球: 持ち主のまわりを振り回す力 + 鎖の長さの拘束
       let dx = w.hx - me.x;
       let dy = w.hy - me.y;
-      let d = Math.hypot(dx, dy) || 1;
+      let d = M.hypot(dx, dy) || 1;
       const tx = (-dy / d) * Math.sign(me.spin);
       const ty = (dx / d) * Math.sign(me.spin);
       w.hvx += tx * 1400 * dt;
@@ -809,7 +810,7 @@ export const WEAPONS = [
       w.hy += w.hvy * dt;
       dx = w.hx - me.x;
       dy = w.hy - me.y;
-      d = Math.hypot(dx, dy) || 1;
+      d = M.hypot(dx, dy) || 1;
       if (d > w.len) {
         const nx = dx / d;
         const ny = dy / d;
@@ -821,12 +822,12 @@ export const WEAPONS = [
           w.hvy -= radial * ny;
         }
       }
-      me.angle = Math.atan2(w.hy - me.y, w.hx - me.x);
+      me.angle = M.atan2(w.hy - me.y, w.hx - me.x);
       if (w.cd > 0) {
         w.cd -= dt;
         return;
       }
-      if (Math.hypot(foe.x - w.hx, foe.y - w.hy) < foe.r + w.size) {
+      if (M.hypot(foe.x - w.hx, foe.y - w.hy) < foe.r + w.size) {
         w.cd = 0.35;
         landHit(world, me, foe, w.dmg, { kind: 'flail', x: w.hx, y: w.hy });
         knockback({ x: w.hx - w.hvx, y: w.hy - w.hvy }, foe, 160);
@@ -853,7 +854,7 @@ export const WEAPONS = [
       me.w.timer -= dt;
       if (me.w.timer > 0) return;
       me.w.timer = 2.3;
-      const dist = Math.hypot(foe.x - me.x, foe.y - me.y);
+      const dist = M.hypot(foe.x - me.x, foe.y - me.y);
       for (let i = 0; i < Math.floor(me.w.bombs); i++) {
         // 相手のあたりに散らばるように投げる(少し上向きに放る)
         const a = me.angle + (world.rng() - 0.5) * 1.6 - 0.25;
@@ -874,7 +875,7 @@ export const WEAPONS = [
             explode(world, p, owner, foe, BOMB_RADIUS, BOMB_DAMAGE, 'bomb');
             // 誘爆: 近くにある自分の爆弾もすぐ爆発する
             for (const q of world.projectiles) {
-              if (q !== p && !q.dead && q.owner === p.owner && q.kind === 'bomb' && Math.hypot(q.x - p.x, q.y - p.y) < BOMB_RADIUS) {
+              if (q !== p && !q.dead && q.owner === p.owner && q.kind === 'bomb' && M.hypot(q.x - p.x, q.y - p.y) < BOMB_RADIUS) {
                 q.life = Math.min(q.life, q.age + 0.08);
               }
             }
@@ -992,13 +993,13 @@ export const WEAPONS = [
         damage: me.w.dmg,
         update(world, p, owner, foe, dt) {
           // ゆるく追尾する
-          const want = Math.atan2(foe.y - p.y, foe.x - p.x);
-          const cur = Math.atan2(p.vy, p.vx);
+          const want = M.atan2(foe.y - p.y, foe.x - p.x);
+          const cur = M.atan2(p.vy, p.vx);
           let diff = ((want - cur + Math.PI) % TAU + TAU) % TAU - Math.PI;
           const turn = Math.max(-2.5 * dt, Math.min(2.5 * dt, diff));
-          const sp = Math.hypot(p.vx, p.vy);
-          p.vx = Math.cos(cur + turn) * sp;
-          p.vy = Math.sin(cur + turn) * sp;
+          const sp = M.hypot(p.vx, p.vy);
+          p.vx = M.cos(cur + turn) * sp;
+          p.vy = M.sin(cur + turn) * sp;
           p.angle = cur + turn;
         },
         onTouch(world, p, owner, foe) {
@@ -1082,10 +1083,10 @@ export const WEAPONS = [
             // 持ち主へ戻る
             const dx = owner.x - p.x;
             const dy = owner.y - p.y;
-            const d = Math.hypot(dx, dy) || 1;
+            const d = M.hypot(dx, dy) || 1;
             p.vx += (dx / d) * 1600 * dt;
             p.vy += (dy / d) * 1600 * dt;
-            const sp = Math.hypot(p.vx, p.vy);
+            const sp = M.hypot(p.vx, p.vy);
             if (sp > 560) {
               p.vx *= 560 / sp;
               p.vy *= 560 / sp;
@@ -1133,7 +1134,7 @@ export const WEAPONS = [
       knockback(me, foe, 160);
     },
     update(world, me) {
-      me.angle = Math.atan2(me.vy, me.vx);
+      me.angle = M.atan2(me.vy, me.vx);
     },
     onHit(world, me) {
       growStat(me, 'spd', 0.12, 3);
@@ -1182,7 +1183,7 @@ export const WEAPONS = [
       if (me.w.timer > 0) return;
       me.w.timer = 2.6;
       const split = Math.floor(me.w.split);
-      const dist = Math.hypot(foe.x - me.x, foe.y - me.y);
+      const dist = M.hypot(foe.x - me.x, foe.y - me.y);
       shoot(world, me, me.angle - 0.15, 380, {
         kind: 'bomb',
         r: 11,
@@ -1199,8 +1200,8 @@ export const WEAPONS = [
             spawnProjectile(world, owner, {
               x: p.x,
               y: p.y,
-              vx: Math.cos(a) * sp,
-              vy: Math.sin(a) * sp - 120,
+              vx: M.cos(a) * sp,
+              vy: M.sin(a) * sp - 120,
               kind: 'minibomb',
               r: 6,
               life: 0.5 + world.rng() * 0.4,
@@ -1388,7 +1389,7 @@ export const WEAPONS = [
         wobble: world.rng() * TAU,
         update(world, p, owner, foe, dt) {
           p.wobble += dt * 9;
-          homing(p, foe, 4, dt, 260 + Math.sin(p.wobble) * 60);
+          homing(p, foe, 4, dt, 260 + M.sin(p.wobble) * 60);
           if (p.stingCd > 0) p.stingCd -= dt;
         },
         onTouch(world, p, owner, foe) {
@@ -1637,7 +1638,7 @@ export const WEAPONS = [
           // 周りのものを引き寄せる(近いほど強い)
           const dx = p.x - foe.x;
           const dy = p.y - foe.y;
-          const d = Math.hypot(dx, dy) || 1;
+          const d = M.hypot(dx, dy) || 1;
           if (d < p.r * 3.5) {
             const acc = 2600 * (1 - d / (p.r * 3.5));
             foe.vx += (dx / d) * acc * dt;
@@ -1695,8 +1696,8 @@ export const WEAPONS = [
             spawnProjectile(world, owner, {
               x: p.x,
               y: p.y,
-              vx: Math.cos(a) * sp,
-              vy: Math.sin(a) * sp,
+              vx: M.cos(a) * sp,
+              vy: M.sin(a) * sp,
               kind: 'spark',
               hue: (hue + i * 12) % 360,
               r: 5,
@@ -1755,7 +1756,7 @@ export const WEAPONS = [
           p.y = owner.y;
           if (p.age < p.charge) {
             // 溜めている間はゆっくり相手を追う
-            const want = Math.atan2(foe.y - owner.y, foe.x - owner.x);
+            const want = M.atan2(foe.y - owner.y, foe.x - owner.x);
             const diff = ((want - owner.angle + Math.PI) % TAU + TAU) % TAU - Math.PI;
             owner.angle += diff * Math.min(1, dt * 10);
             p.angle = owner.angle;
@@ -1765,8 +1766,8 @@ export const WEAPONS = [
           if (p.fired) return;
           p.fired = true;
           world.events.push({ type: 'laser', x: p.x, y: p.y, angle: p.angle, width: p.width });
-          const ex = p.x + Math.cos(p.angle) * 1000;
-          const ey = p.y + Math.sin(p.angle) * 1000;
+          const ex = p.x + M.cos(p.angle) * 1000;
+          const ey = p.y + M.sin(p.angle) * 1000;
           if (segPointDist(p.x, p.y, ex, ey, foe.x, foe.y) < foe.r + p.width / 2) {
             landHit(world, owner, foe, dmg, { kind: 'laser', x: foe.x, y: foe.y });
             knockback(owner, foe, 260);
@@ -1883,7 +1884,7 @@ export const WEAPONS = [
           if (p.hitCd > 0) p.hitCd -= dt;
           const dx = owner.x - p.x;
           const dy = owner.y - p.y;
-          const d = Math.hypot(dx, dy) || 1;
+          const d = M.hypot(dx, dy) || 1;
           if (!p.back && (d >= len || p.age > 0.7)) p.back = true;
           if (p.back) {
             p.vx = (dx / d) * 800;
@@ -1938,7 +1939,7 @@ export const WEAPONS = [
         flap: world.rng() * TAU,
         update(world, p, owner, foe, dt) {
           p.flap += dt * 16;
-          homing(p, foe, 3, dt, 240 + Math.sin(p.flap * 0.4) * 80);
+          homing(p, foe, 3, dt, 240 + M.sin(p.flap * 0.4) * 80);
           if (p.biteCd > 0) p.biteCd -= dt;
         },
         onTouch(world, p, owner, foe) {
@@ -2037,7 +2038,7 @@ export const WEAPONS = [
         blockable: true,
         update(world, p, owner, foe, dt) {
           // だんだん加速しながら少しだけ追う
-          homing(p, foe, 1.2, dt, Math.min(720, Math.hypot(p.vx, p.vy) + 900 * dt));
+          homing(p, foe, 1.2, dt, Math.min(720, M.hypot(p.vx, p.vy) + 900 * dt));
         },
         onTouch: (world, p, owner, foe) => explode(world, p, owner, foe, blast, dmg, 'bomb'),
         onBlocked: (world, p, owner, foe) => explode(world, p, owner, foe, blast, dmg, 'bomb'),
@@ -2081,7 +2082,7 @@ export const WEAPONS = [
             p.ring = Math.max(0, p.age - p.delay) * 380;
             if (p.ring > SONIC_RANGE) p.dead = true;
             if (p.hit) return;
-            const d = Math.hypot(foe.x - p.x, foe.y - p.y);
+            const d = M.hypot(foe.x - p.x, foe.y - p.y);
             if (p.ring > 0 && Math.abs(d - p.ring) < foe.r + 6) {
               p.hit = true;
               landHit(world, owner, foe, 1.2, { kind: 'wave', x: foe.x, y: foe.y });
@@ -2287,14 +2288,14 @@ export const WEAPONS = [
         update(world, p, owner, foe, dt) {
           const dx = owner.x - p.x;
           const dy = owner.y - p.y;
-          const d = Math.hypot(dx, dy) || 1;
+          const d = M.hypot(dx, dy) || 1;
           if (!p.back && (p.age > 0.5 || p.x <= p.r + 1 || p.x >= ARENA - p.r - 1 || p.y <= p.r + 1 || p.y >= ARENA - p.r - 1)) p.back = true;
           if (p.back) {
             p.vx = (dx / d) * 900;
             p.vy = (dy / d) * 900;
             if (d < owner.r) p.dead = true;
           }
-          p.angle = Math.atan2(-dy, -dx);
+          p.angle = M.atan2(-dy, -dx);
           if (p.dead) {
             owner.w.out = false;
             owner.w.timer = 0.9;
@@ -2315,7 +2316,7 @@ export const WEAPONS = [
           // 引き寄せる
           const dx = owner.x - foe.x;
           const dy = owner.y - foe.y;
-          const d = Math.hypot(dx, dy) || 1;
+          const d = M.hypot(dx, dy) || 1;
           foe.vx = (dx / d) * 900;
           foe.vy = (dy / d) * 900;
         },
@@ -2501,7 +2502,7 @@ export const WEAPONS = [
               p.vx = p.vy = 0;
               return;
             }
-            p.angle = Math.atan2(p.vy, p.vx);
+            p.angle = M.atan2(p.vy, p.vx);
             if (p.x <= p.r + 1 || p.x >= ARENA - p.r - 1 || p.y <= p.r + 1 || p.y >= ARENA - p.r - 1) {
               // 壁に刺さって、しばらくトゲとして残る
               p.stuck = true;
@@ -2669,7 +2670,7 @@ export const WEAPONS = [
     update(world, me, foe, dt) {
       // 鎖が伸びたり縮んだりする
       me.w.t += dt;
-      me.blades[0].rOut = 60 + (me.w.len - 30) * (0.55 + 0.45 * Math.sin(me.w.t * 2.6));
+      me.blades[0].rOut = 60 + (me.w.len - 30) * (0.55 + 0.45 * M.sin(me.w.t * 2.6));
     },
     onHit(world, me) {
       me.w.dmg += 1;
@@ -2741,9 +2742,9 @@ export const WEAPONS = [
             p.on = foe;
             p.blockable = false;
             p.wall = 'stop';
-            const a = Math.atan2(p.y - foe.y, p.x - foe.x);
-            p.ox = Math.cos(a) * foe.r;
-            p.oy = Math.sin(a) * foe.r;
+            const a = M.atan2(p.y - foe.y, p.x - foe.x);
+            p.ox = M.cos(a) * foe.r;
+            p.oy = M.sin(a) * foe.r;
             p.life = p.age + 1.3;
           },
           onExpire(world, p, owner, foe) {
@@ -2775,7 +2776,7 @@ export const WEAPONS = [
       if (me.w.timer > 0) return;
       me.w.timer = 1.8;
       const size = me.w.size;
-      const dist = Math.hypot(foe.x - me.x, foe.y - me.y);
+      const dist = M.hypot(foe.x - me.x, foe.y - me.y);
       shoot(world, me, me.angle, 420, {
         kind: 'webball',
         r: 7,
@@ -2952,7 +2953,7 @@ export const WEAPONS = [
             p.vx = Math.max(-300, Math.min(300, p.vx));
             if (Math.abs(foe.x - p.x) < 110 && foe.y > ARENA - 330 && p.biteCd <= 0) p.vy = -900;
           }
-          p.angle = Math.atan2(p.vy, p.vx || 1);
+          p.angle = M.atan2(p.vy, p.vx || 1);
         },
         onTouch(world, p, owner, foe) {
           if (p.biteCd > 0) return;
@@ -3025,7 +3026,7 @@ export const WEAPONS = [
           p.ring = p.age * 360;
           if (p.ring > 220) p.dead = true;
           if (p.hit) return;
-          const d = Math.hypot(foe.x - p.x, foe.y - p.y);
+          const d = M.hypot(foe.x - p.x, foe.y - p.y);
           if (Math.abs(d - p.ring) < foe.r + 8) {
             p.hit = true;
             landHit(world, owner, foe, dmg, { kind: 'counter', x: foe.x, y: foe.y });
@@ -3108,7 +3109,7 @@ export const WEAPONS = [
       const n = Math.floor(b.w.n);
       return Array.from({ length: n }, (_, i) => {
         const a = b.angle + (i * TAU) / n;
-        return [b.x + Math.cos(a) * b.w.dist, b.y + Math.sin(a) * b.w.dist];
+        return [b.x + M.cos(a) * b.w.dist, b.y + M.sin(a) * b.w.dist];
       });
     },
     update(world, me, foe, dt) {
@@ -3116,8 +3117,8 @@ export const WEAPONS = [
       if (me.w.timer > 0) return;
       me.w.timer = 1.1;
       for (const [x, y] of this.drones(me)) {
-        const a = Math.atan2(foe.y - y, foe.x - x);
-        spawnProjectile(world, me, { x, y, vx: Math.cos(a) * 560, vy: Math.sin(a) * 560, angle: a, kind: 'bullet', r: 3.5, life: 1.4, damage: 1.2, onTouch: hitOnce() });
+        const a = M.atan2(foe.y - y, foe.x - x);
+        spawnProjectile(world, me, { x, y, vx: M.cos(a) * 560, vy: M.sin(a) * 560, angle: a, kind: 'bullet', r: 3.5, life: 1.4, damage: 1.2, onTouch: hitOnce() });
       }
     },
     onHit(world, me) {
@@ -3220,12 +3221,12 @@ export const WEAPONS = [
       // 相手の飛び道具を奪う(持ち主の状態を持たない、単純な弾だけ)
       for (const p of world.projectiles) {
         if (p.owner === me.id || p.dead || !STEALABLE.has(p.kind)) continue;
-        if (Math.hypot(p.x - me.x, p.y - me.y) > me.w.range) continue;
+        if (M.hypot(p.x - me.x, p.y - me.y) > me.w.range) continue;
         p.owner = me.id;
-        const a = Math.atan2(foe.y - p.y, foe.x - p.x);
-        const sp = Math.max(300, Math.hypot(p.vx, p.vy));
-        p.vx = Math.cos(a) * sp;
-        p.vy = Math.sin(a) * sp;
+        const a = M.atan2(foe.y - p.y, foe.x - p.x);
+        const sp = Math.max(300, M.hypot(p.vx, p.vy));
+        p.vx = M.cos(a) * sp;
+        p.vy = M.sin(a) * sp;
         p.angle = a;
         p.blockGrace = p.age + 0.15;
         world.events.push({ type: 'magnet', x: p.x, y: p.y });
@@ -3259,12 +3260,12 @@ export const WEAPONS = [
       const k = Math.floor(me.w.k);
       const side = world.rng() < 0.5 ? 0 : ARENA;
       const sx = side + (side ? -20 : 20);
-      const a = Math.atan2(foe.y - 20, foe.x - sx);
+      const a = M.atan2(foe.y - 20, foe.x - sx);
       spawnProjectile(world, me, {
         x: sx,
         y: 20,
-        vx: Math.cos(a) * 640,
-        vy: Math.sin(a) * 640,
+        vx: M.cos(a) * 640,
+        vy: M.sin(a) * 640,
         angle: a,
         kind: 'star',
         r: 10,
@@ -3279,10 +3280,10 @@ export const WEAPONS = [
           for (let i = 0; i < k; i++) {
             const b = (i / k) * TAU;
             spawnProjectile(world, owner, {
-              x: p.x + Math.cos(b) * (foe.r + 14),
-              y: p.y + Math.sin(b) * (foe.r + 14),
-              vx: Math.cos(b) * 300,
-              vy: Math.sin(b) * 300,
+              x: p.x + M.cos(b) * (foe.r + 14),
+              y: p.y + M.sin(b) * (foe.r + 14),
+              vx: M.cos(b) * 300,
+              vy: M.sin(b) * 300,
               kind: 'ministar',
               r: 5,
               life: 1.2,
@@ -3373,8 +3374,8 @@ export const WEAPONS = [
           curve: 0.9,
           update(world, p, owner, foe, dt) {
             // ゆっくり曲がってうずまきに
-            const c = Math.cos(p.curve * dt);
-            const s = Math.sin(p.curve * dt);
+            const c = M.cos(p.curve * dt);
+            const s = M.sin(p.curve * dt);
             [p.vx, p.vy] = [p.vx * c - p.vy * s, p.vx * s + p.vy * c];
           },
           onTouch: hitOnce(),
@@ -3400,24 +3401,24 @@ export const WEAPONS = [
       const w = me.w;
       // 振り子。振れ幅がいつも約50度(壁の手前まで)になるよう、速さを少しずつ合わせる
       const g = GRAVITY / w.len;
-      w.omega += -g * Math.sin(w.theta) * dt;
+      w.omega += -g * M.sin(w.theta) * dt;
       w.theta += w.omega * dt;
-      const want = 2 * g * (Math.cos(w.theta) - Math.cos(0.88));
+      const want = 2 * g * (M.cos(w.theta) - M.cos(0.88));
       if (want > 0.01) {
         const sp = Math.sqrt(want) * (Math.sign(w.omega) || 1);
         w.omega += (sp - w.omega) * Math.min(1, dt * 2);
       }
-      w.hx = ARENA / 2 + Math.sin(w.theta) * w.len;
-      w.hy = Math.cos(w.theta) * w.len;
+      w.hx = ARENA / 2 + M.sin(w.theta) * w.len;
+      w.hy = M.cos(w.theta) * w.len;
       me.angle = Math.PI / 2;
       if (w.cd > 0) {
         w.cd -= dt;
         return;
       }
-      if (Math.hypot(foe.x - w.hx, foe.y - w.hy) < foe.r + 30) {
+      if (M.hypot(foe.x - w.hx, foe.y - w.hy) < foe.r + 30) {
         w.cd = 0.6;
         landHit(world, me, foe, w.dmg, { kind: 'wreck', x: w.hx, y: w.hy });
-        foe.vx += Math.cos(w.theta) * w.omega * w.len * 1.2;
+        foe.vx += M.cos(w.theta) * w.omega * w.len * 1.2;
         foe.vy -= 200;
         foe.slamT = 0.8;
         foe.slamBy = me.id;
@@ -3487,7 +3488,7 @@ export const WEAPONS = [
       knockback(me, foe, 150 + me.r * 2);
     },
     update(world, me) {
-      me.angle = Math.atan2(me.vy, me.vx);
+      me.angle = M.atan2(me.vy, me.vx);
     },
     onHit(world, me) {
       growStat(me, 'size', 2, 95, 0.5);
@@ -3541,14 +3542,14 @@ export const WEAPONS = [
       me.w.timer = 2.0 / n;
       const i = me.w.next++ % n;
       const a = me.angle + (i * TAU) / n;
-      const x = me.x + Math.cos(a) * 58;
-      const y = me.y + Math.sin(a) * 58;
-      const b = Math.atan2(foe.y - y, foe.x - x);
+      const x = me.x + M.cos(a) * 58;
+      const y = me.y + M.sin(a) * 58;
+      const b = M.atan2(foe.y - y, foe.x - x);
       spawnProjectile(world, me, {
         x,
         y,
-        vx: Math.cos(b) * 200,
-        vy: Math.sin(b) * 200,
+        vx: M.cos(b) * 200,
+        vy: M.sin(b) * 200,
         angle: b,
         kind: 'spiritsword',
         r: 6,
@@ -3556,7 +3557,7 @@ export const WEAPONS = [
         blockable: true,
         damage: 0.75,
         update(world, p, owner, foe, dt) {
-          homing(p, foe, 3, dt, Math.min(760, Math.hypot(p.vx, p.vy) + 1400 * dt));
+          homing(p, foe, 3, dt, Math.min(760, M.hypot(p.vx, p.vy) + 1400 * dt));
         },
         onTouch: hitOnce(),
       });
@@ -3745,9 +3746,9 @@ export const WEAPONS = [
           if (p.hitCd > 0) return;
           p.hitCd = 0.4;
           p.pop = 0.15;
-          const a = Math.atan2(foe.y - p.y, foe.x - p.x);
-          foe.vx = Math.cos(a) * 750;
-          foe.vy = Math.sin(a) * 750;
+          const a = M.atan2(foe.y - p.y, foe.x - p.x);
+          foe.vx = M.cos(a) * 750;
+          foe.vy = M.sin(a) * 750;
           foe.slamT = 0.7;
           foe.slamBy = owner.id;
           landHit(world, owner, foe, 0.8, { kind: 'bumper', x: p.x, y: p.y });
@@ -3830,7 +3831,7 @@ export const WEAPONS = [
         wob: world.rng() * TAU,
         update(world, p, owner, foe, dt) {
           p.wob += dt * 3;
-          homing(p, foe, 1.5, dt, 150 + Math.sin(p.wob) * 40);
+          homing(p, foe, 1.5, dt, 150 + M.sin(p.wob) * 40);
           if (p.hitCd > 0) p.hitCd -= dt;
         },
         onTouch(world, p, owner, foe) {
@@ -3876,10 +3877,10 @@ export const WEAPONS = [
             p.spin += dt * 6;
             if (p.age < 0.45) {
               // はじめは渦を巻くように曲がる
-              const a = Math.atan2(p.vy, p.vx) + dt * 2.2;
-              const sp = Math.hypot(p.vx, p.vy);
-              p.vx = Math.cos(a) * sp;
-              p.vy = Math.sin(a) * sp;
+              const a = M.atan2(p.vy, p.vx) + dt * 2.2;
+              const sp = M.hypot(p.vx, p.vy);
+              p.vx = M.cos(a) * sp;
+              p.vy = M.sin(a) * sp;
             } else {
               homing(p, foe, 1.6, dt, 260);
             }
@@ -3929,8 +3930,8 @@ export const WEAPONS = [
             p.hitCd = 0.35;
             landHit(world, owner, o, p.damage, { kind: 'pinball', x: p.x, y: p.y });
             // 相手から跳ね返る
-            const d = Math.hypot(p.x - o.x, p.y - o.y) || 1;
-            const sp = Math.max(420, Math.hypot(p.vx, p.vy));
+            const d = M.hypot(p.x - o.x, p.y - o.y) || 1;
+            const sp = Math.max(420, M.hypot(p.vx, p.vy));
             p.vx = ((p.x - o.x) / d) * sp;
             p.vy = ((p.y - o.y) / d) * sp - 120;
             if (--p.left <= 0) p.dead = true;
@@ -3958,7 +3959,7 @@ export const WEAPONS = [
       me.w.timer -= dt;
       if (me.w.timer > 0) return;
       me.w.timer = 2.6;
-      cube(world, me, me.x + Math.cos(me.angle) * (me.r + 14), me.y + Math.sin(me.angle) * (me.r + 14), me.angle, 13, Math.floor(me.w.gen));
+      cube(world, me, me.x + M.cos(me.angle) * (me.r + 14), me.y + M.sin(me.angle) * (me.r + 14), me.angle, 13, Math.floor(me.w.gen));
     },
     onHit(world, me) {
       growStat(me, 'gen', 0.34, 5, 0.6);
@@ -3988,7 +3989,7 @@ export const WEAPONS = [
       }
       if (w.lash > 0) {
         w.lash -= dt;
-        const k = Math.sin(Math.PI * Math.min(1, 1 - w.lash / 0.4));
+        const k = M.sin(Math.PI * Math.min(1, 1 - w.lash / 0.4));
         bl.rOut = me.r + Math.max(0, k) * w.len;
       } else {
         bl.rOut = me.r;
@@ -4162,8 +4163,8 @@ export const WEAPONS = [
       // 爆竹の束を、相手が動く先をねらって投げる
       const n = Math.floor(me.w.n);
       const burst = (world, p) => crackerBurst(world, p, me, n);
-      const lead = Math.hypot(foe.x - me.x, foe.y - me.y) / 600;
-      const a = Math.atan2(foe.y + foe.vy * lead - me.y, foe.x + foe.vx * lead - me.x);
+      const lead = M.hypot(foe.x - me.x, foe.y - me.y) / 600;
+      const a = M.atan2(foe.y + foe.vy * lead - me.y, foe.x + foe.vx * lead - me.x);
       shoot(world, me, a, 600, {
         kind: 'bundle',
         r: 10,
@@ -4240,7 +4241,7 @@ export const WEAPONS = [
           p.tick = 0.5;
           for (const o of world.balls) {
             if (o === owner || o.dead || ally(o, owner)) continue;
-            if (Math.hypot(o.x - p.x, o.y - p.y) < p.reach + o.r) {
+            if (M.hypot(o.x - p.x, o.y - p.y) < p.reach + o.r) {
               landHit(world, owner, o, 1.7, { kind: 'plasma', x: o.x, y: o.y });
             }
           }
@@ -4289,7 +4290,7 @@ export const WEAPONS = [
             return;
           }
           // 当たった相手から跳ね返る(少しして、また相手に向かってくる)
-          const d = Math.hypot(p.x - o.x, p.y - o.y) || 1;
+          const d = M.hypot(p.x - o.x, p.y - o.y) || 1;
           p.vx = ((p.x - o.x) / d) * 600;
           p.vy = ((p.y - o.y) / d) * 600;
         },
@@ -4327,7 +4328,7 @@ export const WEAPONS = [
           wob: world.rng() * TAU,
           update(world, p, owner, foe, dt) {
             p.wob += dt * 5;
-            homing(p, foe, 1.8, dt, 150 + Math.sin(p.wob) * 60);
+            homing(p, foe, 1.8, dt, 150 + M.sin(p.wob) * 60);
             if (p.hitCd > 0) p.hitCd -= dt;
           },
           onTouch(world, p, owner, o) {
@@ -4362,7 +4363,7 @@ export const WEAPONS = [
       me.w.timer -= dt;
       if (me.w.timer > 0) return;
       me.w.timer = 2.6;
-      world.events.push({ type: 'shock', x: me.x + Math.cos(me.angle) * (me.r + 20), y: me.y + Math.sin(me.angle) * (me.r + 20), r: 40, color: '#9aa3ad' });
+      world.events.push({ type: 'shock', x: me.x + M.cos(me.angle) * (me.r + 20), y: me.y + M.sin(me.angle) * (me.r + 20), r: 40, color: '#9aa3ad' });
       shoot(world, me, me.angle, 520, {
         kind: 'cannonball',
         r: me.w.size,
@@ -4407,8 +4408,8 @@ export const WEAPONS = [
       const w = me.w;
       if (w.dash > 0) {
         w.dash -= dt;
-        me.angle = Math.atan2(me.vy, me.vx);
-        if (!w.hit && Math.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 6) {
+        me.angle = M.atan2(me.vy, me.vx);
+        if (!w.hit && M.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 6) {
           w.hit = true;
           w.dash = 0;
           if (landHit(world, me, foe, w.dmg, { kind: 'charge', x: foe.x, y: foe.y }) > 0) {
@@ -4426,8 +4427,8 @@ export const WEAPONS = [
       w.timer = 1.7;
       w.dash = 0.5;
       w.hit = false;
-      me.vx = Math.cos(me.angle) * w.speed;
-      me.vy = Math.sin(me.angle) * w.speed;
+      me.vx = M.cos(me.angle) * w.speed;
+      me.vy = M.sin(me.angle) * w.speed;
       world.events.push({ type: 'shock', x: me.x, y: me.y, r: 60, color: '#ffb07a' });
     },
     onHit(world, me, foe, info) {
@@ -4458,16 +4459,16 @@ export const WEAPONS = [
         // 捕まえた相手を自分のまわりで振り回す
         w.hold -= dt;
         w.spin += dt * 11;
-        o.x = Math.max(o.r, Math.min(ARENA - o.r, me.x + Math.cos(w.spin) * 120));
-        o.y = Math.max(o.r, Math.min(ARENA - o.r, me.y + Math.sin(w.spin) * 120));
+        o.x = Math.max(o.r, Math.min(ARENA - o.r, me.x + M.cos(w.spin) * 120));
+        o.y = Math.max(o.r, Math.min(ARENA - o.r, me.y + M.sin(w.spin) * 120));
         o.vx = o.vy = 0;
         o.stun = Math.max(o.stun, 0.05);
         me.angle = w.spin;
         if (w.hold <= 0) {
           // 回っている向きに放り投げる → 壁に当たると壁ドン
           const sp = Math.min(w.throw, 1700);
-          o.vx = -Math.sin(w.spin) * sp;
-          o.vy = Math.cos(w.spin) * sp;
+          o.vx = -M.sin(w.spin) * sp;
+          o.vy = M.cos(w.spin) * sp;
           o.slamT = 1.2;
           o.slamBy = me.id;
           w.caught = null;
@@ -4489,7 +4490,7 @@ export const WEAPONS = [
           if (owner.w.caught || landHit(world, owner, o, 1, { kind: 'lasso', x: p.x, y: p.y }) <= 0) return;
           owner.w.caught = o;
           owner.w.hold = 0.55;
-          owner.w.spin = Math.atan2(o.y - owner.y, o.x - owner.x);
+          owner.w.spin = M.atan2(o.y - owner.y, o.x - owner.x);
         },
       });
     },
@@ -4534,9 +4535,9 @@ export const WEAPONS = [
           p.on = o;
           p.blockable = false;
           p.wall = 'stop';
-          const a = Math.atan2(p.y - o.y, p.x - o.x);
-          p.ox = Math.cos(a) * o.r;
-          p.oy = Math.sin(a) * o.r;
+          const a = M.atan2(p.y - o.y, p.x - o.x);
+          p.ox = M.cos(a) * o.r;
+          p.oy = M.sin(a) * o.r;
           p.life = p.age + 3;
         },
         onExpire(world, p, owner, foe) {
@@ -4567,7 +4568,7 @@ export const WEAPONS = [
       me.angle = Math.PI / 2;
       if (w.cd > 0) w.cd -= dt;
       if (w.diving) {
-        if (Math.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 6 && me.y < foe.y) {
+        if (M.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 6 && me.y < foe.y) {
           w.diving = false;
           w.cd = 0.5;
           if (landHit(world, me, foe, w.dmg, { kind: 'stomp', x: foe.x, y: foe.y - foe.r }) > 0) {
@@ -4612,7 +4613,7 @@ export const WEAPONS = [
       if (me.w.timer > 0) return;
       me.w.timer = 2.6;
       // 相手が進んでいる向きの反対側(背後)にワープ
-      const sp = Math.hypot(foe.vx, foe.vy) || 1;
+      const sp = M.hypot(foe.vx, foe.vy) || 1;
       const d = foe.r + me.r + 8;
       world.events.push({ type: 'shock', x: me.x, y: me.y, r: 50, color: '#3b2a5c' });
       me.x = Math.max(me.r, Math.min(ARENA - me.r, foe.x - (foe.vx / sp) * d));
@@ -4727,15 +4728,15 @@ export const WEAPONS = [
       w.timer -= dt;
       // ねらっている間はゆっくり相手を追う(撃つ直前は止まる)
       // 弾が届くころに相手がいる場所(進む先)をねらう
-      const lead = Math.hypot(foe.x - me.x, foe.y - me.y) / 1900;
-      const want = Math.atan2(foe.y + foe.vy * lead - me.y, foe.x + foe.vx * lead - me.x);
+      const lead = M.hypot(foe.x - me.x, foe.y - me.y) / 1900;
+      const want = M.atan2(foe.y + foe.vy * lead - me.y, foe.x + foe.vx * lead - me.x);
       if (w.timer > 0.15) me.angle += ((((want - me.angle + Math.PI) % TAU) + TAU) % TAU - Math.PI) * Math.min(1, dt * 10);
       w.aiming = w.timer < 1;
       if (w.timer > 0) return;
       w.timer = 2.3;
       w.aiming = false;
       shoot(world, me, me.angle, 1900, { kind: 'rifle', r: 6, life: 0.8, damage: w.dmg, blockable: false, onTouch: hitOnce() });
-      world.events.push({ type: 'shock', x: me.x + Math.cos(me.angle) * (me.r + 14), y: me.y + Math.sin(me.angle) * (me.r + 14), r: 30, color: '#ffd23f' });
+      world.events.push({ type: 'shock', x: me.x + M.cos(me.angle) * (me.r + 14), y: me.y + M.sin(me.angle) * (me.r + 14), r: 30, color: '#ffd23f' });
     },
     onHit(world, me, foe, info) {
       if (info.kind === 'rifle') me.w.dmg += 2;
@@ -4826,10 +4827,10 @@ export const WEAPONS = [
           // 持ち主へ戻る
           const dx = owner.x - p.x;
           const dy = owner.y - p.y;
-          const d = Math.hypot(dx, dy) || 1;
+          const d = M.hypot(dx, dy) || 1;
           p.vx = (dx / d) * 700;
           p.vy = (dy / d) * 700;
-          p.angle = Math.atan2(-dy, -dx);
+          p.angle = M.atan2(-dy, -dx);
           if (d < owner.r + p.r) {
             p.dead = true;
             back(world, p, owner);
@@ -4876,7 +4877,7 @@ export const WEAPONS = [
       const r = big ? 230 : 140;
       world.events.push({ type: 'shock', x: me.x, y: me.y, r, color: big ? '#ff7a1a' : '#f2c230' });
       for (const o of world.balls) {
-        if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > r + o.r) continue;
+        if (o === me || o.dead || ally(o, me) || M.hypot(o.x - me.x, o.y - me.y) > r + o.r) continue;
         if (landHit(world, me, o, big ? 5 : 1.5, { kind: 'drum', x: o.x, y: o.y }) > 0 && big) knockback(me, o, 420);
       }
     },
@@ -5039,14 +5040,14 @@ export const WEAPONS = [
       const bl = me.blades[0];
       turnTo(me, aimAt(me, foe), dt, 10);
       w.timer -= dt;
-      if (w.timer <= 0 && w.jab <= 0 && Math.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 90) {
+      if (w.timer <= 0 && w.jab <= 0 && M.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 90) {
         w.timer = 0.42;
         w.jab = 0.18;
         w.side = -w.side;
         bl.off = w.side * 0.35; // 左右の拳を交互に
       }
       w.jab = Math.max(0, w.jab - dt);
-      bl.rOut = me.r + Math.sin((Math.PI * w.jab) / 0.18) * 62;
+      bl.rOut = me.r + M.sin((Math.PI * w.jab) / 0.18) * 62;
       bl.rIn = me.r - 6;
     },
     onHit(world, me) {
@@ -5078,7 +5079,7 @@ export const WEAPONS = [
       foe.slamBy = me.id;
     },
     update(world, me) {
-      me.angle = Math.atan2(me.vy, me.vx);
+      me.angle = M.atan2(me.vy, me.vx);
     },
     onHit(world, me) {
       me.w.dmg += 0.4;
@@ -5110,7 +5111,7 @@ export const WEAPONS = [
       world.events.push({ type: 'shock', x: foe.x, y: foe.y, r: 60, color: '#ffffff' });
     },
     update(world, me) {
-      me.angle = Math.atan2(me.vy, me.vx);
+      me.angle = M.atan2(me.vy, me.vx);
     },
     onHit(world, me, foe, info) {
       if (info.kind === 'slam' || info.kind === 'judo') me.w.slamMul += 0.04;
@@ -5173,20 +5174,20 @@ export const WEAPONS = [
       const bl = me.blades[0];
       turnTo(me, aimAt(me, foe), dt, 12);
       w.timer -= dt;
-      if (w.timer <= 0 && w.jab <= 0 && Math.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 80) {
+      if (w.timer <= 0 && w.jab <= 0 && M.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 80) {
         w.timer = 0.55;
         w.jab = 0.14;
       }
       w.jab = Math.max(0, w.jab - dt);
-      bl.rOut = me.r + Math.sin((Math.PI * w.jab) / 0.14) * 56;
+      bl.rOut = me.r + M.sin((Math.PI * w.jab) / 0.14) * 56;
       bl.rIn = me.r - 6;
     },
     onTakeDamage(world, me, src, amount, opts) {
       if (!src || opts.kind === 'poison' || opts.kind === 'burn' || world.rng() * 100 >= me.w.dodge) return amount;
       // 見切って横にステップ
-      const a = Math.atan2(me.y - src.y, me.x - src.x) + Math.PI / 2;
-      me.vx += Math.cos(a) * 260;
-      me.vy += Math.sin(a) * 260;
+      const a = M.atan2(me.y - src.y, me.x - src.x) + Math.PI / 2;
+      me.vx += M.cos(a) * 260;
+      me.vy += M.sin(a) * 260;
       world.events.push({ type: 'dodge', x: me.x, y: me.y, target: me.id });
       return 0;
     },
@@ -5214,16 +5215,16 @@ export const WEAPONS = [
       const w = me.w;
       turnTo(me, aimAt(me, foe), dt, 8);
       w.timer -= dt;
-      if (w.timer > 0 || Math.hypot(foe.x - me.x, foe.y - me.y) > w.reach + foe.r) return;
+      if (w.timer > 0 || M.hypot(foe.x - me.x, foe.y - me.y) > w.reach + foe.r) return;
       w.timer = 2;
-      const c = Math.cos(me.angle);
-      const s = Math.sin(me.angle);
+      const c = M.cos(me.angle);
+      const s = M.sin(me.angle);
       world.events.push({ type: 'shock', x: me.x + c * (me.r + 30), y: me.y + s * (me.r + 30), r: 70, color: '#ffd9a8' });
       for (const o of world.balls) {
         if (o === me || o.dead || ally(o, me)) continue;
         const dx = o.x - me.x;
         const dy = o.y - me.y;
-        const d = Math.hypot(dx, dy);
+        const d = M.hypot(dx, dy);
         // 前方(だいたい120度の範囲)にいる相手
         if (d > w.reach + o.r || (dx * c + dy * s) / (d || 1) < 0.5) continue;
         if (landHit(world, me, o, w.dmg, { kind: 'palm', x: o.x, y: o.y }) > 0) {
@@ -5253,7 +5254,7 @@ export const WEAPONS = [
     },
     stats: (b) => [['腕', fmt(Math.round(b.w.dmg * 10) / 10)]],
     update(world, me, foe, dt) {
-      me.angle += dt * (2 + Math.hypot(me.vx, me.vy) / 110);
+      me.angle += dt * (2 + M.hypot(me.vx, me.vy) / 110);
     },
     onHit(world, me) {
       me.w.dmg += 0.3;
@@ -5276,14 +5277,14 @@ export const WEAPONS = [
       w.target = foe;
       w.hold = 1;
       w.tick = 0;
-      w.off = Math.atan2(foe.y - me.y, foe.x - me.x);
+      w.off = M.atan2(foe.y - me.y, foe.x - me.x);
     },
     update(world, me, foe, dt) {
       const w = me.w;
       if (w.cd > 0) w.cd -= dt;
       const o = w.target;
       if (!o) {
-        me.angle = Math.atan2(me.vy, me.vx);
+        me.angle = M.atan2(me.vy, me.vx);
         return;
       }
       if (o.dead) {
@@ -5293,8 +5294,8 @@ export const WEAPONS = [
       // つかまえている間は相手をくっつけたまま締める
       w.hold -= dt;
       me.angle = w.off;
-      o.x = Math.max(o.r, Math.min(ARENA - o.r, me.x + Math.cos(w.off) * (me.r + o.r - 4)));
-      o.y = Math.max(o.r, Math.min(ARENA - o.r, me.y + Math.sin(w.off) * (me.r + o.r - 4)));
+      o.x = Math.max(o.r, Math.min(ARENA - o.r, me.x + M.cos(w.off) * (me.r + o.r - 4)));
+      o.y = Math.max(o.r, Math.min(ARENA - o.r, me.y + M.sin(w.off) * (me.r + o.r - 4)));
       o.vx = me.vx;
       o.vy = me.vy;
       o.stun = Math.max(o.stun, 0.05);
@@ -5332,7 +5333,7 @@ export const WEAPONS = [
       return amount * 0.85;
     },
     update(world, me) {
-      me.angle = Math.atan2(me.vy, me.vx);
+      me.angle = M.atan2(me.vy, me.vx);
     },
   },
   {
@@ -5350,7 +5351,7 @@ export const WEAPONS = [
     update(world, me, foe, dt) {
       const w = me.w;
       turnTo(me, aimAt(me, foe), dt, 10);
-      const near = Math.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 90;
+      const near = M.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 90;
       if (w.on > 0) {
         w.on -= dt;
         if (w.on <= 0) w.rest = 1;
@@ -5391,15 +5392,15 @@ export const WEAPONS = [
         me.angle += dt * 20;
         return;
       }
-      me.angle = Math.atan2(me.vy, me.vx);
+      me.angle = M.atan2(me.vy, me.vx);
       w.timer -= dt;
       if (w.timer > 0) return;
       // 甲羅にこもって相手へ回転しながら突っこむ
       w.timer = 2.4;
       w.shell = w.dur;
       const a = aimAt(me, foe);
-      me.vx = Math.cos(a) * 820;
-      me.vy = Math.sin(a) * 820;
+      me.vx = M.cos(a) * 820;
+      me.vy = M.sin(a) * 820;
     },
     onContact(world, me, foe) {
       if (me.w.shell <= 0) return;
@@ -5436,7 +5437,7 @@ export const WEAPONS = [
         return;
       }
       turnTo(me, -Math.PI / 2, dt, 6);
-      if (w.timer <= 0 && Math.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 90) {
+      if (w.timer <= 0 && M.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 90) {
         w.sting = 0.3;
         w.aim = aimAt(me, foe);
       }
@@ -5464,7 +5465,7 @@ export const WEAPONS = [
     update(world, me, foe, dt) {
       const w = me.w;
       w.t += dt;
-      me.blades.forEach((bl, i) => (bl.rOut = me.r + 32 + Math.sin(w.t * 5 + i * 1.6) * 16));
+      me.blades.forEach((bl, i) => (bl.rOut = me.r + 32 + M.sin(w.t * 5 + i * 1.6) * 16));
       w.timer -= dt;
       if (w.timer > 0) return;
       w.timer = 3.5;
@@ -5511,7 +5512,7 @@ export const WEAPONS = [
         me.vy = 0;
         me.vx = Math.sign(me.vx || 1) * w.speed;
         me.angle = me.vx > 0 ? 0 : Math.PI;
-        if (!w.hit && Math.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 14) {
+        if (!w.hit && M.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 14) {
           w.hit = true;
           if (landHit(world, me, foe, w.dmg, { kind: 'slide', x: foe.x, y: foe.y }) > 0) {
             foe.vy = -700 * (foe.knockMul ?? 1);
@@ -5521,7 +5522,7 @@ export const WEAPONS = [
         if (w.slide <= 0) me.vy = -650; // 滑り終わったらぴょんと跳ねる
         return;
       }
-      me.angle = Math.atan2(me.vy, me.vx);
+      me.angle = M.atan2(me.vy, me.vx);
       // 滑れるようになったら床へ急いで下りる
       if (w.cd <= 0 && me.vy > -200) me.vy += 1600 * dt;
       if (w.cd <= 0 && me.y >= floor - 3) {
@@ -5609,7 +5610,7 @@ export const WEAPONS = [
         onExpire(world, p, owner) {
           world.events.push({ type: 'shock', x: p.x, y: p.y, r: p.r, color: '#bfe6ff' });
           for (const o of world.balls) {
-            if (o === owner || o.dead || ally(o, owner) || Math.hypot(o.x - p.x, o.y - p.y) > p.r + o.r) continue;
+            if (o === owner || o.dead || ally(o, owner) || M.hypot(o.x - p.x, o.y - p.y) > p.r + o.r) continue;
             if (landHit(world, owner, o, owner.w.dmg, { kind: 'frostcircle', x: o.x, y: o.y }) > 0) {
               o.freeze = Math.max(o.freeze, 0.9);
               o.stun = Math.max(o.stun, 0.9);
@@ -5653,11 +5654,11 @@ export const WEAPONS = [
       if (w.timer > 0) return;
       w.timer = 2.4;
       // 撃つ瞬間は、相手が動く先へ向け直す
-      me.angle = Math.atan2(foe.y + foe.vy * 0.05 - me.y, foe.x + foe.vx * 0.05 - me.x);
+      me.angle = M.atan2(foe.y + foe.vy * 0.05 - me.y, foe.x + foe.vx * 0.05 - me.x);
       w.beam = 0.15;
       w.beamA = me.angle;
-      const ex = me.x + Math.cos(me.angle) * 1400;
-      const ey = me.y + Math.sin(me.angle) * 1400;
+      const ex = me.x + M.cos(me.angle) * 1400;
+      const ey = me.y + M.sin(me.angle) * 1400;
       for (const o of world.balls) {
         if (o === me || o.dead || ally(o, me) || segPointDist(me.x, me.y, ex, ey, o.x, o.y) > o.r + 8) continue;
         if (landHit(world, me, o, w.dmg, { kind: 'shrink', x: o.x, y: o.y }) <= 0) continue;
@@ -5786,22 +5787,22 @@ export const WEAPONS = [
     update(world, me, foe, dt) {
       const w = me.w;
       w.spin += dt * 6;
-      me.angle = Math.atan2(me.vy, me.vx);
+      me.angle = M.atan2(me.vy, me.vx);
       const R = me.r + 34;
       // 風の輪に入った(単純な)弾は、自分の弾にして撃ち返す
       for (const p of world.projectiles) {
-        if (p.owner === me.id || p.reflected || !STEALABLE.has(p.kind) || Math.hypot(p.x - me.x, p.y - me.y) > R) continue;
+        if (p.owner === me.id || p.reflected || !STEALABLE.has(p.kind) || M.hypot(p.x - me.x, p.y - me.y) > R) continue;
         p.reflected = true;
         p.owner = me.id;
         p.vx *= -1.1;
         p.vy *= -1.1;
-        p.angle = Math.atan2(p.vy, p.vx);
+        p.angle = M.atan2(p.vy, p.vx);
         world.events.push({ type: 'block', x: p.x, y: p.y });
       }
       w.cd -= dt;
       if (w.cd > 0) return;
       for (const o of world.balls) {
-        if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        if (o === me || o.dead || ally(o, me) || M.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
         w.cd = 0.5;
         if (landHit(world, me, o, w.dmg, { kind: 'wind', x: o.x, y: o.y }) > 0) knockback(me, o, 360);
       }
@@ -5834,12 +5835,12 @@ export const WEAPONS = [
       // 落ちるときは傘でふわっと
       if (me.vy > 250) me.vy -= 700 * dt;
       w.timer -= dt;
-      if (w.timer <= 0 && w.poke <= 0 && Math.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 90) {
+      if (w.timer <= 0 && w.poke <= 0 && M.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 90) {
         w.timer = 0.7;
         w.poke = 0.2;
       }
       w.poke = Math.max(0, w.poke - dt);
-      me.blades[1].rOut = me.r + 10 + Math.sin((Math.PI * w.poke) / 0.2) * 70;
+      me.blades[1].rOut = me.r + 10 + M.sin((Math.PI * w.poke) / 0.2) * 70;
     },
     onHit(world, me) {
       me.w.dmg += 0.4;
@@ -6205,13 +6206,13 @@ export const WEAPONS = [
       if (w.ball && !w.ball.dead) {
         const p = w.ball;
         // 自分のところへ戻ってきた玉は、ラケットで打ち返す
-        if (p.back && Math.hypot(p.x - me.x, p.y - me.y) < me.r + 40) {
+        if (p.back && M.hypot(p.x - me.x, p.y - me.y) < me.r + 40) {
           p.back = false;
           w.rally++;
           const sp = Math.min(1300, 480 + w.rally * 45);
           const a = aimAt(me, foe);
-          p.vx = Math.cos(a) * sp;
-          p.vy = Math.sin(a) * sp;
+          p.vx = M.cos(a) * sp;
+          p.vy = M.sin(a) * sp;
           p.life = p.age + 4;
           world.events.push({ type: 'shock', x: p.x, y: p.y, r: 24, color: '#ffffff' });
         }
@@ -6232,10 +6233,10 @@ export const WEAPONS = [
         update(world, p, owner, foe, dt) {
           if (!p.back) return;
           // 持ち主へ戻る
-          const a = Math.atan2(owner.y - p.y, owner.x - p.x);
-          const sp = Math.hypot(p.vx, p.vy);
-          p.vx = Math.cos(a) * sp;
-          p.vy = Math.sin(a) * sp;
+          const a = M.atan2(owner.y - p.y, owner.x - p.x);
+          const sp = M.hypot(p.vx, p.vy);
+          p.vx = M.cos(a) * sp;
+          p.vy = M.sin(a) * sp;
         },
         onTouch(world, p, owner, o) {
           if (p.back) return;
@@ -6308,17 +6309,17 @@ export const WEAPONS = [
       turnTo(me, aimAt(me, foe), dt, 5);
       if (w.size > 0) {
         w.size += dt * 26;
-        const bx = me.x + Math.cos(me.angle) * (me.r + w.size);
-        const by = me.y + Math.sin(me.angle) * (me.r + w.size);
+        const bx = me.x + M.cos(me.angle) * (me.r + w.size);
+        const by = me.y + M.sin(me.angle) * (me.r + w.size);
         w.bx = bx;
         w.by = by;
-        const touch = world.balls.some((o) => o !== me && !o.dead && !ally(o, me) && Math.hypot(o.x - bx, o.y - by) < o.r + w.size);
+        const touch = world.balls.some((o) => o !== me && !o.dead && !ally(o, me) && M.hypot(o.x - bx, o.y - by) < o.r + w.size);
         if (touch || w.size >= w.max) {
           // パン！ ふくらんだ大きさほど広く痛い
           const R = w.size * 2;
           world.events.push({ type: 'shock', x: bx, y: by, r: R, color: '#ff8fc8' });
           for (const o of world.balls) {
-            if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - bx, o.y - by) > R + o.r) continue;
+            if (o === me || o.dead || ally(o, me) || M.hypot(o.x - bx, o.y - by) > R + o.r) continue;
             if (landHit(world, me, o, 1 + w.size / 8, { kind: 'gum', x: o.x, y: o.y }) > 0) {
               knockback({ x: bx, y: by }, o, 300 + w.size * 6);
               o.slow = Math.max(o.slow, 0.3);
@@ -6357,8 +6358,8 @@ export const WEAPONS = [
       spawnProjectile(world, me, {
         x: me.x,
         y: me.y,
-        vx: Math.cos(a) * 380,
-        vy: Math.sin(a) * 380 - 200,
+        vx: M.cos(a) * 380,
+        vy: M.sin(a) * 380 - 200,
         kind: 'decoy',
         r: me.r,
         color: me.def.color,
@@ -6439,7 +6440,7 @@ export const WEAPONS = [
       }
       turnTo(me, aimAt(me, foe) - 0.8, dt, 8);
       w.cd -= dt;
-      if (w.cd <= 0 && Math.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 100) {
+      if (w.cd <= 0 && M.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 100) {
         w.slash = 0.12;
         world.events.push({ type: 'iai', x: me.x, y: me.y, a: me.angle });
       }
@@ -6482,7 +6483,7 @@ export const WEAPONS = [
     update(world, me, foe, dt) {
       const w = me.w;
       w.t += dt;
-      me.angle = Math.sin(w.t * 8) * 0.6 - Math.PI / 2; // 指揮棒をふる
+      me.angle = M.sin(w.t * 8) * 0.6 - Math.PI / 2; // 指揮棒をふる
       if (w.left > 0) {
         w.gap -= dt;
         if (w.gap > 0) return;
@@ -6490,10 +6491,10 @@ export const WEAPONS = [
         w.left--;
         const a = w.t * 2 + w.left;
         spawnProjectile(world, me, {
-          x: me.x + Math.cos(a) * (me.r + 20),
-          y: me.y + Math.sin(a) * (me.r + 20),
-          vx: Math.cos(a) * 200,
-          vy: Math.sin(a) * 200,
+          x: me.x + M.cos(a) * (me.r + 20),
+          y: me.y + M.sin(a) * (me.r + 20),
+          vx: M.cos(a) * 200,
+          vy: M.sin(a) * 200,
           kind: 'note',
           r: 8,
           life: 2.2,
@@ -6586,7 +6587,7 @@ export const WEAPONS = [
         // パフッ！ まわりの相手をしびれさせる
         world.events.push({ type: 'shock', x: me.x, y: me.y, r: 160, color: '#f9e79f' });
         for (const o of world.balls) {
-          if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > 160 + o.r) continue;
+          if (o === me || o.dead || ally(o, me) || M.hypot(o.x - me.x, o.y - me.y) > 160 + o.r) continue;
           if (landHit(world, me, o, 1, { kind: 'honk', x: o.x, y: o.y }) > 0) o.stun = Math.max(o.stun, 0.4);
         }
         return;
@@ -6625,8 +6626,8 @@ export const WEAPONS = [
         if (w.jump <= 0) {
           w.jump = 2;
           const a = aimAt(me, foe);
-          me.vx = Math.cos(a) * 520;
-          me.vy = Math.sin(a) * 520 - 200;
+          me.vx = M.cos(a) * 520;
+          me.vy = M.sin(a) * 520 - 200;
         }
       }
       if (w.stage < 3) return;
@@ -6637,7 +6638,7 @@ export const WEAPONS = [
       w.breath = 0.35;
       for (const o of world.balls) {
         if (o === me || o.dead || ally(o, me)) continue;
-        const d = Math.hypot(o.x - me.x, o.y - me.y);
+        const d = M.hypot(o.x - me.x, o.y - me.y);
         const diff = Math.abs(((aimAt(me, o) - me.angle + Math.PI) % TAU + TAU) % TAU - Math.PI);
         if (d > me.r + 170 + o.r || diff > 0.5) continue;
         if (landHit(world, me, o, eggDamage(me) * 1.2, { kind: 'breath', x: o.x, y: o.y }) > 0) {
@@ -6729,7 +6730,7 @@ export const WEAPONS = [
       ['1回', '+' + fmt(Math.round(b.w.rate * 10) / 10)],
     ],
     update(world, me, foe) {
-      me.angle = Math.atan2(me.vy, me.vx);
+      me.angle = M.atan2(me.vy, me.vx);
       const w = me.w;
       if (w.coins < w.goal) return;
       // 貯まった! 割って中身を大きな金貨にして投げる
@@ -6787,13 +6788,13 @@ export const WEAPONS = [
       if (w.lv >= 7) {
         w.rushCd -= dt;
         if (w.rush > 0) w.rush -= dt;
-        else if (w.rushCd <= 0 && Math.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 50) {
+        else if (w.rushCd <= 0 && M.hypot(foe.x - me.x, foe.y - me.y) < me.r + foe.r + 50) {
           w.rush = 1;
           w.rushCd = 3.5;
         }
       }
       fist.cd = w.rush > 0 ? 0.08 : 0.5;
-      fist.rOut = me.r + 14 + (w.rush > 0 ? Math.abs(Math.sin(world.t * 40)) * 20 : 0);
+      fist.rOut = me.r + 14 + (w.rush > 0 ? Math.abs(M.sin(world.t * 40)) * 20 : 0);
       if (w.lv < 5) return;
       w.timer -= dt;
       if (w.timer > 0) return;
@@ -6835,7 +6836,7 @@ export const WEAPONS = [
       ['大きさ', '×' + fmt(Math.round(shown(b, 'size') * 100) / 100)],
     ],
     update(world, me, foe, dt) {
-      me.angle += Math.hypot(me.vx, me.vy) * dt * 0.02 * Math.sign(me.vx || 1);
+      me.angle += M.hypot(me.vx, me.vy) * dt * 0.02 * Math.sign(me.vx || 1);
     },
     onContact(world, me, foe, rel) {
       if (me.w.cd > world.t) return;
@@ -6964,7 +6965,7 @@ export const WEAPONS = [
       const R = me.r + 140;
       world.events.push({ type: 'shock', x: me.x, y: me.y, r: R, color: '#f7dc6f' });
       for (const o of world.balls) {
-        if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        if (o === me || o.dead || ally(o, me) || M.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
         if (landHit(world, me, o, me.w.dmg * 1.5, { kind: 'moonlight', x: o.x, y: o.y }) > 0) knockback(me, o, 260);
       }
     },
@@ -7005,7 +7006,7 @@ export const WEAPONS = [
       w.tick = 0.4;
       const R = me.r + w.rad;
       for (const o of world.balls) {
-        if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        if (o === me || o.dead || ally(o, me) || M.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
         // 炎が大きいほど熱い
         landHit(world, me, o, w.dmg * (0.6 + shown(me, 'rad') / 75), { kind: 'ember', x: o.x, y: o.y });
       }
@@ -7154,7 +7155,7 @@ export const WEAPONS = [
         return;
       }
       if (w.stage >= 2) turnTo(me, aimAt(me, foe), dt, 7);
-      else me.angle = Math.atan2(me.vy, me.vx);
+      else me.angle = M.atan2(me.vy, me.vx);
     },
     onContact(world, me, foe) {
       if (me.w.stage > 1 || me.w.cd > world.t) return;
@@ -7214,8 +7215,8 @@ export const WEAPONS = [
       if (w.lunge > 0) return;
       w.lunge = 2.4;
       const a = aimAt(me, foe);
-      me.vx = Math.cos(a) * 620;
-      me.vy = Math.sin(a) * 620 - 120;
+      me.vx = M.cos(a) * 620;
+      me.vy = M.sin(a) * 620 - 120;
     },
     onHit(world, me, foe, info) {
       if (info.kind !== 'melee') return;
@@ -7260,7 +7261,7 @@ export const WEAPONS = [
         if (w.warp <= 0) {
           // 相手の背後へ瞬間移動
           w.warp = 4;
-          const sp = Math.hypot(foe.vx, foe.vy) || 1;
+          const sp = M.hypot(foe.vx, foe.vy) || 1;
           world.events.push({ type: 'shock', x: me.x, y: me.y, r: 40, color: '#4a4e69' });
           me.x = Math.max(me.r, Math.min(ARENA - me.r, foe.x - (foe.vx / sp) * 110));
           me.y = Math.max(me.r, Math.min(ARENA - me.r, foe.y - (foe.vy / sp) * 110));
@@ -7273,10 +7274,10 @@ export const WEAPONS = [
       w.timer = 1.3;
       const n = [1, 2, 3, 2][w.stage];
       const throwFrom = (x, y) => {
-        const a = Math.atan2(foe.y - y, foe.x - x);
+        const a = M.atan2(foe.y - y, foe.x - x);
         for (let i = 0; i < n; i++) {
           const aa = a + (i - (n - 1) / 2) * 0.2;
-          spawnProjectile(world, me, { x, y, vx: Math.cos(aa) * 560, vy: Math.sin(aa) * 560, angle: aa, kind: 'shuriken', r: 7, life: 1.4, damage: ninjaDamage(me), onTouch: hitOnce() });
+          spawnProjectile(world, me, { x, y, vx: M.cos(aa) * 560, vy: M.sin(aa) * 560, angle: aa, kind: 'shuriken', r: 7, life: 1.4, damage: ninjaDamage(me), onTouch: hitOnce() });
         }
       };
       throwFrom(me.x, me.y);
@@ -7346,7 +7347,7 @@ export const WEAPONS = [
         turnTo(me, aimAt(me, foe), dt, 8);
         return;
       }
-      me.angle = Math.atan2(me.vy, me.vx);
+      me.angle = M.atan2(me.vy, me.vx);
       w.dash -= dt;
       if (w.dash > 0) return;
       w.dash = [0, 1.8, 1.7, 1.6, 1.25][w.stage];
@@ -7358,8 +7359,8 @@ export const WEAPONS = [
       } else if (w.stage === 2) a = snapAngle(a, Math.PI / 4);
       else if (w.stage === 3) a = snapAngle(a, 0);
       const sp = w.stage === 1 ? 640 : 820;
-      me.vx = Math.cos(a) * sp;
-      me.vy = Math.sin(a) * sp - (w.stage === 1 ? 260 : 0);
+      me.vx = M.cos(a) * sp;
+      me.vy = M.sin(a) * sp - (w.stage === 1 ? 260 : 0);
       w.dashT = 0.5;
     },
     onContact(world, me, foe) {
@@ -7406,7 +7407,7 @@ export const WEAPONS = [
       turnTo(me, aimAt(me, foe), dt, 8);
       // 左右の拳を交互にのばす
       w.t += dt;
-      me.blades.forEach((bl, i) => (bl.rOut = me.r + 14 + (6 + w.stage * 4) * (1 + Math.sin(w.t * 9 + i * Math.PI))));
+      me.blades.forEach((bl, i) => (bl.rOut = me.r + 14 + (6 + w.stage * 4) * (1 + M.sin(w.t * 9 + i * Math.PI))));
       if (w.stage < 3) return;
       w.pose -= dt;
       if (w.pose > 0) return;
@@ -7414,7 +7415,7 @@ export const WEAPONS = [
       const R = me.r + 130;
       world.events.push({ type: 'shock', x: me.x, y: me.y, r: R, color: '#f1c9a5' });
       for (const o of world.balls) {
-        if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        if (o === me || o.dead || ally(o, me) || M.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
         if (landHit(world, me, o, 3 + w.bonus, { kind: 'pose', x: o.x, y: o.y }) > 0) knockback(me, o, 380);
       }
     },
@@ -7524,7 +7525,7 @@ export const WEAPONS = [
       const R = me.r + 120;
       world.events.push({ type: 'shock', x: me.x, y: me.y, r: R, color: '#9a9a8e' });
       for (const o of world.balls) {
-        if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        if (o === me || o.dead || ally(o, me) || M.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
         if (landHit(world, me, o, 3.5 + w.bonus, { kind: 'stomp', x: o.x, y: o.y }) > 0) knockback(me, o, 300);
       }
     },
@@ -7580,7 +7581,7 @@ export const WEAPONS = [
       w.tick = 0.9;
       w.on = 0.15;
       for (const o of world.balls) {
-        if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > me.r + 95 + o.r) continue;
+        if (o === me || o.dead || ally(o, me) || M.hypot(o.x - me.x, o.y - me.y) > me.r + 95 + o.r) continue;
         landHit(world, me, o, d, { kind: 'light', x: o.x, y: o.y });
       }
     },
@@ -7607,14 +7608,14 @@ export const WEAPONS = [
     ],
     update(world, me, foe, dt) {
       const w = me.w;
-      me.angle = w.stage === 3 ? aimAt(me, foe) : Math.atan2(me.vy, me.vx);
+      me.angle = w.stage === 3 ? aimAt(me, foe) : M.atan2(me.vy, me.vx);
       if (w.stage >= 2) {
         w.boost -= dt;
         if (w.boost <= 0) {
           w.boost = 2.5;
           const a = aimAt(me, foe);
-          me.vx = Math.cos(a) * 760;
-          me.vy = Math.sin(a) * 760;
+          me.vx = M.cos(a) * 760;
+          me.vy = M.sin(a) * 760;
         }
       }
       if (w.stage < 3) return;
@@ -7688,12 +7689,12 @@ export const WEAPONS = [
       turnTo(me, aimAt(me, foe), dt, 8);
       if (w.suck > 0) {
         w.suck -= dt;
-        const d = Math.hypot(foe.x - me.x, foe.y - me.y);
+        const d = M.hypot(foe.x - me.x, foe.y - me.y);
         if (d < 300) {
           // 吸いこむ
-          const a = Math.atan2(me.y - foe.y, me.x - foe.x);
-          foe.vx += Math.cos(a) * w.pull * dt * (foe.knockMul ?? 1);
-          foe.vy += Math.sin(a) * w.pull * dt * (foe.knockMul ?? 1);
+          const a = M.atan2(me.y - foe.y, me.x - foe.x);
+          foe.vx += M.cos(a) * w.pull * dt * (foe.knockMul ?? 1);
+          foe.vy += M.sin(a) * w.pull * dt * (foe.knockMul ?? 1);
         }
         if (d < me.r + foe.r + 24) {
           // はき出す
@@ -7820,9 +7821,9 @@ export const WEAPONS = [
       me.w.dmg += 0.8;
       me.w.n++;
       if (me.w.n % 4 !== 0) return;
-      const a = Math.atan2(foe.y - me.y, foe.x - me.x);
-      foe.vx = Math.cos(a) * 900 * (foe.knockMul ?? 1);
-      foe.vy = (Math.sin(a) * 900 - 300) * (foe.knockMul ?? 1);
+      const a = M.atan2(foe.y - me.y, foe.x - me.x);
+      foe.vx = M.cos(a) * 900 * (foe.knockMul ?? 1);
+      foe.vy = (M.sin(a) * 900 - 300) * (foe.knockMul ?? 1);
       foe.slamT = 1;
       foe.slamBy = me.id;
       world.events.push({ type: 'say', x: foe.x, y: foe.y, text: 'ホームラン！', color: '#c0392b' });
@@ -7851,8 +7852,8 @@ export const WEAPONS = [
         const shot = w.n % 5 === 0;
         const a = aimAt({ x: p.x, y: p.y }, foe);
         const sp = w.kick * (shot ? 1.5 : 1);
-        p.vx = Math.cos(a) * sp;
-        p.vy = Math.sin(a) * sp;
+        p.vx = M.cos(a) * sp;
+        p.vy = M.sin(a) * sp;
         p.shot = shot;
         p.kickCd = 0.4;
         if (shot) world.events.push({ type: 'say', x: me.x, y: me.y, text: 'シュート！', color: '#27ae60' });
@@ -7860,15 +7861,15 @@ export const WEAPONS = [
       if (w.ball && !w.ball.dead) {
         const p = w.ball;
         // 近くに来たボールをけり返す
-        if (p.kickCd <= 0 && Math.hypot(p.x - me.x, p.y - me.y) < me.r + p.r + 16) kick(p);
+        if (p.kickCd <= 0 && M.hypot(p.x - me.x, p.y - me.y) < me.r + p.r + 16) kick(p);
         return;
       }
       w.timer -= dt;
       if (w.timer > 0) return;
       w.timer = 0.6;
       spawnProjectile(world, me, {
-        x: me.x + Math.cos(me.angle) * (me.r + 14),
-        y: me.y + Math.sin(me.angle) * (me.r + 14),
+        x: me.x + M.cos(me.angle) * (me.r + 14),
+        y: me.y + M.sin(me.angle) * (me.r + 14),
         kind: 'soccerball',
         r: 12,
         life: 7,
@@ -7881,9 +7882,9 @@ export const WEAPONS = [
           p.kickCd -= dt;
           p.hitCd -= dt;
           // 少しずつ持ち主の方へ転がって戻る
-          const a = Math.atan2(owner.y - p.y, owner.x - p.x);
-          p.vx += Math.cos(a) * 260 * dt;
-          p.vy += Math.sin(a) * 260 * dt;
+          const a = M.atan2(owner.y - p.y, owner.x - p.x);
+          p.vx += M.cos(a) * 260 * dt;
+          p.vy += M.sin(a) * 260 * dt;
         },
         onTouch(world, p, owner, o) {
           if (p.hitCd > 0) return;
@@ -7996,7 +7997,7 @@ export const WEAPONS = [
         update(world, p, owner, foe, dt) {
           homing(p, foe, 1.6, dt, 300);
           // ふわふわ上下にゆれる
-          p.vy += Math.sin(p.age * 6) * 120 * dt;
+          p.vy += M.sin(p.age * 6) * 120 * dt;
         },
         onTouch(world, p, owner, o) {
           p.dead = true;
@@ -8040,7 +8041,7 @@ export const WEAPONS = [
         p.dead = true;
         world.events.push({ type: 'boom', x: p.x, y: p.y, radius: owner.w.splash, kind: 'water' });
         for (const o of world.balls) {
-          if (o === owner || o.dead || ally(o, owner) || Math.hypot(o.x - p.x, o.y - p.y) > owner.w.splash + o.r) continue;
+          if (o === owner || o.dead || ally(o, owner) || M.hypot(o.x - p.x, o.y - p.y) > owner.w.splash + o.r) continue;
           if (landHit(world, owner, o, owner.w.dmg, { kind: 'water', x: o.x, y: o.y }) <= 0) continue;
           o.slow = Math.max(o.slow, 0.4);
           o.slowT = Math.max(o.slowT, 1.5);
@@ -8121,7 +8122,7 @@ export const WEAPONS = [
     ],
     update(world, me, foe, dt) {
       const w = me.w;
-      me.angle = Math.atan2(me.vy, me.vx);
+      me.angle = M.atan2(me.vy, me.vx);
       if (w.stage === 0) return;
       w.timer -= dt;
       if (w.timer > 0) return;
@@ -8129,8 +8130,8 @@ export const WEAPONS = [
       if (w.stage === 1) {
         // 滝のぼり: 相手の方へ勢いよく飛び上がる
         const a = aimAt(me, foe);
-        me.vx = Math.cos(a) * 520;
-        me.vy = Math.min(-420, Math.sin(a) * 620);
+        me.vx = M.cos(a) * 520;
+        me.vy = Math.min(-420, M.sin(a) * 620);
       } else {
         strike(world, me, foe.x + foe.vx * 0.3, foe.y + foe.vy * 0.3, 0.45, 1, true, 0.6 + w.bonus * 0.3);
       }
@@ -8220,7 +8221,7 @@ export const WEAPONS = [
       // 渦: 近くの相手をぐるぐる回して、少し外へはじく(目には入れない)
       for (const o of world.balls) {
         if (o === me || o.dead || ally(o, me)) continue;
-        const d = Math.hypot(o.x - me.x, o.y - me.y);
+        const d = M.hypot(o.x - me.x, o.y - me.y);
         if (d > R + 60 || d < 1) continue;
         const nx = (o.x - me.x) / d;
         const ny = (o.y - me.y) / d;
@@ -8232,7 +8233,7 @@ export const WEAPONS = [
       if (w.tick <= 0) {
         w.tick = 0.4;
         for (const o of world.balls) {
-          if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+          if (o === me || o.dead || ally(o, me) || M.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
           landHit(world, me, o, [1, 1.6, 2.4][w.stage] + w.bonus, { kind: 'wind', x: o.x, y: o.y });
         }
       }
@@ -8243,7 +8244,7 @@ export const WEAPONS = [
       w.gust = 3;
       world.events.push({ type: 'shock', x: me.x, y: me.y, r: R, color: '#aed6f1' });
       for (const o of world.balls) {
-        if (o === me || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        if (o === me || o.dead || ally(o, me) || M.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
         knockback(me, o, 560);
         o.slamT = 0.6;
         o.slamBy = me.id;
@@ -8344,8 +8345,8 @@ export const WEAPONS = [
       if (w.lunge <= 0) {
         w.lunge = 2.2;
         const a = aimAt(me, foe);
-        me.vx = Math.cos(a) * 600;
-        me.vy = Math.sin(a) * 600 - 150;
+        me.vx = M.cos(a) * 600;
+        me.vy = M.sin(a) * 600 - 150;
       }
       if (w.stage < 2) return;
       w.timer -= dt;
@@ -8388,7 +8389,7 @@ export const WEAPONS = [
     ],
     update(world, me, foe, dt) {
       const w = me.w;
-      me.angle = Math.atan2(me.vy, me.vx);
+      me.angle = M.atan2(me.vy, me.vx);
       if (w.stage < 2) return;
       w.timer -= dt;
       if (w.timer > 0) return;
@@ -8406,7 +8407,7 @@ export const WEAPONS = [
       if (w.stage < 1) return;
       // 電撃: 近くのほかの相手にも飛ぶ
       for (const o of world.balls) {
-        if (o === me || o === foe || o.dead || ally(o, me) || Math.hypot(o.x - me.x, o.y - me.y) > 220) continue;
+        if (o === me || o === foe || o.dead || ally(o, me) || M.hypot(o.x - me.x, o.y - me.y) > 220) continue;
         world.events.push({ type: 'zap', x: o.x, y: o.y, big: false });
         dealDamage(world, me, o, sparkyDamage(me) * 0.5, { kind: 'static', x: o.x, y: o.y });
       }
@@ -8435,14 +8436,14 @@ export const WEAPONS = [
         w.kick -= dt;
         return;
       }
-      me.angle = Math.atan2(me.vy, me.vx);
+      me.angle = M.atan2(me.vy, me.vx);
       w.timer -= dt;
       if (w.timer > 0) return;
       w.timer = 2.4;
       w.kick = 0.6;
       const a = aimAt(me, foe);
-      me.vx = Math.cos(a) * 820;
-      me.vy = Math.sin(a) * 820 - 180;
+      me.vx = M.cos(a) * 820;
+      me.vy = M.sin(a) * 820 - 180;
       me.angle = a;
     },
     onContact(world, me, foe) {
@@ -8480,8 +8481,8 @@ export const WEAPONS = [
       w.timer -= dt;
       if (w.timer > 0) return;
       w.timer = 0.85;
-      const T = Math.hypot(foe.x - me.x, foe.y - me.y) / 720;
-      const a = Math.atan2(foe.y + foe.vy * T - me.y, foe.x + foe.vx * T - me.x);
+      const T = M.hypot(foe.x - me.x, foe.y - me.y) / 720;
+      const a = M.atan2(foe.y + foe.vy * T - me.y, foe.x + foe.vx * T - me.x);
       shoot(world, me, a, 720, {
         kind: 'dart',
         r: 5,
@@ -8489,7 +8490,7 @@ export const WEAPONS = [
         onTouch(world, p, owner, o) {
           p.dead = true;
           // ど真ん中(ボールの中心の近く)に当たるとブル
-          const bull = Math.hypot(p.x - o.x, p.y - o.y) < o.r * owner.w.bull;
+          const bull = M.hypot(p.x - o.x, p.y - o.y) < o.r * owner.w.bull;
           if (bull) world.events.push({ type: 'say', x: o.x, y: o.y, text: 'ブル！', color: '#e74c3c' });
           landHit(world, owner, o, owner.w.dmg * (bull ? 3 : 1), { kind: 'dart', x: p.x, y: p.y });
         },
@@ -8541,17 +8542,17 @@ export const WEAPONS = [
       const w = me.w;
       w.t += dt;
       // 首ふり
-      turnTo(me, aimAt(me, foe) + Math.sin(w.t * 1.5) * 0.3, dt, 5);
+      turnTo(me, aimAt(me, foe) + M.sin(w.t * 1.5) * 0.3, dt, 5);
       w.tick -= dt;
       const hit = w.tick <= 0;
       if (hit) w.tick = 0.5;
       for (const o of world.balls) {
         if (o === me || o.dead || ally(o, me)) continue;
-        const d = Math.hypot(o.x - me.x, o.y - me.y);
+        const d = M.hypot(o.x - me.x, o.y - me.y);
         const diff = Math.abs(((aimAt(me, o) - me.angle + Math.PI) % TAU + TAU) % TAU - Math.PI);
         if (d > 300 + o.r || diff > 0.5) continue;
-        o.vx += Math.cos(me.angle) * w.wind * dt * (o.knockMul ?? 1);
-        o.vy += Math.sin(me.angle) * w.wind * dt * (o.knockMul ?? 1);
+        o.vx += M.cos(me.angle) * w.wind * dt * (o.knockMul ?? 1);
+        o.vy += M.sin(me.angle) * w.wind * dt * (o.knockMul ?? 1);
         if (hit) landHit(world, me, o, w.dmg, { kind: 'fanwind', x: o.x, y: o.y });
       }
     },
@@ -8676,8 +8677,8 @@ export const WEAPONS = [
       w.pull = Math.max(0, 1 - w.timer / 1.8);
       if (w.timer > 0) return;
       w.timer = 1.8;
-      const T = Math.hypot(foe.x - me.x, foe.y - me.y) / 820;
-      const a = Math.atan2(foe.y + foe.vy * T - me.y, foe.x + foe.vx * T - me.x);
+      const T = M.hypot(foe.x - me.x, foe.y - me.y) / 820;
+      const a = M.atan2(foe.y + foe.vy * T - me.y, foe.x + foe.vx * T - me.x);
       shoot(world, me, a, 820, {
         kind: 'stone',
         r: 8,
@@ -8786,7 +8787,7 @@ export const WEAPONS = [
         blockable: false,
         hop: world.rng(),
         update(world, p, owner, foe, dt) {
-          p.y = ARENA - p.r - Math.abs(Math.sin((p.age + p.hop) * 9)) * 8;
+          p.y = ARENA - p.r - Math.abs(M.sin((p.age + p.hop) * 9)) * 8;
           p.vx = Math.sign(foe.x - p.x || 1) * 260;
         },
         onTouch(world, p, owner, o) {
@@ -8851,7 +8852,7 @@ export const WEAPONS = [
       w.timer -= dt;
       if (w.timer > 0) return;
       w.timer = 1.2;
-      neutron(world, me, me.x + Math.cos(me.angle) * (me.r + 8), me.y + Math.sin(me.angle) * (me.r + 8), aimAt(me, foe), 3);
+      neutron(world, me, me.x + M.cos(me.angle) * (me.r + 8), me.y + M.sin(me.angle) * (me.r + 8), aimAt(me, foe), 3);
     },
     onHit(world, me) {
       growStat(me, 'split', 0.1, 4, 0.3);
@@ -8978,7 +8979,7 @@ export const WEAPONS = [
       const cd = Math.max(0.12, 0.5 - w.combo * 0.02);
       me.blades.forEach((bl, i) => {
         bl.cd = cd;
-        bl.rOut = me.r + 16 + Math.abs(Math.sin(world.t * (8 + w.combo * 0.5) + i * 1.6)) * 14;
+        bl.rOut = me.r + 16 + Math.abs(M.sin(world.t * (8 + w.combo * 0.5) + i * 1.6)) * 14;
       });
     },
     onHit(world, me, foe, info) {

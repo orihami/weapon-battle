@@ -3,6 +3,7 @@
 // 勝つと全員がカードを1枚選び、ボスのレベルが上がって次のボスへ。負けたら終わり。
 // DOMに依存しないので Node のテストから使える。
 
+import { M, powi } from './detmath.js';
 import { ARENA, BALL_R, ally, foeOf, landHit, knockback, spawnProjectile, segPointDist } from './engine.js';
 import { makeOffer, addSkills } from './skills.js';
 
@@ -17,7 +18,7 @@ export const DIFFICULTY = {
   hard: { name: 'むずかしい', hp: 1.15, power: 1.15 },
 };
 
-const aim = (a, b) => Math.atan2(b.y - a.y, b.x - a.x);
+const aim = (a, b) => M.atan2(b.y - a.y, b.x - a.x);
 const foes = (world, me) => world.balls.filter((o) => o !== me && !o.dead && !ally(o, me));
 
 // 形態: HP 2/3 まで第1形態、1/3 まで第2形態、そのあと怒り
@@ -74,7 +75,7 @@ function bossContact(dmg) {
 function shockwave(world, me, R, dmg, knock, color) {
   world.events.push({ type: 'shock', x: me.x, y: me.y, r: R, color });
   for (const o of foes(world, me)) {
-    if (Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+    if (M.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
     if (landHit(world, me, o, dmg, { kind: 'boss', x: o.x, y: o.y }) > 0) knockback(me, o, knock);
   }
 }
@@ -92,7 +93,7 @@ function bolt(world, me, x, y, delay, dmg) {
     onExpire(world, p, owner) {
       world.events.push({ type: 'zap', x: p.x, y: p.y, big: true });
       for (const o of foes(world, owner)) {
-        if (Math.hypot(o.x - p.x, o.y - p.y) >= p.r + o.r) continue;
+        if (M.hypot(o.x - p.x, o.y - p.y) >= p.r + o.r) continue;
         landHit(world, owner, o, dmg, { kind: 'zap', x: o.x, y: o.y });
         o.stun = Math.max(o.stun, 0.1);
       }
@@ -129,7 +130,7 @@ export const BOSSES = [
       if (w.jump <= 0) {
         w.jump = pace(me, 4);
         w.air = true;
-        me.vx = Math.cos(aim(me, foe)) * 380;
+        me.vx = M.cos(aim(me, foe)) * 380;
         me.vy = -760;
       }
       if (w.phase < 1) return;
@@ -139,10 +140,10 @@ export const BOSSES = [
       for (let i = 0; i < 8; i++) {
         const a = (i * TAU) / 8 + world.t;
         spawnProjectile(world, me, {
-          x: me.x + Math.cos(a) * me.r,
-          y: me.y + Math.sin(a) * me.r,
-          vx: Math.cos(a) * 260,
-          vy: Math.sin(a) * 260,
+          x: me.x + M.cos(a) * me.r,
+          y: me.y + M.sin(a) * me.r,
+          vx: M.cos(a) * 260,
+          vy: M.sin(a) * 260,
           kind: 'slime',
           r: 11,
           life: 2.4,
@@ -182,8 +183,8 @@ export const BOSSES = [
       const n = w.phase + 1;
       for (let k = 0; k < n; k++) {
         const a = w.beamA + (k * TAU) / n;
-        const ex = me.x + Math.cos(a) * 1300;
-        const ey = me.y + Math.sin(a) * 1300;
+        const ex = me.x + M.cos(a) * 1300;
+        const ey = me.y + M.sin(a) * 1300;
         for (const o of foes(world, me)) {
           if ((w.next[o.id] ?? 0) > world.t || segPointDist(me.x, me.y, ex, ey, o.x, o.y) > o.r + 12) continue;
           w.next[o.id] = world.t + 0.7;
@@ -197,22 +198,22 @@ export const BOSSES = [
       for (let i = -1; i <= 1; i++) {
         const a = aim(me, foe) + i * 0.6;
         spawnProjectile(world, me, {
-          x: me.x + Math.cos(a) * (me.r + 10),
-          y: me.y + Math.sin(a) * (me.r + 10),
-          vx: Math.cos(a) * 300,
-          vy: Math.sin(a) * 300,
+          x: me.x + M.cos(a) * (me.r + 10),
+          y: me.y + M.sin(a) * (me.r + 10),
+          vx: M.cos(a) * 300,
+          vy: M.sin(a) * 300,
           angle: a,
           kind: 'missile',
           r: 8,
           life: 3,
           update(world, p, owner, target, dt) {
             const t = foeOf(world, { ...owner, x: p.x, y: p.y, id: owner.id });
-            const want = Math.atan2(t.y - p.y, t.x - p.x);
-            const cur = Math.atan2(p.vy, p.vx);
+            const want = M.atan2(t.y - p.y, t.x - p.x);
+            const cur = M.atan2(p.vy, p.vx);
             const diff = ((want - cur + Math.PI) % TAU + TAU) % TAU - Math.PI;
             const na = cur + Math.max(-2.4 * dt, Math.min(2.4 * dt, diff));
-            p.vx = Math.cos(na) * 330;
-            p.vy = Math.sin(na) * 330;
+            p.vx = M.cos(na) * 330;
+            p.vy = M.sin(na) * 330;
             p.angle = na;
           },
           onTouch(world, p, owner, o) {
@@ -250,7 +251,7 @@ export const BOSSES = [
         w.breath = pace(me, 3);
         w.fire = 0.4;
         for (const o of foes(world, me)) {
-          const d = Math.hypot(o.x - me.x, o.y - me.y);
+          const d = M.hypot(o.x - me.x, o.y - me.y);
           const diff = Math.abs(((aim(me, o) - me.angle + Math.PI) % TAU + TAU) % TAU - Math.PI);
           if (d > me.r + 230 + o.r || diff > 0.5) continue;
           if (landHit(world, me, o, 5, { kind: 'breath', x: o.x, y: o.y }) <= 0) continue;
@@ -287,8 +288,8 @@ export const BOSSES = [
       if (w.charge > 0) return;
       w.charge = 3;
       const a = aim(me, foe);
-      me.vx = Math.cos(a) * 820;
-      me.vy = Math.sin(a) * 820;
+      me.vx = M.cos(a) * 820;
+      me.vy = M.sin(a) * 820;
     },
     onContact: bossContact(3),
   },
@@ -348,7 +349,7 @@ export const BOSSES = [
         // ねらう相手は毎回ちがう人(いちばん近いとはかぎらない)
         const list = foes(world, me);
         const t = list[Math.floor(world.rng() * list.length)] || foe;
-        const sp = Math.hypot(t.vx, t.vy) || 1;
+        const sp = M.hypot(t.vx, t.vy) || 1;
         world.events.push({ type: 'shock', x: me.x, y: me.y, r: 50, color: '#2c2c54' });
         me.x = Math.max(me.r, Math.min(ARENA - me.r, t.x - (t.vx / sp) * (me.r + 50)));
         me.y = Math.max(me.r, Math.min(ARENA - me.r, t.y - (t.vy / sp) * (me.r + 50)));
@@ -365,10 +366,10 @@ export const BOSSES = [
       for (let i = -2; i <= 2; i++) {
         const a = a0 + i * 0.22;
         spawnProjectile(world, me, {
-          x: me.x + Math.cos(a) * me.r,
-          y: me.y + Math.sin(a) * me.r,
-          vx: Math.cos(a) * 520,
-          vy: Math.sin(a) * 520,
+          x: me.x + M.cos(a) * me.r,
+          y: me.y + M.sin(a) * me.r,
+          vx: M.cos(a) * 520,
+          vy: M.sin(a) * 520,
           angle: a,
           kind: 'shuriken',
           r: 8,
@@ -407,10 +408,10 @@ export const BOSSES = [
         for (const o of foes(world, me)) {
           const a = aim(me, o);
           spawnProjectile(world, me, {
-            x: me.x + Math.cos(a) * me.r,
-            y: me.y + Math.sin(a) * me.r,
-            vx: Math.cos(a) * 560,
-            vy: Math.sin(a) * 560,
+            x: me.x + M.cos(a) * me.r,
+            y: me.y + M.sin(a) * me.r,
+            vx: M.cos(a) * 560,
+            vy: M.sin(a) * 560,
             angle: a,
             kind: 'icicle',
             r: 9,
@@ -431,7 +432,7 @@ export const BOSSES = [
       const R = me.r + 170;
       world.events.push({ type: 'shock', x: me.x, y: me.y, r: R, color: '#d6eaf8' });
       for (const o of foes(world, me)) {
-        if (Math.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
+        if (M.hypot(o.x - me.x, o.y - me.y) > R + o.r) continue;
         if (landHit(world, me, o, 3, { kind: 'boss', x: o.x, y: o.y }) > 0) o.freeze = Math.max(o.freeze, 0.7);
       }
     },
@@ -454,13 +455,13 @@ export const BOSSES = [
     update(world, me, foe, dt) {
       const w = me.w;
       stepPhase(world, me);
-      me.angle = Math.atan2(me.vy, me.vx);
+      me.angle = M.atan2(me.vy, me.vx);
       w.bite -= dt;
       if (w.bite <= 0) {
         w.bite = pace(me, 3);
         const a = aim(me, foe);
-        me.vx = Math.cos(a) * 720;
-        me.vy = Math.sin(a) * 720;
+        me.vx = M.cos(a) * 720;
+        me.vy = M.sin(a) * 720;
       }
       if (w.phase >= 1) {
         w.pool -= dt;
@@ -483,7 +484,7 @@ export const BOSSES = [
                 if (p.tick > 0) return;
                 p.tick = 0.5;
                 for (const v of foes(world, owner)) {
-                  if (Math.hypot(v.x - p.x, v.y - p.y) > p.r + v.r) continue;
+                  if (M.hypot(v.x - p.x, v.y - p.y) > p.r + v.r) continue;
                   v.poison = Math.min(4, v.poison + 0.3);
                   v.poisonSrc = owner.id;
                 }
@@ -499,10 +500,10 @@ export const BOSSES = [
       for (let i = -1; i <= 1; i++) {
         const a = aim(me, foe) + i * 0.3;
         spawnProjectile(world, me, {
-          x: me.x + Math.cos(a) * me.r,
-          y: me.y + Math.sin(a) * me.r,
-          vx: Math.cos(a) * 420,
-          vy: Math.sin(a) * 420,
+          x: me.x + M.cos(a) * me.r,
+          y: me.y + M.sin(a) * me.r,
+          vx: M.cos(a) * 420,
+          vy: M.sin(a) * 420,
           kind: 'slime',
           r: 9,
           life: 2,
@@ -580,7 +581,7 @@ export const BOSSES = [
     update(world, me, foe, dt) {
       const w = me.w;
       stepPhase(world, me);
-      me.angle = Math.atan2(me.vy, me.vx);
+      me.angle = M.atan2(me.vy, me.vx);
       if (w.dig > 0) {
         // もぐっている: 床にはりつき、だれかの下へ近づく
         w.dig -= dt;
@@ -612,10 +613,10 @@ export const BOSSES = [
       for (let i = -1; i <= 1; i++) {
         const a = aim(me, foe) + i * 0.25;
         spawnProjectile(world, me, {
-          x: me.x + Math.cos(a) * me.r,
-          y: me.y + Math.sin(a) * me.r,
-          vx: Math.cos(a) * 450,
-          vy: Math.sin(a) * 450,
+          x: me.x + M.cos(a) * me.r,
+          y: me.y + M.sin(a) * me.r,
+          vx: M.cos(a) * 450,
+          vy: M.sin(a) * 450,
           kind: 'stone',
           r: 9,
           life: 2,
@@ -660,8 +661,8 @@ export const BOSSES = [
       if (w.dash > 0) return;
       w.dash = pace(me, w.alone ? 2 : 3);
       const a = aim(me, foe);
-      me.vx = Math.cos(a) * 700;
-      me.vy = Math.sin(a) * 700;
+      me.vx = M.cos(a) * 700;
+      me.vy = M.sin(a) * 700;
     },
     onContact: bossContact(2.5),
   },
@@ -758,10 +759,10 @@ export const BOSSES = [
         for (let i = 0; i < 6; i++) {
           const a = (i * TAU) / 6 + world.t;
           spawnProjectile(world, me, {
-            x: me.x + Math.cos(a) * me.r,
-            y: me.y + Math.sin(a) * me.r,
-            vx: Math.cos(a) * 240,
-            vy: Math.sin(a) * 240,
+            x: me.x + M.cos(a) * me.r,
+            y: me.y + M.sin(a) * me.r,
+            vx: M.cos(a) * 240,
+            vy: M.sin(a) * 240,
             kind: 'gorb',
             r: 12,
             life: 2.6,
@@ -783,7 +784,7 @@ export const BOSSES = [
           w.breath = pace(me, 3.5);
           w.fire = 0.4;
           for (const o of foes(world, me)) {
-            const d = Math.hypot(o.x - me.x, o.y - me.y);
+            const d = M.hypot(o.x - me.x, o.y - me.y);
             const diff = Math.abs(((aim(me, o) - me.angle + Math.PI) % TAU + TAU) % TAU - Math.PI);
             if (d > me.r + 230 + o.r || diff > 0.5) continue;
             landHit(world, me, o, 5, { kind: 'breath', x: o.x, y: o.y });
@@ -954,8 +955,8 @@ export function bossOf(raid) {
   return {
     def,
     boost: {
-      maxHp: Math.round(BOSS_HP * (0.2 + 0.8 * n) * (1 + 0.28 * lv) * 1.12 ** lv * d.hp * BOSS_TUNE[def.id].hp),
-      power: (1 + 0.1 * lv) * 1.08 ** lv * d.power * (0.7 + 0.3 * n) * BOSS_TUNE[def.id].power,
+      maxHp: Math.round(BOSS_HP * (0.2 + 0.8 * n) * (1 + 0.28 * lv) * powi(1.12, lv) * d.hp * BOSS_TUNE[def.id].hp),
+      power: (1 + 0.1 * lv) * powi(1.08, lv) * d.power * (0.7 + 0.3 * n) * BOSS_TUNE[def.id].power,
     },
   };
 }

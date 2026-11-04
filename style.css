@@ -638,3 +638,8 @@ dialog { color: var(--ink); }
 .seg.wrap { flex-wrap: wrap; }
 .seg.wrap button { flex: 1 1 40%; }
 .bi-cards em { font-style: normal; color: #c2185b; font-size: 13px; }
+
+/* オンライン: 全員の試合が同じか */
+.sync { margin: 0; font-size: 14px; font-weight: bold; background: rgba(255, 255, 255, 0.92); border-radius: 8px; padding: 2px 10px; color: #1e8449; }
+.sync:empty { display: none; }
+.sync.bad { color: #c01f1f; }

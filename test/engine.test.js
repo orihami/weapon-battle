@@ -889,3 +889,19 @@ test('合体進化・武器進化は試合の中で育つ(2026-11-03 見直し)'
   step(w6);
   assert.equal(st(w6, 'aKing').n, 4);
 });
+
+test('試合の計算はブラウザで答えが変わる数学関数を使わない(オンラインで全員の試合をそろえるため)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { M } = await import('../src/detmath.js');
+  for (const f of ['engine', 'weapons', 'skills', 'raid', 'challenge', 'rounds', 'tournament']) {
+    const src = readFileSync(new URL(`../src/${f}.js`, import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
+    const bad = src.match(/Math\.(sin|cos|tan|atan2?|asin|acos|hypot|exp|log\w*|pow|cbrt|sinh|cosh|tanh)\(|\*\*/g);
+    assert.equal(bad, null, `${f}.js で ${bad} を使っている(detmath.js の M を使う)`);
+  }
+  // 自前の関数がふつうの Math とほぼ同じ答え
+  for (let i = 0; i < 2000; i++) {
+    const x = (i - 1000) * 0.0137;
+    assert.ok(Math.abs(M.sin(x) - Math.sin(x)) < 1e-15 && Math.abs(M.cos(x) - Math.cos(x)) < 1e-15);
+    assert.ok(Math.abs(M.atan2(x, 1 - x) - Math.atan2(x, 1 - x)) < 1e-15);
+  }
+});

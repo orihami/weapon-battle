@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { readFile, mkdir } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { chromium, webkit } from 'playwright';
 import { spawn } from 'node:child_process';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -328,7 +328,14 @@ try {
   try {
     await new Promise((r) => setTimeout(r, 600));
     const url = base + `?server=ws://127.0.0.1:${port}&speed=4`;
-    const page2 = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    // 2台目は WebKit(iPhone の Safari の系統)で開く。ブラウザがちがっても同じ試合になるかを見る(入っていなければ Chromium)
+    let browser2 = null;
+    try {
+      browser2 = await webkit.launch();
+    } catch {
+      console.log('(WebKit が無いので、2台目も Chromium で確認)');
+    }
+    const page2 = await (browser2 || browser).newPage({ viewport: { width: 390, height: 844 } });
     page2.on('pageerror', (e) => errors.push('pageerror(2): ' + e.message));
     await page2.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
     for (const p of [page, page2]) {
@@ -343,7 +350,7 @@ try {
     await page2.fill('#onlineCode', code);
     await page2.click('#onlineJoinBtn');
     await page.waitForFunction(() => document.querySelectorAll('#lobbyList .lobby-row b').length === 2, null, { timeout: 10000 });
-    check(/^[A-Z0-9]{4}$/.test(code), `オンライン: 部屋 ${code} に2人(${(await page.textContent('#lobbyList')).slice(0, 30)})`);
+    check(/^[A-Z0-9]{4}$/.test(code), `オンライン(2台目は ${browser2 ? 'WebKit' : 'Chromium'}): 部屋 ${code} に2人(${(await page.textContent('#lobbyList')).slice(0, 30)})`);
     check(await page.isDisabled('#onlineStart'), 'オンライン: モードを選ぶまで開始できない');
     // ホームがモードを選ぶと、ほかの人にも出る
     await page.click('#onlineModeSeg [data-omode="battle"]');
@@ -370,8 +377,11 @@ try {
     await Promise.all([page, page2].map((p) => p.waitForFunction(() => { const r = window.__weaponBattle.state.rounds; return r && r.champion; }, null, { timeout: 300000 })));
     const [f1, f2] = [await fin(page), await fin(page2)];
     check(f1 && f1 === f2 && /\+|:\w/.test(f1), `オンライン: ラウンズが2台で同じ結果 ${f1} / ${f2}`);
+    await Promise.all([page, page2].map((p) => p.waitForFunction(() => /全員\(2人\)同じ結果/.test(document.querySelector('#syncText').textContent), null, { timeout: 15000 })));
+    check(true, `オンライン: 答え合わせ「${await page2.textContent('#syncText')}」`);
     await page2.screenshot({ path: join(outDir, '8d-online-rounds-end.png') });
     await page2.close();
+    if (browser2) await browser2.close();
   } finally {
     game.kill();
   }

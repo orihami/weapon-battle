@@ -27,10 +27,12 @@ jobs:
       - run: npm ci
       - name: ユニットテスト(シミュレーション)
         run: npm test
-      - name: ブラウザを用意
-        run: npx playwright install --with-deps chromium
+      - name: ブラウザを用意(オンラインの確認に WebKit・Firefox も)
+        run: npx playwright install --with-deps chromium webkit firefox
       - name: ブラウザテスト(実際にページを開いて対戦)
         run: npm run e2e
+      - name: どのブラウザでも同じ試合になるか(Chromium・WebKit・Firefox。オンラインで全員の試合をそろえるため)
+        run: node test/determinism.mjs 60
       - name: スクリーンショットを保存
         if: always()
         uses: actions/upload-artifact@v4
